@@ -88,12 +88,18 @@ Scripts/make-app.sh                 # build + ad-hoc sign (this machine only)
 open build/clipboardd.app           # 📋 appears in the menu bar
 ```
 
-For other / managed Macs, sign with a Developer ID and notarize:
+For other / managed Macs, sign with a Developer ID and notarize (the script
+does the notarize + staple end to end when given a notarytool keychain profile):
 
 ```sh
-IDENTITY="Developer ID Application: Your Name (TEAMID)" Scripts/make-app.sh
-# then run the notarytool + stapler commands the script prints
+IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="your-notary-profile" \
+Scripts/make-app.sh
 ```
+
+Create the notary profile once with
+`xcrun notarytool store-credentials "<name>" --apple-id … --team-id …`.
+A successful run ends with `gatekeeper: source=Notarized Developer ID`.
 
 Install and launch at login:
 
