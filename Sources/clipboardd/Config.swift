@@ -21,7 +21,13 @@ final class Config {
     init() {
         deviceName = Host.current().localizedName ?? "Mac"
 
-        if let code = defaults.string(forKey: "pairingCode"), !code.isEmpty {
+        if let envCode = ProcessInfo.processInfo.environment["CLIPBOARDD_PAIRING_CODE"],
+           !envCode.isEmpty {
+            // Env override wins — useful for headless testing where the bare
+            // binary's UserDefaults domain doesn't match `net.amnesia.clipboardd`.
+            defaults.set(envCode, forKey: "pairingCode")
+            pairingCode = envCode
+        } else if let code = defaults.string(forKey: "pairingCode"), !code.isEmpty {
             pairingCode = code
         } else {
             let code = Config.generateCode()
