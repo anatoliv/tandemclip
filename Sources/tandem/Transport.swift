@@ -12,7 +12,7 @@ import Security
 /// - Framing: 4-byte big-endian length prefix + JSON body.
 final class Transport {
     private let config: Config
-    private let queue = DispatchQueue(label: "clipboardd.transport")
+    private let queue = DispatchQueue(label: "tandem.transport")
 
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -65,7 +65,7 @@ final class Transport {
         let tls = NWProtocolTLS.Options()
 
         let pskData = config.psk.withUnsafeBytes { DispatchData(bytes: $0) }
-        let idData = Data("clipboardd".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
+        let idData = Data("tandem".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
         sec_protocol_options_add_pre_shared_key(
             tls.securityProtocolOptions,
             pskData as __DispatchData,

@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "clipboardd",
+    name: "tandem",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "clipboardd",
-            path: "Sources/clipboardd"
+            name: "tandem",
+            path: "Sources/tandem"
         )
     ]
 )

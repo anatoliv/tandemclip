@@ -12,7 +12,7 @@ final class Config {
     private let defaults = UserDefaults.standard
 
     let deviceName: String
-    let serviceType = "_clipboardd._tcp"
+    let serviceType = "_tandem._tcp"
 
     private(set) var pairingCode: String
     private(set) var paused: Bool
@@ -21,10 +21,10 @@ final class Config {
     init() {
         deviceName = Host.current().localizedName ?? "Mac"
 
-        if let envCode = ProcessInfo.processInfo.environment["CLIPBOARDD_PAIRING_CODE"],
+        if let envCode = ProcessInfo.processInfo.environment["TANDEM_PAIRING_CODE"],
            !envCode.isEmpty {
             // Env override wins — useful for headless testing where the bare
-            // binary's UserDefaults domain doesn't match `net.amnesia.clipboardd`.
+            // binary's UserDefaults domain doesn't match `net.amnesia.tandem`.
             defaults.set(envCode, forKey: "pairingCode")
             pairingCode = envCode
         } else if let code = defaults.string(forKey: "pairingCode"), !code.isEmpty {

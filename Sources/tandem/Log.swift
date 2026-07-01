@@ -1,14 +1,14 @@
 import Foundation
 
 /// Lightweight logging. Verbose output (discovery / handshake / sync tracing) is
-/// off by default and enabled with `--verbose`/`-v` or `CLIPBOARDD_VERBOSE=1`.
+/// off by default and enabled with `--verbose`/`-v` or `TANDEM_VERBOSE=1`.
 /// Errors always print.
 enum Log {
     static let verbose: Bool = {
         if CommandLine.arguments.contains("--verbose") || CommandLine.arguments.contains("-v") {
             return true
         }
-        if let env = ProcessInfo.processInfo.environment["CLIPBOARDD_VERBOSE"],
+        if let env = ProcessInfo.processInfo.environment["TANDEM_VERBOSE"],
            env == "1" || env.lowercased() == "true" {
             return true
         }
@@ -19,11 +19,11 @@ enum Log {
     /// "discovery", "tls", "sync".
     static func trace(_ category: String, _ message: @autoclosure () -> String) {
         guard verbose else { return }
-        NSLog("[clipboardd:%@] %@", category, message())
+        NSLog("[tandem:%@] %@", category, message())
     }
 
     /// Always printed.
     static func error(_ message: String) {
-        NSLog("[clipboardd:error] %@", message)
+        NSLog("[tandem:error] %@", message)
     }
 }

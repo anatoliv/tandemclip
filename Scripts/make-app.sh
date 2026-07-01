@@ -16,20 +16,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP_NAME="clipboardd"
+APP_NAME="Tandem"                        # display / .app bundle name
+EXE_NAME="tandem"                        # Swift product + CFBundleExecutable
 BUNDLE="build/${APP_NAME}.app"
 IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 
 echo "==> Building release binary"
 swift build -c release
-BIN_PATH="$(swift build -c release --show-bin-path)/${APP_NAME}"
+BIN_PATH="$(swift build -c release --show-bin-path)/${EXE_NAME}"
+
+# Regenerate the app icon if the source is present but the .icns is stale/missing.
+if [[ ! -f Packaging/AppIcon.icns && -x Scripts/make-icon.sh ]]; then
+    echo "==> Generating app icon"
+    Scripts/make-icon.sh
+fi
 
 echo "==> Assembling ${BUNDLE}"
 rm -rf "${BUNDLE}"
-mkdir -p "${BUNDLE}/Contents/MacOS"
-cp "${BIN_PATH}" "${BUNDLE}/Contents/MacOS/${APP_NAME}"
+mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
+cp "${BIN_PATH}" "${BUNDLE}/Contents/MacOS/${EXE_NAME}"
 cp "Packaging/Info.plist" "${BUNDLE}/Contents/Info.plist"
+[[ -f Packaging/AppIcon.icns ]] && cp "Packaging/AppIcon.icns" "${BUNDLE}/Contents/Resources/AppIcon.icns"
 
 echo "==> Code signing"
 if [[ -n "${IDENTITY}" ]]; then

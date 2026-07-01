@@ -1,26 +1,25 @@
-# clipboardd
+# Tandem
 
 LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
 control — just plain-text clipboard content shared between machines you've
 paired with a shared code. Runs as a menu-bar-only background agent.
 
-**Status:** MVP scaffold (plain text only). See [Roadmap](#roadmap).
+**Status:** MVP (plain text only). See [Roadmap](#roadmap).
 
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
-often disabled on managed machines. `clipboardd` needs neither — any Macs on the
-same LAN that share a pairing code sync their clipboards, and nothing leaves the
-LAN.
+often disabled on managed machines. Tandem needs neither — any Macs on the same
+LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 
 ## How it works
 
 ```
- ┌── ClipboardWatcher ──┐        ┌── Transport ──────────────┐
- │ polls NSPasteboard   │        │ Bonjour: _clipboardd._tcp │
- │ changeCount (~0.4s)  │        │ PSK-TLS over Network.fw   │
- │ skips concealed types│        │ 4-byte len + JSON frames  │
- └──────────┬───────────┘        └─────────────┬─────────────┘
+ ┌── ClipboardWatcher ──┐        ┌── Transport ───────────────┐
+ │ polls NSPasteboard   │        │ Bonjour: _tandem._tcp      │
+ │ changeCount (~0.4s)  │        │ PSK-TLS over Network.fw    │
+ │ skips concealed types│        │ en0 only, auto-reconnect   │
+ └──────────┬───────────┘        └─────────────┬──────────────┘
             │                                   │
             └──────────► SyncEngine ◄───────────┘
                      dedup (SHA-256 hash)
@@ -40,6 +39,9 @@ LAN.
 - **Echo loops** are prevented two ways: applying a remote clip advances the
   watcher's baseline `changeCount`, and every clip is keyed by content hash so
   the same content never round-trips.
+- **Self-healing transport.** A 5s reconcile loop re-dials any advertised peer
+  it has no live connection to, so sync survives sleep/wake and Wi-Fi roams.
+  Infrastructure Wi-Fi only (peer-to-peer/AWDL is disabled for stable links).
 
 ## Security model
 
@@ -58,11 +60,11 @@ LAN.
 
 ```sh
 swift build
-.build/debug/clipboardd            # a 📋 appears in the menu bar
-.build/debug/clipboardd --verbose  # trace discovery / TLS handshake / sync
+.build/debug/tandem            # a sync-arrows glyph appears in the menu bar
+.build/debug/tandem --verbose  # trace discovery / TLS handshake / sync
 ```
 
-`--verbose` (or `CLIPBOARDD_VERBOSE=1`) logs discovery, PSK-TLS handshake
+`--verbose` (or `TANDEM_VERBOSE=1`) logs discovery, PSK-TLS handshake
 success/failure, and every clip send/recv/dedup decision — run two machines this
 way to watch a copy propagate. A failed handshake is logged as "likely wrong
 pairing code".
@@ -70,7 +72,7 @@ pairing code".
 Set a matching pairing code on each machine (until in-app entry lands):
 
 ```sh
-defaults write net.amnesia.clipboardd pairingCode "K7QM-3PXF"
+defaults write net.amnesia.tandem pairingCode "K7QM-3PXF"
 ```
 
 (The bundle/domain used by `UserDefaults` is the executable's identifier; when
@@ -81,11 +83,12 @@ from your first Mac and set it on the others.)
 
 A proper `.app` bundle is what makes launch-at-login work cleanly and — via its
 Info.plist — declares the Local Network + Bonjour usage that macOS 14+ requires
-for discovery to work at all:
+for discovery to work at all. It also carries the app icon (regenerate it with
+`Scripts/make-icon.sh`).
 
 ```sh
 Scripts/make-app.sh                 # build + ad-hoc sign (this machine only)
-open build/clipboardd.app           # 📋 appears in the menu bar
+open build/Tandem.app               # sync-arrows glyph appears in the menu bar
 ```
 
 For other / managed Macs, sign with a Developer ID and notarize (the script
@@ -104,17 +107,15 @@ A successful run ends with `gatekeeper: source=Notarized Developer ID`.
 Install and launch at login:
 
 ```sh
-cp -R build/clipboardd.app /Applications/
-cp LaunchAgent/net.amnesia.clipboardd.plist ~/Library/LaunchAgents/
-# point the plist at the bundle's executable:
-#   /Applications/clipboardd.app/Contents/MacOS/clipboardd
-launchctl load ~/Library/LaunchAgents/net.amnesia.clipboardd.plist
+cp -R build/Tandem.app /Applications/
+cp LaunchAgent/net.amnesia.tandem.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/net.amnesia.tandem.plist
 ```
 
-(Alternatively, just add `clipboardd.app` to **System Settings → General →
+(Alternatively, just add `Tandem.app` to **System Settings → General →
 Login Items**.)
 
-Logs: `/tmp/clipboardd.out.log`, `/tmp/clipboardd.err.log`.
+Logs: `/tmp/tandem.out.log`, `/tmp/tandem.err.log`.
 
 ### Bare-binary install (no bundle)
 
@@ -123,7 +124,7 @@ the Info.plist declarations, so prefer the `.app`:
 
 ```sh
 swift build -c release
-sudo cp .build/release/clipboardd /usr/local/bin/clipboardd
+sudo cp .build/release/tandem /usr/local/bin/tandem
 ```
 
 ### Managed / corporate Macs — check first

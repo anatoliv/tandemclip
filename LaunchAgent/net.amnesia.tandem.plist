@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>net.amnesia.clipboardd</string>
+    <string>net.amnesia.tandem</string>
 
     <!-- Default: the .app built by Scripts/make-app.sh and copied to
-         /Applications. For a bare-binary install use /usr/local/bin/clipboardd.
+         /Applications. For a bare-binary install use /usr/local/bin/tandem.
          Add "--verbose" as a second <string> to trace discovery/TLS/sync. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/clipboardd.app/Contents/MacOS/clipboardd</string>
+        <string>/Applications/Tandem.app/Contents/MacOS/tandem</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -20,8 +20,8 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/clipboardd.out.log</string>
+    <string>/tmp/tandem.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/clipboardd.err.log</string>
+    <string>/tmp/tandem.err.log</string>
 </dict>
 </plist>

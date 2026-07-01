@@ -11,17 +11,39 @@ final class MenuBarController {
         self.config = config
         self.engine = engine
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "📋"
+        applyStatusIcon()
         rebuildMenu()
     }
 
-    func refresh() { rebuildMenu() }
+    func refresh() {
+        applyStatusIcon()
+        rebuildMenu()
+    }
+
+    /// Monochrome template glyph that adapts to light/dark menu bars. Shows the
+    /// sync arrows normally and a pause glyph when paused, matching native
+    /// menu-bar items.
+    private func applyStatusIcon() {
+        guard let button = statusItem.button else { return }
+        let symbol = config.paused ? "pause.circle" : "arrow.triangle.2.circlepath"
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Tandem")?
+            .withSymbolConfiguration(symbolConfig) {
+            image.isTemplate = true
+            button.image = image
+            button.imagePosition = .imageOnly
+            button.title = ""
+        } else {
+            button.image = nil          // fallback for older systems
+            button.title = "T"
+        }
+    }
 
     private func rebuildMenu() {
         let menu = NSMenu()
 
         let state = config.paused ? "Paused" : "Syncing"
-        menu.addItem(disabled: "clipboardd — \(state)")
+        menu.addItem(disabled: "Tandem — \(state)")
         menu.addItem(disabled: "Peers connected: \(engine.peerCount)")
         if let src = engine.lastSyncSource {
             menu.addItem(disabled: "Last sync: \(src)")
@@ -37,7 +59,7 @@ final class MenuBarController {
                      selector: #selector(copyPairing), target: self)
 
         menu.addItem(.separator())
-        menu.addItem(action: "Quit clipboardd", selector: #selector(quit),
+        menu.addItem(action: "Quit Tandem", selector: #selector(quit),
                      target: self, key: "q")
 
         statusItem.menu = menu
