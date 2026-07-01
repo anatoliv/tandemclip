@@ -17,7 +17,13 @@ final class Transport {
     private var listener: NWListener?
     private var browser: NWBrowser?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
-    private var dialedEndpoints: Set<String> = []
+    private var readyIDs: Set<ObjectIdentifier> = []         // connections past TLS handshake
+
+    // Reconnection state (all touched only on `queue`):
+    private var visibleEndpoints: [String: NWEndpoint] = [:]  // key -> currently-advertised peer
+    private var activeOutbound: Set<String> = []              // keys with a live/pending outbound dial
+    private var outboundKey: [ObjectIdentifier: String] = [:] // conn -> its outbound endpoint key
+    private var reconnectTimer: DispatchSourceTimer?
 
     var onMessage: ((ClipMessage) -> Void)?
     var onPeersChanged: ((Int) -> Void)?
@@ -30,6 +36,27 @@ final class Transport {
         Log.trace("transport", "starting as \"\(config.deviceName)\", service \(config.serviceType)")
         startListener()
         startBrowser()
+        startReconnectTimer()
+    }
+
+    /// Periodically re-dial any advertised peer we have no live outbound
+    /// connection to. Without this, a dropped connection (sleep/wake, Wi-Fi
+    /// roam) is never re-established, because the browser only fires when the
+    /// *set* of advertised peers changes — a still-advertised peer whose socket
+    /// died would otherwise be lost until the process restarts.
+    private func startReconnectTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 5, repeating: 5)
+        timer.setEventHandler { [weak self] in self?.reconcile() }
+        timer.resume()
+        reconnectTimer = timer
+    }
+
+    private func reconcile() {
+        for (key, endpoint) in visibleEndpoints where !activeOutbound.contains(key) {
+            Log.trace("tls", "reconnect: dialing \(endpoint)")
+            dial(key: key, endpoint: endpoint)
+        }
     }
 
     // MARK: - TLS
@@ -52,7 +79,9 @@ final class Transport {
         )
 
         let params = NWParameters(tls: tls)
-        params.includePeerToPeer = true
+        // Infrastructure LAN only. Peer-to-peer (AWDL) resolutions flap and add
+        // noise; both Macs are on the same Wi-Fi, so plain Bonjour is stabler.
+        params.includePeerToPeer = false
         return params
     }
 
@@ -84,51 +113,58 @@ final class Transport {
 
     private func startBrowser() {
         let params = NWParameters()
-        params.includePeerToPeer = true
+        params.includePeerToPeer = false
         let b = NWBrowser(for: .bonjour(type: config.serviceType, domain: nil), using: params)
         b.browseResultsChangedHandler = { [weak self] results, _ in
             guard let self = self else { return }
+            var visible: [String: NWEndpoint] = [:]
             for result in results {
                 // Skip our own advertisement.
                 if case let .service(name, _, _, _) = result.endpoint,
                    name == self.config.deviceName {
                     continue
                 }
-                Log.trace("discovery", "found peer \(result.endpoint)")
-                self.dial(result.endpoint)
+                visible["\(result.endpoint)"] = result.endpoint
             }
+            self.visibleEndpoints = visible
+            Log.trace("discovery", "peers advertised: \(visible.count)")
+            self.reconcile()   // dial anything new immediately; timer handles retries
         }
         b.start(queue: queue)
         browser = b
     }
 
-    private func dial(_ endpoint: NWEndpoint) {
-        let key = "\(endpoint)"
-        if dialedEndpoints.contains(key) { return }
-        dialedEndpoints.insert(key)
-        Log.trace("tls", "dialing \(endpoint)")
-        setup(NWConnection(to: endpoint, using: tlsParameters()))
+    private func dial(key: String, endpoint: NWEndpoint) {
+        guard !activeOutbound.contains(key) else { return }
+        activeOutbound.insert(key)
+        setup(NWConnection(to: endpoint, using: tlsParameters()), outKey: key)
     }
 
     // MARK: - Connection lifecycle
 
-    private func setup(_ conn: NWConnection) {
+    private func setup(_ conn: NWConnection, outKey: String? = nil) {
         let id = ObjectIdentifier(conn)
+        if let key = outKey { outboundKey[id] = key }
         conn.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
             switch state {
             case .ready:
                 Log.trace("tls", "handshake ok, peer ready: \(conn.endpoint)")
+                self.readyIDs.insert(id)
                 self.receiveHeader(on: conn)
                 self.notifyPeers()
+            case let .waiting(err):
+                // Path unsatisfied (e.g. a stale Bonjour resolution). Cancel so
+                // teardown frees the key and reconcile() re-dials fresh, instead
+                // of sitting occupied forever while counting as a live peer.
+                Log.trace("tls", "connection waiting (\(conn.endpoint)): \(err) — cancelling to re-resolve")
+                conn.cancel()
             case let .failed(err):
                 Log.trace("tls", "connection failed (\(conn.endpoint)): \(err) — likely wrong pairing code")
-                self.connections[id] = nil
-                self.notifyPeers()
+                self.teardown(id)
             case .cancelled:
                 Log.trace("tls", "connection closed: \(conn.endpoint)")
-                self.connections[id] = nil
-                self.notifyPeers()
+                self.teardown(id)
             default:
                 break
             }
@@ -137,8 +173,19 @@ final class Transport {
         conn.start(queue: queue)
     }
 
+    /// Drop a connection and free its outbound key so reconcile() can re-dial.
+    private func teardown(_ id: ObjectIdentifier) {
+        connections[id] = nil
+        readyIDs.remove(id)
+        if let key = outboundKey[id] {
+            activeOutbound.remove(key)
+            outboundKey[id] = nil
+        }
+        notifyPeers()
+    }
+
     private func notifyPeers() {
-        let n = connections.count
+        let n = readyIDs.count
         DispatchQueue.main.async { [weak self] in self?.onPeersChanged?(n) }
     }
 
@@ -184,8 +231,11 @@ final class Transport {
         frame.append(body)
         queue.async { [weak self] in
             guard let self = self else { return }
-            Log.trace("sync", "send \(frame.count)B to \(self.connections.count) peer(s) hash=\(msg.hash.prefix(8))")
-            for conn in self.connections.values {
+            // Only send over connections that finished the TLS handshake; a
+            // still-connecting dial would silently swallow the frame.
+            let ready = self.readyIDs.compactMap { self.connections[$0] }
+            Log.trace("sync", "send \(frame.count)B to \(ready.count) peer(s) hash=\(msg.hash.prefix(8))")
+            for conn in ready {
                 conn.send(content: frame, completion: .contentProcessed { _ in })
             }
         }
