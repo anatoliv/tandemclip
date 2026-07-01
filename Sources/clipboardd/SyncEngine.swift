@@ -38,7 +38,11 @@ final class SyncEngine {
     }
 
     private func handleLocal(_ text: String, _ hash: String) {
-        guard hash != lastHash else { return }
+        guard hash != lastHash else {
+            Log.trace("sync", "local copy dropped (already seen) hash=\(hash.prefix(8))")
+            return
+        }
+        Log.trace("sync", "local copy \(text.count) chars hash=\(hash.prefix(8)) -> broadcast")
         lastHash = hash
         let msg = ClipMessage(
             version: 1, type: "clip", contentType: "text",
@@ -51,9 +55,16 @@ final class SyncEngine {
     }
 
     private func handleRemote(_ msg: ClipMessage) {
-        guard !config.paused else { return }
+        guard !config.paused else {
+            Log.trace("sync", "remote clip ignored (paused) from \(msg.source)")
+            return
+        }
         guard msg.type == "clip", msg.contentType == "text" else { return }
-        guard msg.hash != lastHash else { return }   // already seen -> drop (echo/dup)
+        guard msg.hash != lastHash else {
+            Log.trace("sync", "remote clip dropped (already seen/echo) hash=\(msg.hash.prefix(8))")
+            return
+        }
+        Log.trace("sync", "apply remote clip from \(msg.source) hash=\(msg.hash.prefix(8))")
         lastHash = msg.hash
         watcher.write(msg.text)                       // echo-suppressed inside write()
         lastSyncSource = msg.source

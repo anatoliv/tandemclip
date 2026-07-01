@@ -5,10 +5,12 @@
     <key>Label</key>
     <string>net.amnesia.clipboardd</string>
 
-    <!-- Update this path to wherever you install the binary (see README). -->
+    <!-- Default: the .app built by Scripts/make-app.sh and copied to
+         /Applications. For a bare-binary install use /usr/local/bin/clipboardd.
+         Add "--verbose" as a second <string> to trace discovery/TLS/sync. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/clipboardd</string>
+        <string>/Applications/clipboardd.app/Contents/MacOS/clipboardd</string>
     </array>
 
     <key>RunAtLoad</key>

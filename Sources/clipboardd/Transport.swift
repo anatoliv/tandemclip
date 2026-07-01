@@ -27,6 +27,7 @@ final class Transport {
     }
 
     func start() {
+        Log.trace("transport", "starting as \"\(config.deviceName)\", service \(config.serviceType)")
         startListener()
         startBrowser()
     }
@@ -61,14 +62,21 @@ final class Transport {
         do {
             let l = try NWListener(using: tlsParameters())
             l.service = NWListener.Service(name: config.deviceName, type: config.serviceType)
-            l.newConnectionHandler = { [weak self] conn in self?.setup(conn) }
+            l.newConnectionHandler = { [weak self] conn in
+                Log.trace("discovery", "inbound connection from \(conn.endpoint)")
+                self?.setup(conn)
+            }
             l.stateUpdateHandler = { state in
-                if case let .failed(err) = state { NSLog("clipboardd listener failed: \(err)") }
+                switch state {
+                case .ready:            Log.trace("transport", "listener ready, advertising")
+                case let .failed(err):  Log.error("listener failed: \(err)")
+                default:                break
+                }
             }
             l.start(queue: queue)
             listener = l
         } catch {
-            NSLog("clipboardd listener error: \(error)")
+            Log.error("listener error: \(error)")
         }
     }
 
@@ -86,6 +94,7 @@ final class Transport {
                    name == self.config.deviceName {
                     continue
                 }
+                Log.trace("discovery", "found peer \(result.endpoint)")
                 self.dial(result.endpoint)
             }
         }
@@ -97,6 +106,7 @@ final class Transport {
         let key = "\(endpoint)"
         if dialedEndpoints.contains(key) { return }
         dialedEndpoints.insert(key)
+        Log.trace("tls", "dialing \(endpoint)")
         setup(NWConnection(to: endpoint, using: tlsParameters()))
     }
 
@@ -108,9 +118,15 @@ final class Transport {
             guard let self = self else { return }
             switch state {
             case .ready:
+                Log.trace("tls", "handshake ok, peer ready: \(conn.endpoint)")
                 self.receiveHeader(on: conn)
                 self.notifyPeers()
-            case .failed, .cancelled:
+            case let .failed(err):
+                Log.trace("tls", "connection failed (\(conn.endpoint)): \(err) — likely wrong pairing code")
+                self.connections[id] = nil
+                self.notifyPeers()
+            case .cancelled:
+                Log.trace("tls", "connection closed: \(conn.endpoint)")
                 self.connections[id] = nil
                 self.notifyPeers()
             default:
@@ -148,6 +164,7 @@ final class Transport {
             guard let self = self else { return }
             if let body = data, body.count == length,
                let msg = try? JSONDecoder().decode(ClipMessage.self, from: body) {
+                Log.trace("sync", "recv \(length)B from \(msg.source) hash=\(msg.hash.prefix(8))")
                 DispatchQueue.main.async { self.onMessage?(msg) }
             }
             if err == nil && !done {
@@ -167,6 +184,7 @@ final class Transport {
         frame.append(body)
         queue.async { [weak self] in
             guard let self = self else { return }
+            Log.trace("sync", "send \(frame.count)B to \(self.connections.count) peer(s) hash=\(msg.hash.prefix(8))")
             for conn in self.connections.values {
                 conn.send(content: frame, completion: .contentProcessed { _ in })
             }

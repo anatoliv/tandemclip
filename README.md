@@ -58,8 +58,14 @@ LAN.
 
 ```sh
 swift build
-.build/debug/clipboardd        # a 📋 appears in the menu bar
+.build/debug/clipboardd            # a 📋 appears in the menu bar
+.build/debug/clipboardd --verbose  # trace discovery / TLS handshake / sync
 ```
+
+`--verbose` (or `CLIPBOARDD_VERBOSE=1`) logs discovery, PSK-TLS handshake
+success/failure, and every clip send/recv/dedup decision — run two machines this
+way to watch a copy propagate. A failed handshake is logged as "likely wrong
+pairing code".
 
 Set a matching pairing code on each machine (until in-app entry lands):
 
@@ -71,16 +77,48 @@ defaults write net.amnesia.clipboardd pairingCode "K7QM-3PXF"
 run unbundled it falls back to the binary name. Copy the code shown in the menu
 from your first Mac and set it on the others.)
 
-## Install as a login agent
+## Package as a .app (recommended)
+
+A proper `.app` bundle is what makes launch-at-login work cleanly and — via its
+Info.plist — declares the Local Network + Bonjour usage that macOS 14+ requires
+for discovery to work at all:
+
+```sh
+Scripts/make-app.sh                 # build + ad-hoc sign (this machine only)
+open build/clipboardd.app           # 📋 appears in the menu bar
+```
+
+For other / managed Macs, sign with a Developer ID and notarize:
+
+```sh
+IDENTITY="Developer ID Application: Your Name (TEAMID)" Scripts/make-app.sh
+# then run the notarytool + stapler commands the script prints
+```
+
+Install and launch at login:
+
+```sh
+cp -R build/clipboardd.app /Applications/
+cp LaunchAgent/net.amnesia.clipboardd.plist ~/Library/LaunchAgents/
+# point the plist at the bundle's executable:
+#   /Applications/clipboardd.app/Contents/MacOS/clipboardd
+launchctl load ~/Library/LaunchAgents/net.amnesia.clipboardd.plist
+```
+
+(Alternatively, just add `clipboardd.app` to **System Settings → General →
+Login Items**.)
+
+Logs: `/tmp/clipboardd.out.log`, `/tmp/clipboardd.err.log`.
+
+### Bare-binary install (no bundle)
+
+Works for quick tests, but discovery may hit the Local Network prompt without
+the Info.plist declarations, so prefer the `.app`:
 
 ```sh
 swift build -c release
 sudo cp .build/release/clipboardd /usr/local/bin/clipboardd
-cp LaunchAgent/net.amnesia.clipboardd.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/net.amnesia.clipboardd.plist
 ```
-
-Logs: `/tmp/clipboardd.out.log`, `/tmp/clipboardd.err.log`.
 
 ### Managed / corporate Macs — check first
 

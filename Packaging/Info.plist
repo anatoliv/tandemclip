@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>clipboardd</string>
+    <key>CFBundleDisplayName</key>
+    <string>clipboardd</string>
+    <key>CFBundleIdentifier</key>
+    <string>net.amnesia.clipboardd</string>
+    <key>CFBundleExecutable</key>
+    <string>clipboardd</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Menu-bar-only: no Dock icon, no main window. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Required (macOS 14+) to advertise/browse Bonjour without the Local
+         Network prompt silently blocking discovery. Must list every service
+         type the app uses. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>clipboardd syncs your clipboard between your Macs on the local network only.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_clipboardd._tcp</string>
+    </array>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>LAN-only clipboard sync. No cloud, no relay.</string>
+</dict>
+</plist>
