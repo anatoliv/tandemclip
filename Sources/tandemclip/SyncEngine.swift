@@ -300,10 +300,60 @@ final class SyncEngine {
     }
 
     /// Reconstruct a snapshot from a clip message (falls back to legacy text).
+    /// Opaque source filenames (temp UUIDs, hash blobs, generic "pasteboard")
+    /// are rewritten to a friendly "<device> <kind>.<ext>" so the pasted/opened
+    /// file is legible. Only affects this Mac — relays forward the original msg.
     private func snapshot(from msg: Message) -> ClipSnapshot? {
-        if let snap = ClipSnapshot(wire: msg.parts, wireFiles: msg.files) { return snap }
+        if let snap = ClipSnapshot(wire: msg.parts, wireFiles: msg.files) {
+            guard !snap.files.isEmpty else { return snap }
+            return ClipSnapshot(parts: snap.parts,
+                                files: friendlyNamedFiles(snap.files, from: msg.deviceName))
+        }
         if let t = msg.text { return ClipSnapshot(parts: [.text: Data(t.utf8)]) }
         return nil
+    }
+
+    /// Rewrite opaque source filenames; keep names that already look meaningful.
+    private func friendlyNamedFiles(_ files: [ClipFile], from source: String) -> [ClipFile] {
+        files.enumerated().map { i, f in
+            let ns = f.name as NSString
+            guard Self.looksOpaqueName(ns.deletingPathExtension) else { return f }
+            let ext = ns.pathExtension
+            var name = "\(source) \(Self.kindWord(forExtension: ext))"
+            if files.count > 1 { name += " \(i + 1)" }   // keep collisions apart
+            if !ext.isEmpty { name += ".\(ext)" }
+            return ClipFile(name: name, data: f.data)
+        }
+    }
+
+    /// A filename base is "opaque" if it carries no human meaning: empty, a
+    /// generic placeholder, a UUID, or a long hex/hash blob.
+    static func looksOpaqueName(_ base: String) -> Bool {
+        let b = base.trimmingCharacters(in: .whitespaces)
+        if b.isEmpty { return true }
+        let generic: Set<String> = ["pasteboard", "untitled", "image", "file",
+                                    "clipboard", "photo", "unknown", "temp", "tmp"]
+        if generic.contains(b.lowercased()) { return true }
+        let uuid = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        if b.range(of: uuid, options: .regularExpression) != nil { return true }
+        if b.count >= 16, b.range(of: "^[0-9a-fA-F]+$", options: .regularExpression) != nil { return true }
+        return false
+    }
+
+    /// A human word for the file's kind, from its extension.
+    static func kindWord(forExtension ext: String) -> String {
+        switch ext.lowercased() {
+        case "pdf": return "PDF"
+        case "png", "jpg", "jpeg", "gif", "heic", "heif", "tiff", "tif", "webp", "bmp": return "image"
+        case "doc", "docx", "pages", "odt": return "document"
+        case "xls", "xlsx", "numbers", "csv": return "spreadsheet"
+        case "ppt", "pptx", "key": return "presentation"
+        case "txt", "rtf", "md", "markdown": return "text"
+        case "zip", "tar", "gz", "tgz", "7z", "rar": return "archive"
+        case "mov", "mp4", "m4v", "avi", "mkv": return "video"
+        case "mp3", "m4a", "wav", "aac", "flac": return "audio"
+        default: return "file"
+        }
     }
 
     private func now() -> Double { Date().timeIntervalSince1970 }
