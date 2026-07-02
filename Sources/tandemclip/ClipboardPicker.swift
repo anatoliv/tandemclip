@@ -81,6 +81,11 @@ final class ClipboardPickerController {
             onPickHistory: { [weak self] hash in self?.engine.applyHistory(hash: hash); self?.hide() },
             onPullPeer:    { [weak self] id in self?.engine.pull(from: id); self?.hide() },
             onDropFiles:   { [weak self] urls in self?.handleDrop(urls) },
+            // Deleting keeps the picker open (you may be pruning several).
+            onDeleteHistory: { [weak self] hash in
+                self?.engine.deleteHistory(hash: hash)
+                self?.refreshIfVisible()
+            },
             onClose:       { [weak self] in self?.hide() })
     }
 
@@ -144,6 +149,7 @@ final class PickerModel: ObservableObject {
     let onPickHistory: (String) -> Void
     let onPullPeer: (String) -> Void
     let onDropFiles: ([URL]) -> Void
+    let onDeleteHistory: (String) -> Void
     let onClose: () -> Void
 
     private var dropClear: DispatchWorkItem?
@@ -151,10 +157,12 @@ final class PickerModel: ObservableObject {
     init(onPickHistory: @escaping (String) -> Void,
          onPullPeer: @escaping (String) -> Void,
          onDropFiles: @escaping ([URL]) -> Void,
+         onDeleteHistory: @escaping (String) -> Void,
          onClose: @escaping () -> Void) {
         self.onPickHistory = onPickHistory
         self.onPullPeer = onPullPeer
         self.onDropFiles = onDropFiles
+        self.onDeleteHistory = onDeleteHistory
         self.onClose = onClose
     }
 
@@ -244,6 +252,11 @@ final class PickerModel: ObservableObject {
         let f = filtered
         if f.indices.contains(i) { onPickHistory(f[i].hash) }
     }
+    func deleteSelected() {
+        let f = filtered
+        guard f.indices.contains(selection) else { return }
+        onDeleteHistory(f[selection].hash)
+    }
     func type(_ s: String) { query += s; selection = 0 }
     func backspace() { if !query.isEmpty { query.removeLast(); selection = 0 } }
 }
@@ -273,7 +286,8 @@ struct KeyCatcher: NSViewRepresentable {
             case 36, 76: m.pickSelected()           // return / enter
             case 125: m.move(1)                     // down
             case 126: m.move(-1)                    // up
-            case 51, 117: m.backspace()             // delete
+            case 51, 117:                           // delete: ⌘ removes the clip, plain edits the query
+                if e.modifierFlags.contains(.command) { m.deleteSelected() } else { m.backspace() }
             default:
                 if e.modifierFlags.contains(.command), let c = e.charactersIgnoringModifiers,
                    let n = Int(c), n >= 1, n <= 9 {  // ⌘1–9 quick pick
@@ -344,7 +358,8 @@ struct PickerView: View {
                             }
                             .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 1)
                             ForEach(group.entries, id: \.item.id) { e in
-                                HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection)
+                                HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
+                                           onDelete: { model.onDeleteHistory(e.item.hash) })
                                     .contentShape(Rectangle())
                                     .onTapGesture { model.onPickHistory(e.item.hash) }
                                     .handCursorOnHover()
@@ -363,7 +378,7 @@ struct PickerView: View {
 
             Divider()
             HStack(spacing: 14) {
-                hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1–9", "quick"); hint("⎋", "close")
+                hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1–9", "quick"); hint("⌘⌫", "delete"); hint("⎋", "close")
                 Spacer()
                 if !model.clipUsage.isEmpty {
                     HStack(spacing: 4) {
@@ -473,6 +488,8 @@ private struct HistoryRow: View {
     let item: HistoryItem
     let index: Int
     let selected: Bool
+    let onDelete: () -> Void
+    @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
             thumb
@@ -485,13 +502,22 @@ private struct HistoryRow: View {
                 }
             }
             Spacer()
-            if index < 9 {
+            if hovering {
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Delete from history on all Macs")
+            } else if index < 9 {
                 Text("⌘\(index + 1)").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary.opacity(0.7))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(selected ? Color.accentColor.opacity(0.22) : Color.clear)
         .cornerRadius(6).padding(.horizontal, 6)
+        .onHover { hovering = $0 }
     }
     @ViewBuilder private var thumb: some View {
         if let d = item.imageData, let img = NSImage(data: d) {
