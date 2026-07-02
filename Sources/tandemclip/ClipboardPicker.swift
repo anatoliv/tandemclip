@@ -75,8 +75,37 @@ final class ClipboardPickerController {
 // MARK: - Model
 
 final class PickerModel: ObservableObject {
+    /// Quick content-type filter for the RECENT list.
+    enum ContentFilter: String, CaseIterable, Identifiable {
+        case all, text, image, file
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .all:   return "square.grid.2x2"
+            case .text:  return "textformat"
+            case .image: return "photo"
+            case .file:  return "doc"
+            }
+        }
+        var label: String {
+            switch self {
+            case .all: return "All"; case .text: return "Text"
+            case .image: return "Images"; case .file: return "Files"
+            }
+        }
+        func matches(_ item: HistoryItem) -> Bool {
+            switch self {
+            case .all:   return true
+            case .text:  return item.kindLabel == "text" || item.kindLabel == "rich text"
+            case .image: return item.kindLabel == "image"
+            case .file:  return item.kindLabel == "file" || item.kindLabel.hasSuffix("files")
+            }
+        }
+    }
+
     @Published var query = ""
     @Published var selection = 0
+    @Published var kindFilter: ContentFilter = .all { didSet { selection = 0 } }
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var peers: [(id: String, clip: PeerClip)] = []
 
@@ -110,8 +139,7 @@ final class PickerModel: ObservableObject {
     /// therefore match the on-screen top-to-bottom order, so arrow navigation,
     /// the selection highlight, and ⌘1–9 all agree.
     var filtered: [HistoryItem] {
-        let base = query.isEmpty ? items
-            : items.filter { $0.label.localizedCaseInsensitiveContains(query) || $0.source.localizedCaseInsensitiveContains(query) }
+        let base = items.filter { kindFilter.matches($0) && matchesQuery($0) }
         var order: [String] = []
         var map: [String: [HistoryItem]] = [:]
         for it in base {
@@ -119,6 +147,12 @@ final class PickerModel: ObservableObject {
             map[it.source, default: []].append(it)
         }
         return order.flatMap { map[$0]! }
+    }
+
+    private func matchesQuery(_ it: HistoryItem) -> Bool {
+        query.isEmpty
+            || it.label.localizedCaseInsensitiveContains(query)
+            || it.source.localizedCaseInsensitiveContains(query)
     }
 
     /// The display-ordered `filtered` list carved into per-Mac sections, each
@@ -162,7 +196,10 @@ struct KeyCatcher: NSViewRepresentable {
         return v
     }
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { nsView.window?.makeFirstResponder(nsView) }
+        DispatchQueue.main.async {
+            guard let w = nsView.window, w.firstResponder !== nsView else { return }
+            w.makeFirstResponder(nsView)
+        }
     }
     final class CatcherView: NSView {
         weak var model: PickerModel?
@@ -193,23 +230,21 @@ struct KeyCatcher: NSViewRepresentable {
 
 struct PickerView: View {
     @ObservedObject var model: PickerModel
-    @State private var caretOn = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary)
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: 12))
                 HStack(spacing: 1) {
                     Text(model.query.isEmpty ? "Search clips…" : model.query)
+                        .font(.system(size: 13))
                         .foregroundColor(model.query.isEmpty ? .secondary : .primary)
-                    Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 17)
-                        .opacity(caretOn ? 1 : 0)
-                        .onReceive(Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()) { _ in caretOn.toggle() }
+                    SearchCaret()
                 }
-                Spacer()
-                Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.secondary).font(.system(size: 12))
+                Spacer(minLength: 8)
+                ForEach(PickerModel.ContentFilter.allCases) { f in filterChip(f) }
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
+            .padding(.horizontal, 12).padding(.vertical, 7)
             .contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
@@ -266,6 +301,20 @@ struct PickerView: View {
         .background(KeyCatcher(model: model).frame(width: 0, height: 0))
     }
 
+    private func filterChip(_ f: PickerModel.ContentFilter) -> some View {
+        let active = model.kindFilter == f
+        return Button { model.kindFilter = f } label: {
+            Image(systemName: f.symbol)
+                .font(.system(size: 11, weight: active ? .semibold : .regular))
+                .foregroundColor(active ? .white : .secondary)
+                .frame(width: 24, height: 20)
+                .background(active ? Color.accentColor : Color.secondary.opacity(0.12))
+                .cornerRadius(5)
+        }
+        .buttonStyle(.plain)
+        .help(f.label)
+    }
+
     private func sectionHeader(_ t: String) -> some View {
         Text(t).font(.system(size: 10.5, weight: .semibold)).tracking(0.6)
             .foregroundColor(.secondary).padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 2)
@@ -276,6 +325,17 @@ struct PickerView: View {
                 .background(Color.secondary.opacity(0.15)).cornerRadius(3)
             Text(t).font(.system(size: 10)).foregroundColor(.secondary)
         }
+    }
+}
+
+/// Isolated so its 0.55s blink re-renders only the caret — not the whole
+/// picker (which caused the list to flicker while the search was open).
+private struct SearchCaret: View {
+    @State private var on = true
+    var body: some View {
+        Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 15)
+            .opacity(on ? 1 : 0)
+            .onReceive(Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()) { _ in on.toggle() }
     }
 }
 
