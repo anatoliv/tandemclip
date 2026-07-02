@@ -134,9 +134,9 @@ final class PickerModel: ObservableObject {
         func matches(_ item: HistoryItem) -> Bool {
             switch self {
             case .all:   return true
-            case .text:  return item.kindLabel == "text" || item.kindLabel == "rich text"
-            case .image: return item.kindLabel == "image"
-            case .file:  return item.kindLabel == "file" || item.kindLabel.hasSuffix("files")
+            case .text:  return item.category == .text || item.category == .richText
+            case .image: return item.category == .image   // includes picture files
+            case .file:  return item.category == .file
             }
         }
     }
@@ -213,25 +213,47 @@ final class PickerModel: ObservableObject {
         }
     }
 
-    /// One per-Mac section of the list. `entries` is empty when collapsed; the
-    /// badge counts always reflect what the group holds under the current
-    /// query/kind filter, so a folded group still shows what's inside.
+    /// One per-Mac section of the list, carved into per-type sub-sections
+    /// (Text / Images / Files — rich text lives with text). `sections` is empty
+    /// when collapsed; the badge counts always reflect what the group holds
+    /// under the current query/kind filter, so a folded group still shows
+    /// what's inside.
     struct Group {
         let source: String
         let isCollapsed: Bool
         /// (SF Symbol, count) per content kind, zero-count kinds omitted.
         let badges: [(symbol: String, count: Int)]
-        let entries: [(index: Int, item: HistoryItem)]
+        let sections: [(title: String, entries: [(index: Int, item: HistoryItem)])]
+        /// All rows regardless of sub-section, in display order.
+        var entries: [(index: Int, item: HistoryItem)] { sections.flatMap(\.entries) }
+    }
+
+    /// Sub-section rank/title within a Mac group. Recency is preserved inside
+    /// each sub-section.
+    private static func section(of item: HistoryItem) -> (rank: Int, title: String) {
+        switch item.category {
+        case .text, .richText: return (0, "Text")
+        case .image:           return (1, "Images")
+        case .file:            return (2, "Files")
+        }
     }
 
     /// Query/kind-filtered clips in **display order**: grouped by source Mac
-    /// (groups and items each in first-seen/recency order).
+    /// (groups in first-seen/recency order), each group's items ordered by
+    /// sub-section then recency.
     private var displayBase: (order: [String], map: [String: [HistoryItem]]) {
         var order: [String] = []
         var map: [String: [HistoryItem]] = [:]
         for it in items where kindFilter.matches(it) && matchesQuery(it) {
             if map[it.source] == nil { order.append(it.source) }
             map[it.source, default: []].append(it)
+        }
+        // Stable sort into sub-section order (sort() alone isn't stable).
+        for (src, its) in map {
+            map[src] = its.enumerated()
+                .sorted { (Self.section(of: $0.element).rank, $0.offset)
+                        < (Self.section(of: $1.element).rank, $1.offset) }
+                .map(\.element)
         }
         return (order, map)
     }
@@ -258,11 +280,16 @@ final class PickerModel: ObservableObject {
         return base.order.map { src in
             let its = base.map[src]!
             let folded = collapsed.contains(src)
-            var entries: [(index: Int, item: HistoryItem)] = []
+            var sections: [(title: String, entries: [(index: Int, item: HistoryItem)])] = []
             if !folded {
-                entries = its.map { let e = (index: flat, item: $0); flat += 1; return e }
+                for it in its {
+                    let title = Self.section(of: it).title
+                    if sections.last?.title != title { sections.append((title, [])) }
+                    sections[sections.count - 1].entries.append((flat, it))
+                    flat += 1
+                }
             }
-            return Group(source: src, isCollapsed: folded, badges: Self.badges(for: its), entries: entries)
+            return Group(source: src, isCollapsed: folded, badges: Self.badges(for: its), sections: sections)
         }
     }
 
@@ -274,16 +301,17 @@ final class PickerModel: ObservableObject {
 
     /// Per-kind counts for a group's items. Finer-grained than the filter
     /// chips: plain and rich text get separate badges, using the same symbols
-    /// as the row icons so the two stay visually consistent.
+    /// as the row icons so the two stay visually consistent. Picture files
+    /// count as images.
     private static func badges(for items: [HistoryItem]) -> [(symbol: String, count: Int)] {
-        let kinds: [(symbol: String, matches: (String) -> Bool)] = [
-            ("text.alignleft", { $0 == "text" }),
-            ("textformat",     { $0 == "rich text" }),
-            ("photo",          { $0 == "image" }),
-            ("doc",            { $0 == "file" || $0.hasSuffix("files") }),
+        let kinds: [(symbol: String, category: ClipCategory)] = [
+            ("text.alignleft", .text),
+            ("textformat",     .richText),
+            ("photo",          .image),
+            ("doc",            .file),
         ]
         return kinds.compactMap { kind in
-            let n = items.filter { kind.matches($0.kindLabel) }.count
+            let n = items.filter { $0.category == kind.category }.count
             return n > 0 ? (kind.symbol, n) : nil
         }
     }
@@ -402,14 +430,19 @@ struct PickerView: View {
                             .foregroundColor(.secondary).font(.callout).padding(.horizontal, 14).padding(.vertical, 10)
                     } else {
                         // Grouped by source Mac; headers fold/unfold their group.
+                        // Within a group, items sit in per-type sub-sections
+                        // (labels shown only when there's more than one type).
                         ForEach(model.grouped, id: \.source) { group in
                             groupHeader(group)
-                            ForEach(group.entries, id: \.item.id) { e in
-                                HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
-                                           onDelete: { model.onDeleteHistory(e.item.hash) })
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { model.onPickHistory(e.item.hash) }
-                                    .handCursorOnHover()
+                            ForEach(group.sections, id: \.title) { section in
+                                if group.sections.count > 1 { subHeader(section.title) }
+                                ForEach(section.entries, id: \.item.id) { e in
+                                    HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
+                                               onDelete: { model.onDeleteHistory(e.item.hash) })
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { model.onPickHistory(e.item.hash) }
+                                        .handCursorOnHover()
+                                }
                             }
                         }
                     }
@@ -540,6 +573,14 @@ struct PickerView: View {
         Text(t).font(.system(size: 10.5, weight: .semibold)).tracking(0.6)
             .foregroundColor(.secondary).padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 2)
     }
+
+    /// Per-type sub-header inside a Mac group — quieter and indented so the
+    /// group header stays the dominant level.
+    private func subHeader(_ t: String) -> some View {
+        Text(t.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(0.8)
+            .foregroundColor(.secondary.opacity(0.65))
+            .padding(.leading, 29).padding(.top, 4).padding(.bottom, 1)
+    }
     private func hint(_ k: String, _ t: String) -> some View {
         HStack(spacing: 4) {
             Text(k).font(.system(size: 10, design: .monospaced)).padding(.horizontal, 4).padding(.vertical, 1)
@@ -597,7 +638,7 @@ private struct HistoryRow: View {
             Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
                 .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 5))
         } else {
-            Image(systemName: icon(item.kindLabel)).frame(width: 30, height: 30)
+            Image(systemName: icon(item.category)).frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.12)).cornerRadius(5).foregroundColor(.secondary)
         }
     }
@@ -619,11 +660,13 @@ private struct PeerRow: View {
     }
 }
 
-private func icon(_ kind: String) -> String {
-    if kind == "image" { return "photo" }
-    if kind == "rich text" { return "textformat" }
-    if kind == "file" || kind.hasSuffix("files") { return "doc" }
-    return "text.alignleft"
+private func icon(_ category: ClipCategory) -> String {
+    switch category {
+    case .image:    return "photo"
+    case .richText: return "textformat"
+    case .file:     return "doc"
+    case .text:     return "text.alignleft"
+    }
 }
 private func age(_ ts: Double) -> String {
     let s = Int(Date().timeIntervalSince1970 - ts)
