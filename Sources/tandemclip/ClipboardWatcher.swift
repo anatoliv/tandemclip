@@ -102,9 +102,12 @@ final class ClipboardWatcher {
 
     /// Apply remote content locally (all representations), suppressing the echo
     /// it would otherwise trigger by advancing our baseline changeCount.
-    func write(_ snapshot: ClipSnapshot) {
-        put(snapshot)
+    /// Returns the on-disk URLs of any materialized files (empty for non-file).
+    @discardableResult
+    func write(_ snapshot: ClipSnapshot) -> [URL] {
+        let urls = put(snapshot)
         lastChangeCount = pasteboard.changeCount   // echo-suppress
+        return urls
     }
 
     /// Re-apply a snapshot as if freshly copied here — does NOT echo-suppress,
