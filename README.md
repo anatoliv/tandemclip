@@ -184,7 +184,7 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] In-app pairing-code entry + Keychain storage; HKDF key derivation
 - [x] Rich text (`public.rtf`)
 - [x] Images (`public.png`, `public.tiff`)
-- [ ] File URLs (`public.file-url`) — needs real file transfer, not just the URL
+- [x] Files (`public.file-url`) — transferred by content, opt-in (Settings → Sync files)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 - [ ] Optional clipboard history (off by default)
 ```
