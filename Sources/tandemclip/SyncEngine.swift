@@ -57,6 +57,13 @@ final class SyncEngine {
 
     var peerCount: Int { peers.values.filter { $0.online }.count }
 
+    /// Current local clipboard (kind label + total bytes), for menu-bar
+    /// visibility. Nil until something syncable has been copied this session.
+    var currentClipInfo: (kind: String, bytes: Int)? {
+        guard let s = localSnapshot else { return nil }
+        return (s.contentLabel, s.totalBytes)
+    }
+
     init(config: Config) {
         self.config = config
         transport = Transport(config: config)
@@ -219,8 +226,14 @@ final class SyncEngine {
     private func recordHistory(_ snap: ClipSnapshot, _ hash: String, source: String) {
         guard config.historyEnabled else { return }
         history.removeAll { $0.hash == hash }
-        let label = snap.plainText.map { String($0.prefix(64)).replacingOccurrences(of: "\n", with: " ") }
-            ?? snap.contentLabel
+        let label: String
+        if let t = snap.plainText {
+            label = String(t.prefix(64)).replacingOccurrences(of: "\n", with: " ")
+        } else if let first = snap.files.first {
+            label = snap.files.count == 1 ? first.name : "\(first.name) +\(snap.files.count - 1)"
+        } else {
+            label = snap.contentLabel
+        }
         history.insert(HistoryItem(snapshot: snap, hash: hash, timestamp: now(), label: label, source: source), at: 0)
         if history.count > config.historyLimit { history.removeLast(history.count - config.historyLimit) }
     }
