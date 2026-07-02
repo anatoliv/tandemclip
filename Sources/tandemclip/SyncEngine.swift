@@ -99,6 +99,7 @@ final class SyncEngine {
         watcher.maxBytes = config.maxClipBytes
         watcher.isPaused = { false }   // we gate in handleLocal; still want to observe copies to serve requests
         watcher.enabledKinds = { [weak self] in self?.config.enabledKinds ?? [.text] }
+        watcher.cacheCap = { [weak self] in self?.config.receivedCacheCap ?? 200_000_000 }
         watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
         transport.onMessage = { [weak self] msg, verifiedKey in self?.handleRemote(msg, verifiedKey: verifiedKey) }
@@ -119,8 +120,11 @@ final class SyncEngine {
     }
 
     /// Re-read settings that affect the watcher (called on config change).
+    /// Also re-applies the storage cap so lowering it evicts immediately
+    /// rather than on the next received clip.
     func applyConfig() {
         watcher.maxBytes = config.maxClipBytes
+        watcher.enforceCacheCap()
     }
 
     /// The pairing code changed — re-key the transport so peers reconnect with
