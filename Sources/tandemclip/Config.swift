@@ -148,6 +148,16 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
+    /// Keep a recent-clipboard history (in-memory, this session only). Off by default.
+    var historyEnabled: Bool {
+        get { defaults.bool(forKey: "historyEnabled") }
+        set { set("historyEnabled", newValue) }
+    }
+    var historyLimit: Int {
+        get { let v = defaults.integer(forKey: "historyLimit"); return v > 0 ? v : 25 }
+        set { set("historyLimit", newValue) }
+    }
+
     // MARK: - Startup & behavior
 
     var startPaused: Bool {

@@ -87,6 +87,29 @@ final class MenuBarController: NSObject {
         menu.addItem(action: config.paused ? "Resume" : "Pause",
                      selector: #selector(togglePause), target: self)
 
+        // History (in-memory, opt-in).
+        if config.historyEnabled {
+            let items = engine.history
+            let histMenu = NSMenu()
+            if items.isEmpty {
+                histMenu.addItem(disabled: "(empty)")
+            } else {
+                for item in items.prefix(15) {
+                    let mi = NSMenuItem(title: historyTitle(item), action: #selector(applyHistory(_:)), keyEquivalent: "")
+                    mi.target = self
+                    mi.representedObject = item.hash
+                    histMenu.addItem(mi)
+                }
+                histMenu.addItem(.separator())
+                let clear = NSMenuItem(title: "Clear history", action: #selector(clearHistory), keyEquivalent: "")
+                clear.target = self
+                histMenu.addItem(clear)
+            }
+            let histItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
+            histItem.submenu = histMenu
+            menu.addItem(histItem)
+        }
+
         menu.addItem(.separator())
         menu.addItem(action: "Settings…", selector: #selector(openSettings), target: self, key: ",")
         menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
@@ -134,6 +157,18 @@ final class MenuBarController: NSObject {
         guard let id = sender.representedObject as? String else { return }
         engine.pull(from: id)
     }
+
+    private func historyTitle(_ item: HistoryItem) -> String {
+        let label = item.label.isEmpty ? "—" : item.label
+        return "\(label)   \(age(item.timestamp))"
+    }
+
+    @objc private func applyHistory(_ sender: NSMenuItem) {
+        guard let hash = sender.representedObject as? String else { return }
+        engine.applyHistory(hash: hash)
+    }
+
+    @objc private func clearHistory() { engine.clearHistory() }
 
     @objc private func setMirror() { config.mode = .mirror; refresh() }
     @objc private func setManual() { config.mode = .manual; refresh() }

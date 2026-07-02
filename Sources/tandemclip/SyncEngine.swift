@@ -1,6 +1,14 @@
 import Foundation
 import AppKit
 
+/// A recent clipboard entry (in-memory history).
+struct HistoryItem {
+    let snapshot: ClipSnapshot
+    let hash: String
+    let timestamp: Double
+    let label: String     // preview text or content kind
+}
+
 /// What we know about another Mac's clipboard.
 struct PeerClip {
     var name: String
@@ -33,6 +41,7 @@ final class SyncEngine {
 
     private(set) var peers: [String: PeerClip] = [:]   // by deviceID
     private(set) var lastSyncSource: String?
+    private(set) var history: [HistoryItem] = []       // recent clipboard, newest first (in-memory)
 
     /// Returns whether sync is currently allowed on this network (SSID guard).
     var networkAllowed: () -> Bool = { true }
@@ -97,6 +106,7 @@ final class SyncEngine {
         localSnapshot = snap
         localHash = hash
         localTimestamp = now()
+        recordHistory(snap, hash)
 
         guard config.role.canSend, !config.paused, networkAllowed() else {
             onStatusChange?()
@@ -172,10 +182,31 @@ final class SyncEngine {
         localHash = hash            // our clipboard now equals this; don't re-announce it
         localSnapshot = snap
         localTimestamp = now()
+        recordHistory(snap, hash)
         watcher.write(snap)         // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
     }
+
+    // MARK: - History (in-memory, opt-in)
+
+    private func recordHistory(_ snap: ClipSnapshot, _ hash: String) {
+        guard config.historyEnabled else { return }
+        history.removeAll { $0.hash == hash }
+        let label = snap.plainText.map { String($0.prefix(48)).replacingOccurrences(of: "\n", with: " ") }
+            ?? snap.contentLabel
+        history.insert(HistoryItem(snapshot: snap, hash: hash, timestamp: now(), label: label), at: 0)
+        if history.count > config.historyLimit { history.removeLast(history.count - config.historyLimit) }
+    }
+
+    /// Re-copy a history entry (re-syncs it in Mirror mode).
+    func applyHistory(hash: String) {
+        guard let item = history.first(where: { $0.hash == hash }) else { return }
+        Log.trace("sync", "history re-apply \(item.label)")
+        watcher.repost(item.snapshot)   // not echo-suppressed → watcher re-detects & re-syncs
+    }
+
+    func clearHistory() { history.removeAll(); onStatusChange?() }
 
     // MARK: - Peer table
 
