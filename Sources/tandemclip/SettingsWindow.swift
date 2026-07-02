@@ -83,18 +83,15 @@ final class SettingsModel: ObservableObject {
     @Published var ssidHint = ""
 
     func addCurrentSSID() {
-        LocationAuthorizer.shared.ensureAuthorized { [weak self] granted in
-            guard let self else { return }
-            guard granted else {
-                self.ssidHint = "Allow Location for TandemClip in System Settings → Privacy & Security → Location Services, then try again."
-                return
-            }
-            guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
-                self.ssidHint = "Couldn't read the Wi-Fi name — are you on Wi-Fi (not Ethernet/VPN)?"
-                return
-            }
-            if !self.allowedSSIDs.contains(s) { self.allowedSSIDs.append(s) }
-            self.ssidHint = "Added “\(s)”."
+        guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
+            ssidHint = "Couldn't read the Wi-Fi name — are you connected to Wi-Fi (not Ethernet/VPN)?"
+            return
+        }
+        if allowedSSIDs.contains(s) {
+            ssidHint = "“\(s)” is already in the list."
+        } else {
+            allowedSSIDs.append(s)
+            ssidHint = "Added “\(s)”."
         }
     }
     func removeSSID(_ ssid: String) {
@@ -352,7 +349,7 @@ struct SettingsView: View {
             } header: {
                 Text("Wi-Fi networks")
             } footer: {
-                Text("Reading the Wi-Fi name needs Location permission. Without it (or on Ethernet/VPN), sync pauses by default — turn on the option above to allow it instead.")
+                Text("Sync runs only on the Wi-Fi networks listed above. On Ethernet/VPN (no Wi-Fi to match), sync pauses by default — turn on the option above to allow it instead.")
             }
         }
         .formStyle(.grouped)
