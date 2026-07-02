@@ -26,7 +26,7 @@ final class ClipboardPickerController {
     func show() {
         let model = self.model ?? makeModel()
         self.model = model
-        model.reload(history: engine.history, peers: engine.sortedPeers(),
+        model.reload(history: engine.history, peers: engine.syncablePeers(),
                      showCount: config.pickerShowCount, clipUsage: usageString())
 
         if panel == nil {
@@ -60,7 +60,7 @@ final class ClipboardPickerController {
     /// on other Macs appear without reopening. Preserves query + selection.
     func refreshIfVisible() {
         guard let panel, panel.isVisible, let model else { return }
-        model.refresh(history: engine.history, peers: engine.sortedPeers(),
+        model.refresh(history: engine.history, peers: engine.syncablePeers(),
                       showCount: config.pickerShowCount, clipUsage: usageString())
     }
 
@@ -256,6 +256,13 @@ struct KeyCatcher: NSViewRepresentable {
 
 // MARK: - View
 
+extension View {
+    /// Show the pointing-hand (link) cursor while hovering a clickable row.
+    func handCursorOnHover() -> some View {
+        onHover { inside in inside ? NSCursor.pointingHand.push() : NSCursor.pop() }
+    }
+}
+
 struct PickerView: View {
     @ObservedObject var model: PickerModel
 
@@ -285,6 +292,7 @@ struct PickerView: View {
                         ForEach(model.peers, id: \.id) { peer in
                             PeerRow(clip: peer.clip).contentShape(Rectangle())
                                 .onTapGesture { model.onPullPeer(peer.id) }
+                                .handCursorOnHover()
                         }
                         Spacer().frame(height: 8)
                     }
@@ -304,6 +312,7 @@ struct PickerView: View {
                                 HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection)
                                     .contentShape(Rectangle())
                                     .onTapGesture { model.onPickHistory(e.item.hash) }
+                                    .handCursorOnHover()
                             }
                         }
                     }
