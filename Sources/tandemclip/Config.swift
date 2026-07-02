@@ -212,6 +212,14 @@ final class Config {
         set { set("collapsedGroups", newValue) }
     }
 
+    /// Folded per-type sub-sections within picker groups (composite
+    /// source␟title keys — see PickerModel.subKey). Same lifecycle as
+    /// `collapsedGroups`.
+    var collapsedSubgroups: [String] {
+        get { defaults.stringArray(forKey: "collapsedSubgroups") ?? [] }
+        set { set("collapsedSubgroups", newValue) }
+    }
+
     /// Keep a recent-clipboard history (in-memory, this session only). On by
     /// default now that the picker is the primary way to grab clips.
     var historyEnabled: Bool {
