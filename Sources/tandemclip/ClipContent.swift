@@ -42,6 +42,15 @@ struct ClipFileWire: Codable {
     let b64: String
 }
 
+/// Coarse user-facing category of a clip — drives the picker's filter chips,
+/// group badges, sub-sections, and row icons. Structured (not string-matched)
+/// so classification changes can't silently break filters. Note: a *file* whose
+/// content is a picture counts as `.image` — to the user it's an image either
+/// way; pasting still pastes the file.
+enum ClipCategory {
+    case text, richText, image, file
+}
+
 /// The set of representations for one clipboard state.
 struct ClipSnapshot {
     var parts: [ClipKind: Data]
@@ -56,15 +65,40 @@ struct ClipSnapshot {
         parts[.text].flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    /// Human label for menus / previews. RTF outranks image parts: apps that
-    /// copy formatted text (Excel, Word, …) often add a TIFF *rendering* of the
-    /// selection alongside, which is still a text copy to the user — while a
-    /// genuine image copy never carries RTF.
+    /// File extensions treated as pictures for classification/thumbnails.
+    static let imageExtensions: Set<String> =
+        ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "ico"]
+
+    /// True when this is a file clip and every file is a picture.
+    var filesAreAllImages: Bool {
+        !files.isEmpty && files.allSatisfy {
+            Self.imageExtensions.contains(($0.name as NSString).pathExtension.lowercased())
+        }
+    }
+
+    /// See ClipCategory. RTF outranks image parts: apps that copy formatted
+    /// text (Excel, Word, …) often add a TIFF *rendering* of the selection
+    /// alongside, which is still a text copy to the user — while a genuine
+    /// image copy never carries RTF.
+    var category: ClipCategory {
+        if !files.isEmpty { return filesAreAllImages ? .image : .file }
+        if parts[.rtf] != nil { return .richText }
+        if parts[.png] != nil || parts[.tiff] != nil { return .image }
+        return .text
+    }
+
+    /// Human label for menus / previews / peer metadata (display only —
+    /// classification logic uses `category`).
     var contentLabel: String {
-        if !files.isEmpty { return files.count == 1 ? "file" : "\(files.count) files" }
-        if parts[.rtf] != nil { return "rich text" }
-        if parts[.png] != nil || parts[.tiff] != nil { return "image" }
-        return "text"
+        if !files.isEmpty {
+            let noun = filesAreAllImages ? "image file" : "file"
+            return files.count == 1 ? noun : "\(files.count) \(noun)s"
+        }
+        switch category {
+        case .richText: return "rich text"
+        case .image:    return "image"
+        default:        return "text"
+        }
     }
 
     /// Stable content hash for dedup / echo-loop prevention.
