@@ -16,8 +16,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP_NAME="Tandem"                        # display / .app bundle name
-EXE_NAME="tandem"                        # Swift product + CFBundleExecutable
+APP_NAME="TandemClip"                        # display / .app bundle name
+EXE_NAME="tandemclip"                        # Swift product + CFBundleExecutable
 BUNDLE="build/${APP_NAME}.app"
 IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization

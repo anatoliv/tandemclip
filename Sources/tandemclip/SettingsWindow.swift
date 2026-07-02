@@ -60,7 +60,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(model: model))
             let w = NSWindow(contentViewController: hosting)
-            w.title = "Tandem Settings"
+            w.title = "TandemClip Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             w.delegate = self
@@ -122,7 +122,7 @@ struct SettingsView: View {
             Toggle("Launch at login", isOn: $model.launchAtLogin)
             Toggle("Start paused", isOn: $model.startPaused)
             Toggle("Verbose logging", isOn: $model.verboseLogging)
-            Text("Verbose logs go to /tmp/tandem.err.log.")
+            Text("Verbose logs go to /tmp/tandemclip.err.log.")
                 .font(.caption).foregroundColor(.secondary)
         }
     }

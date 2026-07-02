@@ -4,7 +4,7 @@ import Security
 
 /// LAN peer-to-peer transport: Bonjour discovery + PSK-TLS connections.
 ///
-/// - Advertises `_tandem._tcp` via an NWListener and discovers peers with
+/// - Advertises `_tandemclip._tcp` via an NWListener and discovers peers with
 ///   an NWBrowser. LAN-only; no relay, no internet.
 /// - Every connection is TLS with a pre-shared key derived from the pairing
 ///   code. A peer with the wrong code fails the handshake and never delivers a
@@ -12,7 +12,7 @@ import Security
 /// - Framing: 4-byte big-endian length prefix + JSON body.
 final class Transport {
     private let config: Config
-    private let queue = DispatchQueue(label: "tandem.transport")
+    private let queue = DispatchQueue(label: "tandemclip.transport")
 
     private var listener: NWListener?
     private var browser: NWBrowser?
@@ -71,7 +71,7 @@ final class Transport {
         let tls = NWProtocolTLS.Options()
 
         let pskData = config.psk.withUnsafeBytes { DispatchData(bytes: $0) }
-        let idData = Data("tandem".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
+        let idData = Data("tandemclip".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
         sec_protocol_options_add_pre_shared_key(
             tls.securityProtocolOptions,
             pskData as __DispatchData,

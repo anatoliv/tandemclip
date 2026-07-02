@@ -29,7 +29,7 @@ final class MenuBarController: NSObject {
         guard let button = statusItem.button else { return }
         let symbol = config.paused ? "pause.circle" : "arrow.triangle.2.circlepath"
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
-        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Tandem")?
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "TandemClip")?
             .withSymbolConfiguration(symbolConfig) {
             image.isTemplate = true
             button.image = image
@@ -46,7 +46,7 @@ final class MenuBarController: NSObject {
 
         let modeName = config.mode == .mirror ? "Mirror" : "Manual"
         let state = config.paused ? "Paused" : modeName
-        menu.addItem(disabled: "Tandem — \(state)")
+        menu.addItem(disabled: "TandemClip — \(state)")
         menu.addItem(disabled: "Peers connected: \(engine.peerCount)")
         if let src = engine.lastSyncSource {
             menu.addItem(disabled: "Last sync: \(src)")
@@ -89,7 +89,7 @@ final class MenuBarController: NSObject {
         menu.addItem(action: "Copy pairing code", selector: #selector(copyPairing), target: self)
 
         menu.addItem(.separator())
-        menu.addItem(action: "Quit Tandem", selector: #selector(quit), target: self, key: "q")
+        menu.addItem(action: "Quit TandemClip", selector: #selector(quit), target: self, key: "q")
 
         statusItem.menu = menu
     }

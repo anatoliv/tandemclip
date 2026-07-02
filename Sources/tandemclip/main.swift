@@ -8,6 +8,18 @@ if CommandLine.arguments.contains("--no-menubar") {
     let engine = SyncEngine(config: config)
     engine.start()
     Log.trace("app", "running headless as \"\(config.deviceName)\"")
+
+    // Test hook: in Manual mode, auto-pull from the first online peer after a
+    // delay (lets the Manual pull path be exercised without a GUI menu click).
+    if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_PULL"] != nil {
+        Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { _ in
+            if let peer = engine.sortedPeers().first(where: { $0.clip.online }) {
+                Log.trace("app", "test-pull from \(peer.clip.name)")
+                engine.pull(from: peer.id)
+            }
+        }
+    }
+
     RunLoop.main.run()
 } else {
     // Run as an "accessory" app: no Dock icon, menu-bar only. This is the

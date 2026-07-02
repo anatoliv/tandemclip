@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "tandem",
+    name: "tandemclip",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(
-            name: "tandem",
-            path: "Sources/tandem"
+            name: "tandemclip",
+            path: "Sources/tandemclip"
         )
     ]
 )

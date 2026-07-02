@@ -1,4 +1,4 @@
-# Tandem
+# TandemClip
 
 LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
 control — just plain-text clipboard content shared between machines you've
@@ -9,14 +9,14 @@ paired with a shared code. Runs as a menu-bar-only background agent.
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
-often disabled on managed machines. Tandem needs neither — any Macs on the same
+often disabled on managed machines. TandemClip needs neither — any Macs on the same
 LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 
 ## How it works
 
 ```
  ┌── ClipboardWatcher ──┐        ┌── Transport ───────────────┐
- │ polls NSPasteboard   │        │ Bonjour: _tandem._tcp      │
+ │ polls NSPasteboard   │        │ Bonjour: _tandemclip._tcp      │
  │ changeCount (~0.4s)  │        │ PSK-TLS over Network.fw    │
  │ skips concealed types│        │ en0 only, auto-reconnect   │
  └──────────┬───────────┘        └─────────────┬──────────────┘
@@ -60,11 +60,11 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 
 ```sh
 swift build
-.build/debug/tandem            # a sync-arrows glyph appears in the menu bar
-.build/debug/tandem --verbose  # trace discovery / TLS handshake / sync
+.build/debug/tandemclip            # a sync-arrows glyph appears in the menu bar
+.build/debug/tandemclip --verbose  # trace discovery / TLS handshake / sync
 ```
 
-`--verbose` (or `TANDEM_VERBOSE=1`) logs discovery, PSK-TLS handshake
+`--verbose` (or `TANDEMCLIP_VERBOSE=1`) logs discovery, PSK-TLS handshake
 success/failure, and every clip send/recv/dedup decision — run two machines this
 way to watch a copy propagate. A failed handshake is logged as "likely wrong
 pairing code".
@@ -72,7 +72,7 @@ pairing code".
 Set a matching pairing code on each machine (until in-app entry lands):
 
 ```sh
-defaults write net.amnesia.tandem pairingCode "K7QM-3PXF"
+defaults write com.tandemclip pairingCode "K7QM-3PXF"
 ```
 
 (The bundle/domain used by `UserDefaults` is the executable's identifier; when
@@ -88,7 +88,7 @@ for discovery to work at all. It also carries the app icon (regenerate it with
 
 ```sh
 Scripts/make-app.sh                 # build + ad-hoc sign (this machine only)
-open build/Tandem.app               # sync-arrows glyph appears in the menu bar
+open build/TandemClip.app               # sync-arrows glyph appears in the menu bar
 ```
 
 For other / managed Macs, sign with a Developer ID and notarize (the script
@@ -107,15 +107,15 @@ A successful run ends with `gatekeeper: source=Notarized Developer ID`.
 Install and launch at login:
 
 ```sh
-cp -R build/Tandem.app /Applications/
-cp LaunchAgent/net.amnesia.tandem.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/net.amnesia.tandem.plist
+cp -R build/TandemClip.app /Applications/
+cp LaunchAgent/com.tandemclip.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tandemclip.plist
 ```
 
-(Alternatively, just add `Tandem.app` to **System Settings → General →
+(Alternatively, just add `TandemClip.app` to **System Settings → General →
 Login Items**.)
 
-Logs: `/tmp/tandem.out.log`, `/tmp/tandem.err.log`.
+Logs: `/tmp/tandemclip.out.log`, `/tmp/tandemclip.err.log`.
 
 ### Bare-binary install (no bundle)
 
@@ -124,7 +124,7 @@ the Info.plist declarations, so prefer the `.app`:
 
 ```sh
 swift build -c release
-sudo cp .build/release/tandem /usr/local/bin/tandem
+sudo cp .build/release/tandemclip /usr/local/bin/tandemclip
 ```
 
 ### Managed / corporate Macs — check first

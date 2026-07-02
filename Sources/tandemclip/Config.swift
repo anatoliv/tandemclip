@@ -23,15 +23,15 @@ enum Role: String {
 /// they trust each other; wrong code = the TLS handshake fails and the peer
 /// is rejected. This is what makes "same Wi-Fi" NOT sufficient to join.
 ///
-/// Everything here is stored in `UserDefaults` (domain `net.amnesia.tandem`),
+/// Everything here is stored in `UserDefaults` (domain `com.tandemclip`),
 /// so any setting is also editable with `defaults write` or an MDM profile.
 final class Config {
     /// Posted (on main) whenever any persisted setting changes.
-    static let didChange = Notification.Name("TandemConfigDidChange")
+    static let didChange = Notification.Name("TandemClipConfigDidChange")
 
     private let defaults = UserDefaults.standard
 
-    let serviceType = "_tandem._tcp"
+    let serviceType = "_tandemclip._tcp"
 
     /// Stable per-install identity, used for the trusted-device allowlist and
     /// for addressing pull requests to a specific Mac.
@@ -50,10 +50,10 @@ final class Config {
             deviceID = id
         }
 
-        if let envCode = ProcessInfo.processInfo.environment["TANDEM_PAIRING_CODE"],
+        if let envCode = ProcessInfo.processInfo.environment["TANDEMCLIP_PAIRING_CODE"],
            !envCode.isEmpty {
             // Env override wins — useful for headless testing where the bare
-            // binary's UserDefaults domain doesn't match `net.amnesia.tandem`.
+            // binary's UserDefaults domain doesn't match `com.tandemclip`.
             defaults.set(envCode, forKey: "pairingCode")
             pairingCode = envCode
         } else if let code = defaults.string(forKey: "pairingCode"), !code.isEmpty {
@@ -66,6 +66,12 @@ final class Config {
 
         // Runtime pause starts from the persisted preference.
         paused = defaults.bool(forKey: "paused") || defaults.bool(forKey: "startPaused")
+
+        // Test/headless override for mode (mirrors the pairing-code override).
+        if let m = ProcessInfo.processInfo.environment["TANDEMCLIP_MODE"],
+           let parsed = SyncMode(rawValue: m) {
+            defaults.set(parsed.rawValue, forKey: "mode")
+        }
     }
 
     // MARK: - Identity

@@ -1,6 +1,6 @@
 import AppKit
 
-// Renders the Tandem app icon (white sync-arrows glyph on an indigo->blue
+// Renders the TandemClip app icon (white sync-arrows glyph on an indigo->blue
 // rounded-rect) to a 1024x1024 PNG. Usage: swift render-icon.swift <out.png>
 
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon_1024.png"

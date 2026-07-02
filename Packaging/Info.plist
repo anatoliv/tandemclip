@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Tandem</string>
+    <string>TandemClip</string>
     <key>CFBundleDisplayName</key>
-    <string>Tandem</string>
+    <string>TandemClip</string>
     <key>CFBundleIdentifier</key>
-    <string>net.amnesia.tandem</string>
+    <string>com.tandemclip</string>
     <key>CFBundleExecutable</key>
-    <string>tandem</string>
+    <string>tandemclip</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -29,10 +29,10 @@
          Network prompt silently blocking discovery. Must list every service
          type the app uses. -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Tandem syncs your clipboard between your Macs on the local network only.</string>
+    <string>TandemClip syncs your clipboard between your Macs on the local network only.</string>
     <key>NSBonjourServices</key>
     <array>
-        <string>_tandem._tcp</string>
+        <string>_tandemclip._tcp</string>
     </array>
 
     <key>NSHumanReadableCopyright</key>

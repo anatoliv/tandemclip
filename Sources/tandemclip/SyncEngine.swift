@@ -147,6 +147,13 @@ final class SyncEngine {
                 return
             }
             apply(text, hash: hash, from: msg.deviceName)
+            // Relay (gossip) to the rest of the mesh so machines that aren't
+            // directly connected to the source still receive it. Hash dedup on
+            // every node stops loops; a clip circulates at most once.
+            if config.role.canSend {
+                Log.trace("sync", "relay clip from \(msg.deviceName)")
+                transport.broadcast(msg)
+            }
         } else {
             // Manual: apply only the clip we explicitly requested.
             guard config.role.canReceive, pendingPull.remove(msg.deviceID) != nil else { return }

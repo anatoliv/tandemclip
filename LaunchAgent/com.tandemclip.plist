@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>net.amnesia.tandem</string>
+    <string>com.tandemclip</string>
 
     <!-- Default: the .app built by Scripts/make-app.sh and copied to
-         /Applications. For a bare-binary install use /usr/local/bin/tandem.
+         /Applications. For a bare-binary install use /usr/local/bin/tandemclip.
          Add "--verbose" as a second <string> to trace discovery/TLS/sync. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/Tandem.app/Contents/MacOS/tandem</string>
+        <string>/Applications/TandemClip.app/Contents/MacOS/tandemclip</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -20,8 +20,8 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/tmp/tandem.out.log</string>
+    <string>/tmp/tandemclip.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/tandem.err.log</string>
+    <string>/tmp/tandemclip.err.log</string>
 </dict>
 </plist>
