@@ -354,10 +354,12 @@ struct SettingsView: View {
                               systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundColor(.orange)
                     }
-                    ForEach(model.allowedSSIDs.filter { !$0.hasPrefix("<") }, id: \.self) { ssid in
+                    ForEach(model.allowedSSIDs, id: \.self) { ssid in
+                        let hidden = ssid.hasPrefix("<")
                         HStack(alignment: .top) {
                             Image(systemName: "wifi").foregroundColor(.secondary)
-                            Text(ssid)
+                            Text(hidden ? "This network (name hidden on this Mac)" : ssid)
+                                .foregroundColor(hidden ? .secondary : .primary)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)   // full name, wrap if long
                             Spacer()
