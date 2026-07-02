@@ -64,8 +64,9 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   authenticated *and* encrypted. Wrong code → TLS handshake fails → peer
   rejected. Being on the same Wi-Fi grants nothing on its own.
 - LAN-only. No internet relay, no unauthenticated writes.
-- Set the **same pairing code on every Mac.** Read/copy it from the menu on one
-  machine and enter it on the others (currently via `defaults`, see below).
+- Set the **same pairing code on every Mac.** Copy it from **Settings → Identity**
+  (or the menu) on one machine and type it into the field on the others —
+  applying re-keys the connection live, no relaunch.
 
 The pairing code is stored in the login **Keychain** (migrated automatically off
 any older `UserDefaults` value), and the PSK is derived from it with
@@ -84,15 +85,13 @@ success/failure, and every clip send/recv/dedup decision — run two machines th
 way to watch a copy propagate. A failed handshake is logged as "likely wrong
 pairing code".
 
-Set a matching pairing code on each machine (until in-app entry lands):
+Set a matching pairing code on each machine in **Settings → Identity** (Apply
+re-keys live). For headless/dev runs, the `TANDEMCLIP_PAIRING_CODE` env var
+overrides it in-memory (bypasses the Keychain):
 
 ```sh
-defaults write com.tandemclip pairingCode "K7QM-3PXF"
+TANDEMCLIP_PAIRING_CODE="K7QM-3PXF" .build/debug/tandemclip --no-menubar
 ```
-
-(The bundle/domain used by `UserDefaults` is the executable's identifier; when
-run unbundled it falls back to the binary name. Copy the code shown in the menu
-from your first Mac and set it on the others.)
 
 ## Package as a .app (recommended)
 
