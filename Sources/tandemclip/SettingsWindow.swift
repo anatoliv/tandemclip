@@ -35,13 +35,36 @@ final class SettingsModel: ObservableObject {
         verboseLogging = config.verboseLogging
         deviceDisplayName = config.deviceDisplayName
         pairingCode = config.pairingCode
+        activeCode = config.pairingCode
         allowlistEnabled = config.allowlistEnabled
         networkAllowlistEnabled = config.networkAllowlistEnabled
         allowedSSIDs = config.allowedSSIDs
     }
 
-    func applyPairingCode() { config.setPairingCode(pairingCode) }
-    func regeneratePairingCode() { let c = Config.generateCode(); pairingCode = c; config.setPairingCode(c) }
+    /// The code the transport is currently keyed with (to detect edits).
+    @Published var activeCode: String
+
+    func applyPairingCode() {
+        let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, code != activeCode else { return }
+        pairingCode = code
+        config.setPairingCode(code)
+        engine.reloadPairing()          // re-key transport live — no relaunch
+        activeCode = code
+    }
+
+    func regeneratePairingCode() {
+        let c = Config.generateCode()
+        pairingCode = c
+        config.setPairingCode(c)
+        engine.reloadPairing()
+        activeCode = c
+    }
+
+    func copyPairingCode() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(activeCode, forType: .string)
+    }
     func addCurrentSSID() {
         if let s = NetworkGuard.currentSSID(), !s.isEmpty, !allowedSSIDs.contains(s) { allowedSSIDs.append(s) }
     }
@@ -133,10 +156,15 @@ struct SettingsView: View {
             Divider()
             HStack {
                 TextField("Pairing code", text: $model.pairingCode)
+                    .font(.system(.body, design: .monospaced))
+                    .onSubmit { model.applyPairingCode() }
                 Button("Apply") { model.applyPairingCode() }
+                    .disabled(model.pairingCode.trimmingCharacters(in: .whitespaces).isEmpty
+                              || model.pairingCode == model.activeCode)
                 Button("Regenerate") { model.regeneratePairingCode() }
+                Button("Copy") { model.copyPairingCode() }
             }
-            Text("All Macs must share the same pairing code. Changing it may need a relaunch to reconnect existing peers.")
+            Text("Enter the same code on every Mac. Applying re-keys the connection immediately — peers reconnect once they share the new code (no relaunch).")
                 .font(.caption).foregroundColor(.secondary)
         }
     }

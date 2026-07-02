@@ -45,6 +45,26 @@ final class Transport {
         startReconnectTimer()
     }
 
+    /// Tear everything down and start fresh — used when the pairing code changes
+    /// so the new PSK takes effect immediately (no relaunch). tlsParameters()
+    /// reads config.psk lazily, so the rebuilt listener/dials use the new key.
+    func restart() {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            Log.trace("transport", "restarting (pairing code changed)")
+            self.listener?.cancel(); self.listener = nil
+            self.browser?.cancel(); self.browser = nil
+            self.reconnectTimer?.cancel(); self.reconnectTimer = nil
+            for conn in self.connections.values { conn.cancel() }
+            self.connections.removeAll(); self.readyIDs.removeAll(); self.identity.removeAll()
+            self.visibleEndpoints.removeAll(); self.activeOutbound.removeAll(); self.outboundKey.removeAll()
+            self.notifyPeers()
+            self.startListener()
+            self.startBrowser()
+            self.startReconnectTimer()
+        }
+    }
+
     /// Periodically re-dial any advertised peer we have no live outbound
     /// connection to. Without this, a dropped connection (sleep/wake, Wi-Fi
     /// roam) is never re-established, because the browser only fires when the

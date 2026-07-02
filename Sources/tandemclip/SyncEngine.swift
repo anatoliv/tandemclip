@@ -64,6 +64,14 @@ final class SyncEngine {
         watcher.maxBytes = config.maxClipBytes
     }
 
+    /// The pairing code changed — re-key the transport so peers reconnect with
+    /// the new PSK immediately. Peers drop until they also have the new code.
+    func reloadPairing() {
+        peers.removeAll()
+        transport.restart()
+        onStatusChange?()
+    }
+
     // MARK: - Peer list (for the menu)
 
     /// Peers sorted by name, for display.

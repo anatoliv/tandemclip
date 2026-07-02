@@ -20,6 +20,15 @@ if CommandLine.arguments.contains("--no-menubar") {
         }
     }
 
+    // Test hook: re-key the transport at runtime (same code) to prove peers
+    // reconnect after a pairing-code change without a relaunch.
+    if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_REKEY"] != nil {
+        Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { _ in
+            Log.trace("app", "test-rekey: reloadPairing")
+            engine.reloadPairing()
+        }
+    }
+
     RunLoop.main.run()
 } else {
     // Run as an "accessory" app: no Dock icon, menu-bar only. This is the
