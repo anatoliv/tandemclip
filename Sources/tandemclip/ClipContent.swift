@@ -56,11 +56,14 @@ struct ClipSnapshot {
         parts[.text].flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    /// Human label for menus / previews.
+    /// Human label for menus / previews. RTF outranks image parts: apps that
+    /// copy formatted text (Excel, Word, …) often add a TIFF *rendering* of the
+    /// selection alongside, which is still a text copy to the user — while a
+    /// genuine image copy never carries RTF.
     var contentLabel: String {
         if !files.isEmpty { return files.count == 1 ? "file" : "\(files.count) files" }
-        if parts[.png] != nil || parts[.tiff] != nil { return "image" }
         if parts[.rtf] != nil { return "rich text" }
+        if parts[.png] != nil || parts[.tiff] != nil { return "image" }
         return "text"
     }
 
