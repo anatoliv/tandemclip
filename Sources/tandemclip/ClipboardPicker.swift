@@ -29,29 +29,37 @@ final class ClipboardPickerController {
         model.reload(history: engine.history, peers: engine.sortedPeers(), showCount: config.pickerShowCount)
 
         if panel == nil {
-            let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 480, height: 440),
-                                styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+            let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
+                                styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel, .resizable],
                                 backing: .buffered, defer: false)
             p.titleVisibility = .hidden
             p.titlebarAppearsTransparent = true
             p.isMovableByWindowBackground = true
             p.level = .floating
-            // Appear over fullscreen apps and on every Space — you summon the
-            // picker from anywhere, including a fullscreen editor/terminal.
+            // Appear over fullscreen apps and on every Space.
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
             p.hidesOnDeactivate = false
             p.isReleasedWhenClosed = false
+            p.minSize = NSSize(width: 380, height: 320)
             p.standardWindowButton(.closeButton)?.isHidden = true
             p.standardWindowButton(.miniaturizeButton)?.isHidden = true
             p.standardWindowButton(.zoomButton)?.isHidden = true
             p.contentView = NSHostingView(rootView: PickerView(model: model))
+            p.setFrameAutosaveName("TandemClipPicker")   // remember size + position
+            if p.frame.origin == .zero { p.center() }     // first run only
             panel = p
         }
-        panel?.center()
         NSApp.activate(ignoringOtherApps: true)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
         Log.trace("picker", "shown; visible=\(panel?.isVisible ?? false)")
+    }
+
+    /// Live-refresh while open (called on engine status changes) so clips copied
+    /// on other Macs appear without reopening. Preserves query + selection.
+    func refreshIfVisible() {
+        guard let panel, panel.isVisible, let model else { return }
+        model.refresh(history: engine.history, peers: engine.sortedPeers(), showCount: config.pickerShowCount)
     }
 
     func hide() { panel?.orderOut(nil) }
@@ -84,16 +92,34 @@ final class PickerModel: ObservableObject {
         self.onClose = onClose
     }
 
+    /// Full reset (on open).
     func reload(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int) {
+        query = ""; selection = 0
+        refresh(history: history, peers: peers, showCount: showCount)
+    }
+
+    /// Live update while open — preserves query + clamps selection.
+    func refresh(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int) {
         items = Array(history.prefix(max(showCount, 1)))
         self.peers = peers.filter { $0.clip.online }
-        query = ""
-        selection = 0
+        if selection >= filtered.count { selection = max(0, filtered.count - 1) }
     }
 
     var filtered: [HistoryItem] {
         query.isEmpty ? items
             : items.filter { $0.label.localizedCaseInsensitiveContains(query) || $0.source.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// Recent clips grouped by source Mac (preserving recency order), each entry
+    /// carrying its flat index (for selection highlight + ⌘1–9).
+    var grouped: [(source: String, entries: [(index: Int, item: HistoryItem)])] {
+        var order: [String] = []
+        var map: [String: [(Int, HistoryItem)]] = [:]
+        for (i, it) in filtered.enumerated() {
+            if map[it.source] == nil { order.append(it.source) }
+            map[it.source, default: []].append((i, it))
+        }
+        return order.map { src in (src, map[src]!.map { (index: $0.0, item: $0.1) }) }
     }
 
     // Keyboard actions (driven by KeyCatcher).
@@ -156,17 +182,25 @@ struct KeyCatcher: NSViewRepresentable {
 
 struct PickerView: View {
     @ObservedObject var model: PickerModel
+    @State private var caretOn = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-                Text(model.query.isEmpty ? "Search clips…" : model.query)
-                    .foregroundColor(model.query.isEmpty ? .secondary : .primary)
+                HStack(spacing: 1) {
+                    Text(model.query.isEmpty ? "Search clips…" : model.query)
+                        .foregroundColor(model.query.isEmpty ? .secondary : .primary)
+                    Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 17)
+                        .opacity(caretOn ? 1 : 0)
+                        .onReceive(Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()) { _ in caretOn.toggle() }
+                }
                 Spacer()
                 Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.secondary).font(.system(size: 12))
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
 
             ScrollView {
@@ -180,15 +214,22 @@ struct PickerView: View {
                         Spacer().frame(height: 8)
                     }
                     sectionHeader("RECENT")
-                    let f = model.filtered
-                    if f.isEmpty {
+                    if model.filtered.isEmpty {
                         Text(model.query.isEmpty ? "No clips yet — copy something." : "No matches.")
                             .foregroundColor(.secondary).font(.callout).padding(.horizontal, 14).padding(.vertical, 10)
                     } else {
-                        ForEach(Array(f.enumerated()), id: \.element.id) { idx, item in
-                            HistoryRow(item: item, index: idx, selected: idx == model.selection)
-                                .contentShape(Rectangle())
-                                .onTapGesture { model.onPickHistory(item.hash) }
+                        // Grouped by source Mac.
+                        ForEach(model.grouped, id: \.source) { group in
+                            HStack(spacing: 6) {
+                                Circle().fill(Color.secondary.opacity(0.5)).frame(width: 5, height: 5)
+                                Text(group.source).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 1)
+                            ForEach(group.entries, id: \.item.id) { e in
+                                HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { model.onPickHistory(e.item.hash) }
+                            }
                         }
                     }
                 }
@@ -202,7 +243,8 @@ struct PickerView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
         }
-        .frame(width: 480, height: 440)
+        .frame(minWidth: 380, minHeight: 320)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(KeyCatcher(model: model).frame(width: 0, height: 0))
     }
 
