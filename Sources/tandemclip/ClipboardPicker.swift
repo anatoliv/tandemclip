@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Panel (borderless, can become key without activating everything)
 
@@ -79,7 +80,25 @@ final class ClipboardPickerController {
         PickerModel(
             onPickHistory: { [weak self] hash in self?.engine.applyHistory(hash: hash); self?.hide() },
             onPullPeer:    { [weak self] id in self?.engine.pull(from: id); self?.hide() },
+            onDropFiles:   { [weak self] urls in self?.handleDrop(urls) },
             onClose:       { [weak self] in self?.hide() })
+    }
+
+    /// Share dropped files and surface the outcome in the picker. Kept here (not
+    /// in the model) so the messaging can consult config/engine state.
+    private func handleDrop(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard config.role.canSend else {
+            model?.flashDrop("This Mac is receive-only — can’t share.")
+            return
+        }
+        let n = engine.shareFiles(urls)
+        if n > 0 {
+            model?.flashDrop("Shared \(urls.count) file\(urls.count == 1 ? "" : "s") to \(n) Mac\(n == 1 ? "" : "s")")
+        } else {
+            model?.flashDrop("No connected Macs to share with")
+        }
+        refreshIfVisible()
     }
 }
 
@@ -120,17 +139,32 @@ final class PickerModel: ObservableObject {
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var peers: [(id: String, clip: PeerClip)] = []
     @Published private(set) var clipUsage = ""   // current clipboard "kind · size"
+    @Published private(set) var dropMessage: String?   // transient toast after a drop
 
     let onPickHistory: (String) -> Void
     let onPullPeer: (String) -> Void
+    let onDropFiles: ([URL]) -> Void
     let onClose: () -> Void
+
+    private var dropClear: DispatchWorkItem?
 
     init(onPickHistory: @escaping (String) -> Void,
          onPullPeer: @escaping (String) -> Void,
+         onDropFiles: @escaping ([URL]) -> Void,
          onClose: @escaping () -> Void) {
         self.onPickHistory = onPickHistory
         self.onPullPeer = onPullPeer
+        self.onDropFiles = onDropFiles
         self.onClose = onClose
+    }
+
+    /// Briefly show a status line after a drop, then clear it.
+    func flashDrop(_ message: String) {
+        dropMessage = message
+        dropClear?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.dropMessage = nil }
+        dropClear = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
     /// Full reset (on open).
@@ -265,6 +299,7 @@ extension View {
 
 struct PickerView: View {
     @ObservedObject var model: PickerModel
+    @State private var dropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -298,7 +333,7 @@ struct PickerView: View {
                     }
                     sectionHeader("RECENT")
                     if model.filtered.isEmpty {
-                        Text(model.query.isEmpty ? "No clips yet — copy something." : "No matches.")
+                        Text(model.query.isEmpty ? "No clips yet — copy something, or drop files here to share." : "No matches.")
                             .foregroundColor(.secondary).font(.callout).padding(.horizontal, 14).padding(.vertical, 10)
                     } else {
                         // Grouped by source Mac.
@@ -344,6 +379,59 @@ struct PickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)   // don't reserve the title-bar gap above search
         .background(KeyCatcher(model: model).frame(width: 0, height: 0))
+        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { providers in
+            Self.loadFileURLs(from: providers) { model.onDropFiles($0) }
+            return true
+        }
+        .overlay { if dropTargeted { dropOverlay } }
+        .overlay(alignment: .bottom) { if let msg = model.dropMessage { dropToast(msg) } }
+        .animation(.easeOut(duration: 0.15), value: dropTargeted)
+        .animation(.easeOut(duration: 0.15), value: model.dropMessage)
+    }
+
+    /// Full-panel affordance shown while files are dragged over the picker.
+    private var dropOverlay: some View {
+        ZStack {
+            Color.accentColor.opacity(0.08)
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
+                .foregroundColor(.accentColor.opacity(0.6))
+                .padding(6)
+            VStack(spacing: 9) {
+                Image(systemName: "arrow.up.doc.on.clipboard").font(.system(size: 27))
+                Text("Drop to share with your Macs").font(.system(size: 13.5, weight: .medium))
+            }
+            .foregroundColor(.accentColor)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// Transient status line after a drop (shared to N Macs, or a reason nothing sent).
+    private func dropToast(_ msg: String) -> some View {
+        Text(msg)
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundColor(.white)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Capsule().fill(Color.accentColor.opacity(0.92)))
+            .padding(.bottom, 44)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// Resolve dropped item providers to on-disk file URLs, then call back on the
+    /// main thread. Non-file drops (e.g. a text selection) resolve to nothing.
+    private static func loadFileURLs(from providers: [NSItemProvider],
+                                     _ completion: @escaping ([URL]) -> Void) {
+        var urls: [URL] = []
+        let lock = NSLock()
+        let group = DispatchGroup()
+        for p in providers {
+            group.enter()
+            _ = p.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { lock.lock(); urls.append(url); lock.unlock() }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { completion(urls) }
     }
 
     private func filterChip(_ f: PickerModel.ContentFilter) -> some View {

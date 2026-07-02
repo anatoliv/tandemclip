@@ -2,7 +2,7 @@
 
 **Scope:** Swift source in `Sources/tandemclip`, packaging, appcast, web serving.
 **Threat model:** attacker on the same LAN; a rogue/revoked device that once knew the pairing code; a network MITM against the update channel; another local user on the same Mac.
-**Latest review:** 2026-07-02, against v0.2.0 (build 11).
+**Latest review:** 2026-07-02, against v0.2.1 (build 13).
 
 ## Summary
 
@@ -34,17 +34,28 @@ This document records the audit history and the final state of each finding.
 
 **Received files (2).** `openFiles` now only reveals files in Finder; it never calls `NSWorkspace.open` on peer-supplied bytes. Files are still written `0600` in a `0700` per-clip directory, atomically, and quarantined.
 
-**Transport limits (4, R).** Frame cap is `min(48MB, max(1.5MB, maxClipBytes*2))`; at most 16 connections and 32 discovered endpoints; `.request` is limited to 1/sec/device and all inbound to 40 messages/10s/device; the on-disk received cache is capped at 200 MB with oldest-first eviction. Signed clips are checked against a seen-signature cache (10-min window) to block replays; genuine re-copies carry fresh timestamps and are unaffected.
+**Transport limits (4, R).** Frame cap is `min(48MB, max(2MB, maxClipBytes*2))` — scaled to the local clip-size preference so a PSK-holding peer can't force oversized allocations, since the whole frame is buffered before the rate check runs (worst-case transient inbound memory is `maxConnections * maxFrameBytes`). At most 16 connections and 32 discovered endpoints; `.request` is limited to 1/sec/device; inbound frames are rate-limited per **connection** (un-spoofable, unlike a self-asserted deviceID) at 200 frames / 10 s, and a connection exceeding it is dropped; the on-disk received cache is capped at 200 MB with oldest-first eviction. Signed clips are checked against a seen-signature cache (10-min window) to block replays, plus a timestamp-freshness bound on mirror clips; genuine re-copies carry fresh timestamps and are unaffected.
 
 **Local surface (5, 6, 7).** The bootstrap file is accepted only if it's a regular file owned by the user with no group/other permissions; the pairing code is masked in the menu and copied via a concealed-type pasteboard item so it won't sync or be captured. Keychain items use `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (set on both add and update). The LaunchAgent no longer writes logs to `/tmp`.
 
 **Update channel (8).** Sparkle EdDSA signatures over the HTTPS feed remain the primary control (an HTTP-MITM cannot push a malicious build). The nginx config now emits HSTS and hardening headers; the release script blocks publishing without a verified, non-regressed appcast (`release.sh`, `check-release.sh`). Confirm the fronting proxy enforces HTTPS + redirect.
 
+## v0.2.1 review pass (build 13)
+
+A re-audit against the current tree found no open Critical/High. Applied hardening:
+
+- **Inbound frame cap scaled to the clip-size setting.** Was a flat 48 MB regardless of `maxClipBytes`; now `min(48MB, max(2MB, maxClipBytes*2))`, so worst-case buffered inbound memory (`maxConnections * maxFrameBytes`) tracks the local preference instead of a fixed 768 MB. Legitimate clips are unaffected (`Transport.receiveHeader`).
+- **Received-filename edge cases.** `lastPathComponent` already defused `../` traversal and absolute paths; now the pathological basenames `""`, `"."`, and `".."` (which would resolve the destination to the clip dir or its parent) are mapped to a `file` fallback (`ClipboardWatcher.writeReceivedFiles`).
+- **Doc accuracy.** Corrected two drifted claims: the frame cap (was described as dynamic while the code was flat) and the inbound rate limit (200 frames/10s per **connection**, not "40/10s per device"). README's KDF description was also wrong (said HKDF; the code is PBKDF2-HMAC-SHA256, 600k iters) and is now fixed.
+- **Allowlist-off default surfaced.** The trusted-device allowlist (hence per-device revocation) is off by default — the PSK is the trust boundary. This is now documented in-app (Settings → Security footer) and in the README so users know how to revoke a device that once knew the code.
+- **Password-manager guarantee stated honestly.** Help + README now spell out that concealed-type filtering is best-effort and depends on the source app setting the marker.
+
 ## Residual notes (accepted / low)
 
-- **Concealed-type filtering (9)** still depends on source apps setting the nspasteboard markers; apps that don't will have secrets synced. Inherent to the convention.
+- **Concealed-type filtering (9)** still depends on source apps setting the nspasteboard markers; apps that don't will have secrets synced. Inherent to the convention. Now stated plainly in the Help window and README.
 - **Env-var code injection** exposure to same-user processes remains for the headless/deploy path; it's strength-gated and documented.
-- **Origin HTTP (8)** relies on the external proxy for TLS termination; verify HSTS/redirect there.
+- **Origin HTTP (8)** relies on the external proxy for TLS termination; the fronting proxy MUST enforce HTTPS + HTTP→HTTPS redirect for `SUFeedURL`. Update integrity is EdDSA-gated regardless, but plain HTTP would let a MITM withhold/stall security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`.
+- **Trusted-peer DoS.** A peer holding the PSK can still open up to 16 connections and push frames at the per-connection rate cap; bounded, and outside the "unpaired attacker" threat model.
 
 ## What's done well (keep)
 

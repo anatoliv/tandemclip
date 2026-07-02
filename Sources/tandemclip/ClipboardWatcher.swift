@@ -31,8 +31,6 @@ final class ClipboardWatcher {
     var isPaused: () -> Bool = { false }
     /// Which representations to capture (text is always included).
     var enabledKinds: () -> Set<ClipKind> = { Set(ClipKind.allCases) }
-    /// Whether to capture/transfer copied files by content.
-    var syncFiles: () -> Bool = { false }
 
     init() {
         lastChangeCount = pasteboard.changeCount
@@ -78,26 +76,14 @@ final class ClipboardWatcher {
                 }
             }
         }
-        // Copied files — transfer by content (skip folders; needs zipping).
+        // Copied files — always captured (skip folders; needs zipping), so the
+        // copy lands in history / the shareable snapshot even when automatic
+        // file sync is off. Whether the content auto-broadcasts is the
+        // engine's decision (config.syncFiles), not a capture concern.
         var files: [ClipFile] = []
-        if syncFiles() {
-            var used = parts.values.reduce(0) { $0 + $1.count }
-            for url in fileURLs {
-                var isDir: ObjCBool = false
-                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-                if isDir.boolValue { continue }
-                // Check the size from metadata FIRST — never read a huge file
-                // into memory just to reject it (a multi-GB copy would otherwise
-                // spike RAM before being skipped).
-                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
-                if used + size > maxBytes {
-                    Log.trace("clip", "file \(url.lastPathComponent) (\(size)B) over cap — skipped")
-                    continue
-                }
-                guard let data = try? Data(contentsOf: url) else { continue }
-                used += data.count
-                files.append(ClipFile(name: url.lastPathComponent, data: data))
-            }
+        if isFileCopy {
+            let used = parts.values.reduce(0) { $0 + $1.count }
+            files = ClipboardWatcher.collectFiles(fileURLs, maxBytes: maxBytes, initialUsed: used)
         }
 
         guard !parts.isEmpty || !files.isEmpty else { return }
@@ -171,8 +157,12 @@ final class ClipboardWatcher {
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         var urls: [URL] = []
         for f in snapshot.files {
-            let safe = (f.name as NSString).lastPathComponent
-            let dest = dir.appendingPathComponent(safe.isEmpty ? "file" : safe)
+            // Strip any directory components (defuses "../" traversal and absolute
+            // paths), then reject the pathological basenames "", ".", and ".."
+            // which would otherwise resolve `dest` to the clip dir or its parent.
+            let base = (f.name as NSString).lastPathComponent
+            let safe = (base.isEmpty || base == "." || base == "..") ? "file" : base
+            let dest = dir.appendingPathComponent(safe)
             if (try? f.data.write(to: dest, options: [.atomic])) != nil {
                 try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dest.path)
                 markQuarantined(dest)
@@ -235,6 +225,31 @@ final class ClipboardWatcher {
         value.withCString { ptr in
             _ = setxattr(url.path, "com.apple.quarantine", ptr, strlen(ptr), 0, 0)
         }
+    }
+
+    /// Read file URLs into `ClipFile`s (transfer-by-content), skipping folders and
+    /// anything that would push the running byte total past `maxBytes`. Sizes are
+    /// read from metadata *before* the bytes, so an oversize file is rejected
+    /// without ever being slurped into memory. Shared by clipboard capture (poll)
+    /// and drag-to-send (SyncEngine.shareFiles). `initialUsed` seeds the total
+    /// with bytes already accounted for (e.g. accompanying text on a copy).
+    static func collectFiles(_ urls: [URL], maxBytes: Int, initialUsed: Int = 0) -> [ClipFile] {
+        var used = initialUsed
+        var files: [ClipFile] = []
+        for url in urls where url.isFileURL {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if isDir.boolValue { continue }
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
+            if used + size > maxBytes {
+                Log.trace("clip", "file \(url.lastPathComponent) (\(size)B) over cap — skipped")
+                continue
+            }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            used += data.count
+            files.append(ClipFile(name: url.lastPathComponent, data: data))
+        }
+        return files
     }
 
     static func hash(_ data: Data) -> String {
