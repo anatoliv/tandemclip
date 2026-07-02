@@ -13,6 +13,7 @@ final class SettingsModel: ObservableObject {
     @Published var maxMB: Double { didSet { config.maxClipBytes = Int(maxMB * 1_000_000); engine.applyConfig() } }
     @Published var syncRichText: Bool { didSet { config.syncRichText = syncRichText } }
     @Published var syncImages: Bool { didSet { config.syncImages = syncImages } }
+    @Published var syncFiles: Bool { didSet { config.syncFiles = syncFiles } }
 
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
@@ -34,6 +35,7 @@ final class SettingsModel: ObservableObject {
         maxMB = Double(config.maxClipBytes) / 1_000_000
         syncRichText = config.syncRichText
         syncImages = config.syncImages
+        syncFiles = config.syncFiles
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
@@ -141,6 +143,7 @@ struct SettingsView: View {
             Divider()
             Toggle("Sync rich text", isOn: $model.syncRichText)
             Toggle("Sync images", isOn: $model.syncImages)
+            Toggle("Sync files (by content)", isOn: $model.syncFiles)
             Text("Plain text always syncs. Copies carry every enabled representation so paste keeps full fidelity. Content over the size limit falls back to text only.")
                 .font(.caption).foregroundColor(.secondary)
         }
