@@ -23,8 +23,8 @@ IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 
 echo "==> Building release binary"
-swift build -c release
-BIN_PATH="$(swift build -c release --show-bin-path)/${EXE_NAME}"
+swift build -c release --build-system native
+BIN_PATH="$(swift build -c release --build-system native --show-bin-path)/${EXE_NAME}"
 
 # Regenerate the app icon if the source is present but the .icns is stale/missing.
 if [[ ! -f Packaging/AppIcon.icns && -x Scripts/make-icon.sh ]]; then

@@ -11,7 +11,11 @@ let package = Package(
         .executableTarget(
             name: "tandemclip",
             dependencies: [.product(name: "Sparkle", package: "Sparkle")],
-            path: "Sources/tandemclip"
+            path: "Sources/tandemclip",
+            linkerSettings: [
+                // Find Sparkle.framework inside the packaged .app at runtime.
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+            ]
         )
     ]
 )
