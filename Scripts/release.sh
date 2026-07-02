@@ -33,6 +33,15 @@ IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 mkdir -p "$DIST"
 rm -f "$DMG"
 
+# 1b. Upload dSYMs to Sentry for symbolicated crash reports (gated: needs
+#     SENTRY_AUTH_TOKEN + sentry-cli; silently skipped otherwise).
+if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
+    echo "==> Uploading dSYMs to Sentry"
+    sentry-cli debug-files upload --org "${SENTRY_ORG:-your-sentry-org}" \
+        --project "${SENTRY_PROJECT:-tandemclip}" .build 2>&1 | tail -3 || \
+        echo "    dSYM upload failed (non-fatal)"
+fi
+
 # 2. Stage the DMG (app + /Applications drop target) and build it.
 echo "==> Building DMG $DMG"
 STAGE="build/dmg-stage"
