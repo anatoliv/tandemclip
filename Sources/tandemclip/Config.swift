@@ -50,17 +50,21 @@ final class Config {
             deviceID = id
         }
 
+        // Pairing code: env override (in-memory only, for headless testing) >
+        // Keychain > migrate legacy UserDefaults code into the Keychain > new.
         if let envCode = ProcessInfo.processInfo.environment["TANDEMCLIP_PAIRING_CODE"],
            !envCode.isEmpty {
-            // Env override wins — useful for headless testing where the bare
-            // binary's UserDefaults domain doesn't match `com.tandemclip`.
-            defaults.set(envCode, forKey: "pairingCode")
             pairingCode = envCode
-        } else if let code = defaults.string(forKey: "pairingCode"), !code.isEmpty {
+        } else if let code = KeychainStore.get("pairingCode"), !code.isEmpty {
             pairingCode = code
+        } else if let legacy = defaults.string(forKey: "pairingCode"), !legacy.isEmpty {
+            // One-time migration off plaintext UserDefaults into the Keychain.
+            KeychainStore.set("pairingCode", legacy)
+            defaults.removeObject(forKey: "pairingCode")
+            pairingCode = legacy
         } else {
             let code = Config.generateCode()
-            defaults.set(code, forKey: "pairingCode")
+            KeychainStore.set("pairingCode", code)
             pairingCode = code
         }
 
@@ -164,10 +168,15 @@ final class Config {
 
     // MARK: - Secret
 
-    /// 256-bit key derived from the pairing code. (SHA-256 is a stand-in for a
-    /// proper KDF; swap in HKDF with a fixed salt when you harden this.)
+    /// 256-bit pre-shared key derived from the pairing code via HKDF-SHA256
+    /// (fixed salt + info). All peers must run the same derivation to connect.
     var psk: Data {
-        Data(SHA256.hash(data: Data(pairingCode.utf8)))
+        let key = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: Data(pairingCode.utf8)),
+            salt: Data("com.tandemclip.psk".utf8),
+            info: Data("tandemclip-psk-v1".utf8),
+            outputByteCount: 32)
+        return key.withUnsafeBytes { Data($0) }
     }
 
     // MARK: - Mutators
@@ -179,7 +188,8 @@ final class Config {
 
     func setPairingCode(_ code: String) {
         pairingCode = code
-        set("pairingCode", code)
+        KeychainStore.set("pairingCode", code)   // secret lives in the Keychain, not defaults
+        DispatchQueue.main.async { NotificationCenter.default.post(name: Config.didChange, object: nil) }
     }
 
     /// Human-typeable code, e.g. "K7QM-3PXF". Excludes ambiguous chars (0/O, 1/I).

@@ -67,8 +67,9 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 - Set the **same pairing code on every Mac.** Read/copy it from the menu on one
   machine and enter it on the others (currently via `defaults`, see below).
 
-> ⚠️ MVP hardening TODO: replace SHA-256 code-stretch with HKDF, and move the
-> pairing code out of `UserDefaults` into the Keychain.
+The pairing code is stored in the login **Keychain** (migrated automatically off
+any older `UserDefaults` value), and the PSK is derived from it with
+**HKDF-SHA256** (fixed salt + info).
 
 ## Build & run (development)
 
