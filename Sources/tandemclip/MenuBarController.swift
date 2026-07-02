@@ -40,12 +40,24 @@ final class MenuBarController: NSObject {
             .withSymbolConfiguration(symbolConfig) {
             image.isTemplate = true
             button.image = image
-            button.imagePosition = .imageOnly
-            button.title = ""
+            // Show the current clipboard size beside the glyph for at-a-glance
+            // visibility of what's being shared (hidden while paused).
+            if !config.paused, let info = engine.currentClipInfo {
+                button.imagePosition = .imageLeading
+                button.title = " " + Self.sizeString(info.bytes)
+                button.font = .systemFont(ofSize: 11, weight: .medium)
+            } else {
+                button.imagePosition = .imageOnly
+                button.title = ""
+            }
         } else {
             button.image = nil
             button.title = "T"
         }
+    }
+
+    private static func sizeString(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     private func rebuildMenu() {
@@ -54,6 +66,12 @@ final class MenuBarController: NSObject {
         let modeName = config.mode == .mirror ? "Mirror" : "Manual"
         let state = config.paused ? "Paused" : modeName
         menu.addItem(disabled: "TandemClip — \(state)")
+        if let info = engine.currentClipInfo {
+            let kind = info.kind == "text" ? "text" : info.kind
+            menu.addItem(disabled: "Clipboard: \(kind) · \(Self.sizeString(info.bytes))")
+        } else {
+            menu.addItem(disabled: "Clipboard: empty")
+        }
         menu.addItem(disabled: "Peers connected: \(engine.peerCount)")
         if let src = engine.lastSyncSource {
             menu.addItem(disabled: "Last sync: \(src)")
