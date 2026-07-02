@@ -7,6 +7,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController?
     private lazy var settingsWindow = SettingsWindowController(config: config, engine: engine)
     private lazy var picker = ClipboardPickerController(config: config, engine: engine)
+    private let infoWindows = InfoWindowController()
     private var hotKey: GlobalHotKey?
     private let updater = Updater()
 
@@ -32,7 +33,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         let menuBar = MenuBarController(config: config, engine: engine,
             onOpenSettings: { [weak self] in self?.settingsWindow.show() },
             onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates() },
-            onOpenPicker: { [weak self] in self?.picker.show() })
+            onOpenPicker: { [weak self] in self?.picker.show() },
+            onOpenAbout: { [weak self] in self?.infoWindows.showAbout() },
+            onOpenHelp: { [weak self] in self?.infoWindows.showHelp() })
         self.menuBar = menuBar
         engine.onStatusChange = { [weak self, weak menuBar] in
             menuBar?.refresh()

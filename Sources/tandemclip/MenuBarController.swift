@@ -9,16 +9,22 @@ final class MenuBarController: NSObject {
     private let onOpenSettings: () -> Void
     private let onCheckForUpdates: () -> Void
     private let onOpenPicker: () -> Void
+    private let onOpenAbout: () -> Void
+    private let onOpenHelp: () -> Void
 
     init(config: Config, engine: SyncEngine,
          onOpenSettings: @escaping () -> Void,
          onCheckForUpdates: @escaping () -> Void,
-         onOpenPicker: @escaping () -> Void) {
+         onOpenPicker: @escaping () -> Void,
+         onOpenAbout: @escaping () -> Void,
+         onOpenHelp: @escaping () -> Void) {
         self.config = config
         self.engine = engine
         self.onOpenSettings = onOpenSettings
         self.onCheckForUpdates = onCheckForUpdates
         self.onOpenPicker = onOpenPicker
+        self.onOpenAbout = onOpenAbout
+        self.onOpenHelp = onOpenHelp
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         applyStatusIcon()
@@ -137,6 +143,10 @@ final class MenuBarController: NSObject {
         menu.addItem(action: "Copy pairing code", selector: #selector(copyPairing), target: self)
 
         menu.addItem(.separator())
+        menu.addItem(action: "About TandemClip", selector: #selector(openAbout), target: self)
+        menu.addItem(action: "Help — Keyboard & Tips…", selector: #selector(openHelp), target: self)
+
+        menu.addItem(.separator())
         menu.addItem(action: "Quit TandemClip", selector: #selector(quit), target: self, key: "q")
 
         statusItem.menu = menu
@@ -201,6 +211,10 @@ final class MenuBarController: NSObject {
     @objc private func openPicker() { onOpenPicker() }
 
     @objc private func openSettings() { onOpenSettings() }
+
+    @objc private func openAbout() { onOpenAbout() }
+
+    @objc private func openHelp() { onOpenHelp() }
 
     @objc private func checkForUpdates() { onCheckForUpdates() }
 
