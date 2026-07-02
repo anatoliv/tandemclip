@@ -28,6 +28,7 @@ final class SettingsModel: ObservableObject {
     @Published var allowlistEnabled: Bool { didSet { config.allowlistEnabled = allowlistEnabled } }
     @Published var networkAllowlistEnabled: Bool { didSet { config.networkAllowlistEnabled = networkAllowlistEnabled } }
     @Published var allowedSSIDs: [String] { didSet { config.allowedSSIDs = allowedSSIDs } }
+    @Published var wifiFailOpen: Bool { didSet { config.wifiFailOpen = wifiFailOpen } }
 
     init(config: Config, engine: SyncEngine) {
         self.config = config
@@ -51,6 +52,7 @@ final class SettingsModel: ObservableObject {
         allowlistEnabled = config.allowlistEnabled
         networkAllowlistEnabled = config.networkAllowlistEnabled
         allowedSSIDs = config.allowedSSIDs
+        wifiFailOpen = config.wifiFailOpen
     }
 
     /// The code the transport is currently keyed with (to detect edits).
@@ -340,11 +342,12 @@ struct SettingsView: View {
                     if !model.ssidHint.isEmpty {
                         Text(model.ssidHint).font(.caption).foregroundColor(.secondary)
                     }
+                    Toggle("Allow sync when Wi-Fi can’t be verified", isOn: $model.wifiFailOpen)
                 }
             } header: {
                 Text("Wi-Fi networks")
             } footer: {
-                Text("Reading the Wi-Fi name needs Location permission; without it this can't enforce, and sync stays on.")
+                Text("Reading the Wi-Fi name needs Location permission. Without it (or on Ethernet/VPN), sync pauses by default — turn on the option above to allow it instead.")
             }
         }
         .formStyle(.grouped)

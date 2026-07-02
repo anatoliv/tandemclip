@@ -241,6 +241,14 @@ final class Config {
         set { set("allowedSSIDs", newValue) }
     }
 
+    /// When the Wi-Fi name can't be read (no Location permission / wired / VPN)
+    /// and the network allowlist is on, sync PAUSES by default (fail-closed).
+    /// Enable this to allow sync anyway. Default false = fail-closed.
+    var wifiFailOpen: Bool {
+        get { defaults.bool(forKey: "wifiFailOpen") }
+        set { set("wifiFailOpen", newValue) }
+    }
+
     // MARK: - Secret
 
     /// 256-bit pre-shared key derived from the pairing code via HKDF-SHA256
@@ -269,10 +277,12 @@ final class Config {
 
     /// Human-typeable code, e.g. "K7QM-3PXF". Excludes ambiguous chars (0/O, 1/I).
     static func generateCode() -> String {
+        // 12 symbols from a 31-char alphabet ≈ 59 bits — well beyond offline
+        // brute-force of a captured PSK-TLS handshake (the old 8 was ~40 bits).
         let alphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         var out = ""
-        for i in 0..<8 {
-            if i == 4 { out.append("-") }
+        for i in 0..<12 {
+            if i == 4 || i == 8 { out.append("-") }
             out.append(alphabet.randomElement()!)
         }
         return out
