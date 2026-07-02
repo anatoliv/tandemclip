@@ -93,8 +93,8 @@ final class SettingsModel: ObservableObject {
     }
 
     func addCurrentSSID() {
-        guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
-            ssidHint = "Couldn't read the Wi-Fi name — are you connected to Wi-Fi (not Ethernet/VPN)?"
+        guard let s = NetworkGuard.currentSSID(), !s.isEmpty, !s.hasPrefix("<") else {
+            ssidHint = "Couldn't read this network's name here — type it in the field below."
             return
         }
         if allowedSSIDs.contains(s) {
@@ -331,21 +331,25 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Current network").font(.caption).foregroundColor(.secondary)
-                    Text(currentSSID.isEmpty ? "Not on Wi-Fi" : currentSSID)
-                        .foregroundColor(currentSSID.isEmpty ? .secondary : .primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)   // show the full name, wrap if long
+                // Only show the current network when we actually have a real
+                // name — hidden when it can't be read (empty, or a "<…>"
+                // placeholder, e.g. an environment that scrubs Wi-Fi names).
+                if !currentSSID.isEmpty && !currentSSID.hasPrefix("<") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Current network").font(.caption).foregroundColor(.secondary)
+                        Text(currentSSID)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 if model.networkAllowlistEnabled {
                     if model.allowedSSIDs.isEmpty {
                         Label("No networks added — sync is paused until you add one.",
                               systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundColor(.orange)
                     }
-                    ForEach(model.allowedSSIDs, id: \.self) { ssid in
+                    ForEach(model.allowedSSIDs.filter { !$0.hasPrefix("<") }, id: \.self) { ssid in
                         HStack(alignment: .top) {
                             Image(systemName: "wifi").foregroundColor(.secondary)
                             Text(ssid)
