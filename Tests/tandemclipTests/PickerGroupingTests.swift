@@ -135,13 +135,46 @@ final class PickerGroupingTests: XCTestCase {
 
     func testCollapseChangeCallbackFiresForPersistence() {
         let model = makeModel()
-        load(model, [item("a", source: "Home")])
-        var saved: Set<String>?
-        model.onCollapsedChange = { saved = $0 }
+        load(model, [item("a", source: "Home"), item("f.pdf", source: "Home", file: true)])
+        var savedGroups: Set<String>?
+        var savedSubs: Set<String>?
+        model.onCollapsedChange = { savedGroups = $0; savedSubs = $1 }
         model.toggleGroup("Home")
-        XCTAssertEqual(saved, ["Home"])
+        XCTAssertEqual(savedGroups, ["Home"])
         model.toggleGroup("Home")
-        XCTAssertEqual(saved, [])
+        XCTAssertEqual(savedGroups, [])
+        model.toggleSub("Home", "Files")
+        XCTAssertEqual(savedSubs, [PickerModel.subKey("Home", "Files")])
+    }
+
+    func testSubSectionCollapseHidesRowsKeepsHeaderCount() {
+        let model = makeModel()
+        load(model, [item("hello", source: "Home"), item("world", source: "Home"),
+                     item("f.pdf", source: "Home", file: true), item("c", source: "HCL")])
+
+        model.toggleSub("Home", "Text")
+        // Text rows hidden; Files row and HCL re-index from 0.
+        XCTAssertEqual(model.filtered.map(\.label), ["f.pdf", "c"])
+        let home = model.grouped[0]
+        XCTAssertEqual(home.total, 3)   // total badge unaffected by folding
+        let textSection = home.sections[0]
+        XCTAssertTrue(textSection.isCollapsed)
+        XCTAssertEqual(textSection.count, 2)
+        XCTAssertTrue(textSection.entries.isEmpty)
+        XCTAssertEqual(home.sections[1].entries.map(\.index), [0])
+        XCTAssertEqual(model.grouped[1].entries.map(\.index), [1])
+
+        model.toggleSub("Home", "Text")
+        XCTAssertEqual(model.filtered.count, 4)
+    }
+
+    func testGroupTotalCountsAllItemsUnderFilter() {
+        let model = makeModel()
+        load(model, [item("a", source: "Home"), item("styled", source: "Home", rich: true),
+                     item("f.pdf", source: "Home", file: true)])
+        XCTAssertEqual(model.grouped[0].total, 3)
+        model.kindFilter = .file
+        XCTAssertEqual(model.grouped[0].total, 1)
     }
 
     func testBadgesRespectActiveKindFilter() {
