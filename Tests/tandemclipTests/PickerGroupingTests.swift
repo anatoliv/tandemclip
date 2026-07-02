@@ -7,10 +7,15 @@ final class PickerGroupingTests: XCTestCase {
                     onDeleteHistory: { _ in }, onClose: {})
     }
 
-    private func item(_ text: String, source: String, file: Bool = false) -> HistoryItem {
-        let snap = file
-            ? ClipSnapshot(parts: [:], files: [ClipFile(name: text, data: Data(text.utf8))])
-            : ClipSnapshot(parts: [.text: Data(text.utf8)])
+    private func item(_ text: String, source: String, file: Bool = false, rich: Bool = false) -> HistoryItem {
+        let snap: ClipSnapshot
+        if file {
+            snap = ClipSnapshot(parts: [:], files: [ClipFile(name: text, data: Data(text.utf8))])
+        } else if rich {
+            snap = ClipSnapshot(parts: [.text: Data(text.utf8), .rtf: Data("{\\rtf1}".utf8)])
+        } else {
+            snap = ClipSnapshot(parts: [.text: Data(text.utf8)])
+        }
         return HistoryItem(snapshot: snap, hash: snap.hash, timestamp: 0, label: text, source: source)
     }
 
@@ -21,12 +26,32 @@ final class PickerGroupingTests: XCTestCase {
     func testGroupBadgesCountByKind() {
         let model = makeModel()
         load(model, [item("a", source: "Home"), item("b", source: "Home"),
+                     item("styled", source: "Home", rich: true),
                      item("f.txt", source: "Home", file: true), item("c", source: "HCL")])
 
         let groups = model.grouped
         XCTAssertEqual(groups.map(\.source), ["Home", "HCL"])
-        XCTAssertEqual(groups[0].badges.map { "\($0.symbol):\($0.count)" }, ["textformat:2", "doc:1"])
-        XCTAssertEqual(groups[1].badges.map { "\($0.symbol):\($0.count)" }, ["textformat:1"])
+        // Plain and rich text count separately.
+        XCTAssertEqual(groups[0].badges.map { "\($0.symbol):\($0.count)" },
+                       ["text.alignleft:2", "textformat:1", "doc:1"])
+        XCTAssertEqual(groups[1].badges.map { "\($0.symbol):\($0.count)" }, ["text.alignleft:1"])
+    }
+
+    /// RTF outranks image parts: a formatted-text copy that also carries a TIFF
+    /// rendering of the selection (Excel, Word, …) is still a text copy; a real
+    /// image copy has no RTF and stays "image".
+    func testContentLabelClassifiesRenderedRichTextAsRichNotImage() {
+        let officeStyle = ClipSnapshot(parts: [.text: Data("cells".utf8),
+                                               .rtf: Data("{\\rtf1}".utf8),
+                                               .tiff: Data([0x4D, 0x4D])])
+        XCTAssertEqual(officeStyle.contentLabel, "rich text")
+
+        let realImage = ClipSnapshot(parts: [.png: Data([0x89, 0x50]), .tiff: Data([0x4D, 0x4D])])
+        XCTAssertEqual(realImage.contentLabel, "image")
+
+        let browserImage = ClipSnapshot(parts: [.tiff: Data([0x4D, 0x4D]),
+                                                .text: Data("https://example.com/cat.png".utf8)])
+        XCTAssertEqual(browserImage.contentLabel, "image")
     }
 
     func testCollapseHidesRowsKeepsHeaderAndReindexes() {
