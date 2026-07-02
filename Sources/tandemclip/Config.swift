@@ -116,6 +116,15 @@ final class Config {
             }
         }
 
+        // Migration: 0.2.0 changed trustedDevices values from display names to
+        // base64 signing keys. Drop any legacy name-valued entries so a stale
+        // name can never be treated as a pinned key — it would never match a real
+        // key and would silently keep a device untrusted when the allowlist is on.
+        if let trusted = defaults.dictionary(forKey: "trustedDevices") as? [String: String],
+           trusted.contains(where: { !Config.looksLikeSigningKey($0.value) }) {
+            defaults.set(trusted.filter { Config.looksLikeSigningKey($0.value) }, forKey: "trustedDevices")
+        }
+
         // Runtime pause starts from the persisted preference.
         paused = defaults.bool(forKey: "paused") || defaults.bool(forKey: "startPaused")
 
@@ -233,8 +242,12 @@ final class Config {
 
     // MARK: - Security
 
+    /// Opt-in device pinning. Off by default: the pairing-code-derived PSK is
+    /// what makes "same Wi-Fi" insufficient, and turning this on with an empty
+    /// trust list would silently drop every peer. Enabling it lets the user pin
+    /// specific deviceID→publicKey pairs so trust is enforceable and revocable.
     var allowlistEnabled: Bool {
-        get { defaults.object(forKey: "allowlistEnabled") == nil ? true : defaults.bool(forKey: "allowlistEnabled") }
+        get { defaults.bool(forKey: "allowlistEnabled") }
         set { set("allowlistEnabled", newValue) }
     }
 
@@ -280,6 +293,13 @@ final class Config {
     }
 
     // MARK: - Secret
+
+    /// True when we hold a usable pairing secret. When the Keychain item exists
+    /// but can't be read, `pairingCode` is left empty (rather than overwriting the
+    /// real secret) — and `derivePSK` then falls back to a fixed, publicly-known
+    /// key. Networking MUST NOT come up in that state, or any LAN peer could
+    /// complete the PSK-TLS handshake. Callers gate `transport.start()` on this.
+    var hasPairingSecret: Bool { !pairingCode.isEmpty }
 
     /// 256-bit pre-shared key derived from the pairing code with PBKDF2-HMAC-SHA256
     /// at a high iteration count, adding a brute-force work factor against a
@@ -372,6 +392,12 @@ final class Config {
         if id == ownDeviceID { return publicKey == nil || publicKey == ownPublicKey }
         guard let publicKey else { return false }
         return trustedDevices[id] == publicKey
+    }
+
+    /// A base64-encoded Curve25519 signing public key decodes to exactly 32
+    /// bytes. Used to tell a real pinned key from a legacy display-name entry.
+    static func looksLikeSigningKey(_ value: String) -> Bool {
+        Data(base64Encoded: value)?.count == 32
     }
 
     static func newDeviceID() -> String {

@@ -59,6 +59,26 @@ final class SecurityTests: XCTestCase {
         XCTAssertNil(DeviceIdentity.verifiedPublicKey(for: message))
     }
 
+    func testLooksLikeSigningKeyDistinguishesKeysFromLegacyNames() {
+        // A real Curve25519 signing public key is 32 raw bytes → base64.
+        XCTAssertTrue(Config.looksLikeSigningKey(DeviceIdentity().publicKeyBase64))
+        // Legacy trustedDevices values were display names, not keys.
+        XCTAssertFalse(Config.looksLikeSigningKey("MacBook Pro"))
+        XCTAssertFalse(Config.looksLikeSigningKey(""))
+        // Base64 of the wrong length must not pass as a key.
+        XCTAssertFalse(Config.looksLikeSigningKey(Data(count: 16).base64EncodedString()))
+    }
+
+    func testEmptyPairingCodeYieldsNoUsableSecretAndDistinctPSK() {
+        // The "Keychain present but unreadable" path leaves an empty code. derivePSK
+        // must not hand back a live key there — networking is gated on a non-empty
+        // code so the fixed fallback is never used to key a real TLS handshake.
+        let real = Config.derivePSK(from: "ABCD-EFGH-JKLM")
+        XCTAssertNotEqual(real, Data(count: 32))
+        XCTAssertEqual(Config.derivePSK(from: ""), Data(count: 32))
+        XCTAssertNotEqual(Config.derivePSK(from: ""), real)
+    }
+
     func testAllowlistBindsDeviceIDToPublicKey() {
         let trusted = ["d-peer": "peer-key"]
 

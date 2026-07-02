@@ -194,6 +194,11 @@ final class Transport {
     private func setup(_ conn: NWConnection, outKey: String? = nil) {
         guard connections.count < maxConnections else {
             Log.trace("tls", "connection limit reached; dropping \(conn.endpoint)")
+            // Free the reserved outbound key: this early return happens before the
+            // stateUpdateHandler is installed, so teardown() never runs and the key
+            // would otherwise leak in activeOutbound, permanently blocking a future
+            // re-dial of this peer once a connection slot frees up.
+            if let key = outKey { activeOutbound.remove(key) }
             conn.cancel()
             return
         }
@@ -260,8 +265,12 @@ final class Transport {
             // Big-endian assembly (avoids unaligned loads).
             let len = lenData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let n = Int(len)
-            // Cap generously: a base64+JSON image frame is ~1.4× the raw bytes.
-            let maxFrameBytes = min(48_000_000, max(1_500_000, config.maxClipBytes * 2))
+            // Fixed protocol-wide DoS ceiling, independent of the local
+            // maxClipBytes preference. Tying it to *this* Mac's clip-size setting
+            // would tear down the whole TLS connection whenever a peer configured
+            // for larger clips sent a legitimate frame above our own limit; the
+            // sender already bounds payloads by its own maxClipBytes.
+            let maxFrameBytes = 48_000_000
             if n <= 0 || n > maxFrameBytes { conn.cancel(); return }
             self.receiveBody(on: conn, length: n)
             if done { conn.cancel() }
