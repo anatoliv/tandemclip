@@ -97,7 +97,7 @@ final class SyncEngine {
         watcher.syncFiles = { [weak self] in self?.config.syncFiles ?? false }
         watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
-        transport.onMessage = { [weak self] msg in self?.handleRemote(msg) }
+        transport.onMessage = { [weak self] msg, verifiedKey in self?.handleRemote(msg, verifiedKey: verifiedKey) }
         transport.helloProvider = { [weak self] in self?.makeAnnounce() }
         transport.onConnectedPeersChanged = { [weak self] dict in self?.updateConnected(dict) }
     }
@@ -182,8 +182,9 @@ final class SyncEngine {
         config.role.canReceive && !config.paused && networkAllowed()
     }
 
-    private func handleRemote(_ msg: Message) {
-        let verifiedKey = DeviceIdentity.verifiedPublicKey(for: msg)
+    private func handleRemote(_ msg: Message, verifiedKey: String?) {
+        // `verifiedKey` was already signature-checked on the transport queue
+        // (Transport.receiveBody); don't re-run the EdDSA verify here.
         let hasSignedIdentity = msg.identityPublicKey != nil || msg.identitySignature != nil
         guard !hasSignedIdentity || verifiedKey != nil else {
             Log.trace("sync", "dropped \(msg.type.rawValue) with invalid identity signature from \(msg.deviceName)")
