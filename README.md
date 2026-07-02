@@ -176,6 +176,24 @@ The public landing + download site is a static `nginx` container
 (`web/docker-compose.yml`) fronted by nginx-proxy-manager with a Let's Encrypt
 cert — the same pattern as its sibling apps on web-01.
 
+## Crash reporting (Sentry)
+
+Integrated via the Sentry Cocoa SDK, **off by default** — it only starts when a
+DSN is present, so dev/self-built copies never phone home. Privacy: no PII, IP,
+or user identifiers; crashes/errors only (no performance tracing).
+
+To enable: create a `tandemclip` Sentry project, paste its DSN into
+`Packaging/Info.plist` → `SentryDSN`, and rebuild. For symbolicated stack
+traces, set `SENTRY_AUTH_TOKEN` (+ `brew install getsentry/tools/sentry-cli`)
+and `release.sh` uploads dSYMs automatically.
+
+## Uptime
+
+The public site is probed every 30s by the web-01 monitoring stack
+(`blackbox` → prometheus), with a `tandemclip-down` Grafana rule that pages
+`#critical-alerts` on Discord if `https://tandemclip.com/` stops returning 200
+for >2 min.
+
 ## Roadmap
 
 Text, rich text, and images sync today (each copy carries every enabled
