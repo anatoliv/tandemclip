@@ -2,49 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>TandemClip</string>
-    <key>CFBundleDisplayName</key>
-    <string>TandemClip</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.tandemclip</string>
-    <key>CFBundleExecutable</key>
-    <string>tandemclip</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-
-    <!-- Menu-bar-only: no Dock icon, no main window. -->
-    <key>LSUIElement</key>
-    <true/>
-
-    <!-- Required (macOS 14+) to advertise/browse Bonjour without the Local
-         Network prompt silently blocking discovery. Must list every service
-         type the app uses. -->
-    <key>NSLocalNetworkUsageDescription</key>
-    <string>TandemClip syncs your clipboard between your Macs on the local network only.</string>
-    <key>NSBonjourServices</key>
-    <array>
-        <string>_tandemclip._tcp</string>
-    </array>
-
-    <key>NSHumanReadableCopyright</key>
-    <string>LAN-only clipboard sync. No cloud, no relay.</string>
-
-    <!-- Sparkle auto-update. Public EdDSA key verifies the signed DMG; the feed
-         is served from web-01 at tandemclip.com. -->
-    <key>SUFeedURL</key>
-    <string>https://tandemclip.com/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>pDgN5Ibe6Q9QY5cxRpXmXLm/S2lBGbVLy/eBVEW1nTo=</string>
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
+	<key>CFBundleDisplayName</key>
+	<string>TandemClip</string>
+	<key>CFBundleExecutable</key>
+	<string>tandemclip</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.tandemclip</string>
+	<key>CFBundleName</key>
+	<string>TandemClip</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.1</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_tandemclip._tcp</string>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>LAN-only clipboard sync. No cloud, no relay.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>TandemClip syncs your clipboard between your Macs on the local network only.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://tandemclip.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>pDgN5Ibe6Q9QY5cxRpXmXLm/S2lBGbVLy/eBVEW1nTo=</string>
 </dict>
 </plist>
