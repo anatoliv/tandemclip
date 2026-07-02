@@ -315,22 +315,30 @@ final class Transport {
             }
             if let body = data, body.count == length,
                let msg = try? JSONDecoder().decode(Message.self, from: body) {
-                // Guard against a loopback/self connection (e.g. a stale Bonjour
-                // resolution of our own service): never treat ourselves as a peer.
+                // A frame carrying our own deviceID is either a loopback/self
+                // connection (stale Bonjour resolution of our own service — the
+                // first frame arrives before any identity is learned) or a peer
+                // relaying our own broadcast back to us (gossip echo). Cancel
+                // the former; for the latter just skip the frame — cancelling
+                // would churn a healthy peer connection on every relay.
                 if msg.deviceID == self.config.deviceID {
-                    Log.trace("tls", "self-connection detected — dropping \(conn.endpoint)")
-                    conn.cancel(); return
+                    if self.identity[id] == nil {
+                        Log.trace("tls", "self-connection detected — dropping \(conn.endpoint)")
+                        conn.cancel(); return
+                    }
+                    // Identified peer echoing us — skip the frame, keep reading.
+                } else {
+                    Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
+                    // Learn/refresh this connection's identity.
+                    let publicKey = DeviceIdentity.verifiedPublicKey(for: msg)
+                    let known = self.identity[id]?.id == msg.deviceID
+                        && self.identity[id]?.publicKey == publicKey
+                    self.identity[id] = PeerConnectionInfo(id: msg.deviceID,
+                                                           name: msg.deviceName,
+                                                           publicKey: publicKey)
+                    if !known { self.notifyPeers() }
+                    DispatchQueue.main.async { self.onMessage?(msg, publicKey) }
                 }
-                Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
-                // Learn/refresh this connection's identity.
-                let publicKey = DeviceIdentity.verifiedPublicKey(for: msg)
-                let known = self.identity[id]?.id == msg.deviceID
-                    && self.identity[id]?.publicKey == publicKey
-                self.identity[id] = PeerConnectionInfo(id: msg.deviceID,
-                                                       name: msg.deviceName,
-                                                       publicKey: publicKey)
-                if !known { self.notifyPeers() }
-                DispatchQueue.main.async { self.onMessage?(msg, publicKey) }
             }
             if err == nil && !done {
                 self.receiveHeader(on: conn)
