@@ -307,7 +307,7 @@ struct SettingsView: View {
                                 set: { model.config.setTrusted(peer.id, name: peer.clip.name, trusted: $0) }
                             )) {
                                 HStack(spacing: 7) {
-                                    Circle().fill(peer.clip.online ? Color.green : Color.secondary.opacity(0.4))
+                                    Circle().fill(model.engine.isSynced(peer.id) ? Color.green : Color.secondary.opacity(0.4))
                                         .frame(width: 7, height: 7)
                                     Text(peer.clip.name)
                                 }

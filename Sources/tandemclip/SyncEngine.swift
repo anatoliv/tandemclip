@@ -55,7 +55,18 @@ final class SyncEngine {
 
     var onStatusChange: (() -> Void)?
 
-    var peerCount: Int { peers.values.filter { $0.online }.count }
+    /// A peer counts as "connected" only if it's both linked AND allowed to sync
+    /// (trusted when the allowlist is on). Untrusting a device makes it read as
+    /// not-synced immediately, even though the TLS link may still be up.
+    func isSynced(_ id: String) -> Bool {
+        (peers[id]?.online ?? false) && config.isTrusted(id)
+    }
+    var peerCount: Int { peers.keys.filter { isSynced($0) }.count }
+
+    /// Peers we can actually pull from right now (online + trusted).
+    func syncablePeers() -> [(id: String, clip: PeerClip)] {
+        sortedPeers().filter { isSynced($0.id) }
+    }
 
     /// Current local clipboard (kind label + total bytes), for menu-bar
     /// visibility. Nil until something syncable has been copied this session.
