@@ -61,7 +61,15 @@ final class Config {
         // after a re-sign, or locked), we must NOT generate a new code — doing so
         // overwrites the real secret and silently un-pairs this Mac from the fleet.
         let env = ProcessInfo.processInfo.environment
-        if let setCode = env["TANDEMCLIP_SET_CODE"], !setCode.isEmpty {
+        if let fileCode = Config.consumeBootstrapCode() {
+            // A one-shot code file dropped by deploy tooling. The app persists it
+            // into the Keychain here (running in the GUI session, so the write
+            // succeeds), then deletes the file. This heals a diverged fleet even
+            // when the Keychain can't be written from a headless ssh session.
+            KeychainStore.delete("pairingCode")
+            KeychainStore.set("pairingCode", fileCode)
+            pairingCode = fileCode
+        } else if let setCode = env["TANDEMCLIP_SET_CODE"], !setCode.isEmpty {
             KeychainStore.delete("pairingCode")
             KeychainStore.set("pairingCode", setCode)
             pairingCode = setCode
@@ -273,6 +281,21 @@ final class Config {
     static func newDeviceID() -> String {
         let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
         return "d-" + (0..<12).map { _ in String(alphabet.randomElement()!) }.joined()
+    }
+
+    /// One-shot heal: read (and delete) a pairing code dropped as a plain file at
+    /// <AppSupport>/TandemClip/pairing-code.txt. Lets deploy tooling set the code
+    /// over ssh (file write) while the Keychain write happens here in the GUI
+    /// session. Returns nil if the file is absent/empty.
+    static func consumeBootstrapCode() -> String? {
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return nil }
+        let url = support.appendingPathComponent("TandemClip/pairing-code.txt")
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        try? fm.removeItem(at: url)
+        let code = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return code.isEmpty ? nil : code
     }
 
     private func set(_ key: String, _ value: Any) {
