@@ -53,24 +53,34 @@ final class ClipboardWatcher {
         let typeNames = Set((pasteboard.types ?? []).map { $0.rawValue })
         if !skipTypes.isDisjoint(with: typeNames) { return }
 
+        // Read any copied file URLs up front. A file copy (Finder etc.) also
+        // puts the file's *name* on the pasteboard as plain text — we must NOT
+        // treat that as a text clip, or a copied file (even one too big to sync)
+        // shows up in history as its filename. So when this is a file copy, we
+        // capture files only, never the accompanying text.
+        let fileURLs = ((pasteboard.readObjects(forClasses: [NSURL.self],
+                        options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? [])
+                        .filter { $0.isFileURL }
+        let isFileCopy = !fileURLs.isEmpty
+
         let kinds = enabledKinds().union([.text])   // text always considered
         var parts: [ClipKind: Data] = [:]
-        for kind in kinds {
-            if kind == .text {
-                if let s = pasteboard.string(forType: .string), !s.isEmpty {
-                    parts[.text] = Data(s.utf8)
+        if !isFileCopy {
+            for kind in kinds {
+                if kind == .text {
+                    if let s = pasteboard.string(forType: .string), !s.isEmpty {
+                        parts[.text] = Data(s.utf8)
+                    }
+                } else if let d = pasteboard.data(forType: kind.pasteboardType), !d.isEmpty {
+                    parts[kind] = d
                 }
-            } else if let d = pasteboard.data(forType: kind.pasteboardType), !d.isEmpty {
-                parts[kind] = d
             }
         }
         // Copied files — transfer by content (skip folders; needs zipping).
         var files: [ClipFile] = []
         if syncFiles() {
-            let urls = (pasteboard.readObjects(forClasses: [NSURL.self],
-                        options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
             var used = parts.values.reduce(0) { $0 + $1.count }
-            for url in urls where url.isFileURL {
+            for url in fileURLs {
                 var isDir: ObjCBool = false
                 FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
                 if isDir.boolValue { continue }
