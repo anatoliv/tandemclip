@@ -93,15 +93,20 @@ final class SettingsModel: ObservableObject {
     }
 
     func addCurrentSSID() {
-        guard let s = NetworkGuard.currentSSID(), !s.isEmpty, !s.hasPrefix("<") else {
-            ssidHint = "Couldn't read this network's name here — type it in the field below."
+        guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
+            ssidHint = "Couldn't read the Wi-Fi name — are you connected to Wi-Fi (not Ethernet/VPN)?"
             return
         }
+        // Add the current network so sync is allowed on it. If the OS scrubbed
+        // the name to a "<…>" placeholder (some environments do), it still gets
+        // added (hidden from the list) and matches the guard — just don't reveal
+        // the placeholder text in the confirmation.
+        let scrubbed = s.hasPrefix("<")
         if allowedSSIDs.contains(s) {
-            ssidHint = "“\(s)” is already in the list."
+            ssidHint = scrubbed ? "Current network is already allowed." : "“\(s)” is already in the list."
         } else {
             allowedSSIDs.append(s)
-            ssidHint = "Added “\(s)”."
+            ssidHint = scrubbed ? "Added the current network." : "Added “\(s)”."
         }
     }
     func removeSSID(_ ssid: String) {
