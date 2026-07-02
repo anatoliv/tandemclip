@@ -7,11 +7,15 @@ final class MenuBarController: NSObject {
     private let config: Config
     private let engine: SyncEngine
     private let onOpenSettings: () -> Void
+    private let onCheckForUpdates: () -> Void
 
-    init(config: Config, engine: SyncEngine, onOpenSettings: @escaping () -> Void) {
+    init(config: Config, engine: SyncEngine,
+         onOpenSettings: @escaping () -> Void,
+         onCheckForUpdates: @escaping () -> Void) {
         self.config = config
         self.engine = engine
         self.onOpenSettings = onOpenSettings
+        self.onCheckForUpdates = onCheckForUpdates
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         applyStatusIcon()
@@ -85,6 +89,7 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
         menu.addItem(action: "Settings…", selector: #selector(openSettings), target: self, key: ",")
+        menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
         menu.addItem(disabled: "Pairing code: \(config.pairingCode)")
         menu.addItem(action: "Copy pairing code", selector: #selector(copyPairing), target: self)
 
@@ -138,6 +143,8 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func openSettings() { onOpenSettings() }
+
+    @objc private func checkForUpdates() { onCheckForUpdates() }
 
     @objc private func copyPairing() {
         NSPasteboard.general.clearContents()

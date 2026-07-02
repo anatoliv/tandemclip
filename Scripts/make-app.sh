@@ -39,17 +39,30 @@ cp "${BIN_PATH}" "${BUNDLE}/Contents/MacOS/${EXE_NAME}"
 cp "Packaging/Info.plist" "${BUNDLE}/Contents/Info.plist"
 [[ -f Packaging/AppIcon.icns ]] && cp "Packaging/AppIcon.icns" "${BUNDLE}/Contents/Resources/AppIcon.icns"
 
-echo "==> Code signing"
-if [[ -n "${IDENTITY}" ]]; then
-    codesign --force --deep --options runtime --timestamp \
-        --sign "${IDENTITY}" "${BUNDLE}"
-    echo "    signed with Developer ID: ${IDENTITY}"
-else
-    # Ad-hoc signature: fine for running on THIS machine; will not pass
-    # Gatekeeper on other machines and cannot be notarized.
-    codesign --force --deep --sign - "${BUNDLE}"
-    echo "    ad-hoc signed (local machine only)"
+# Bundle Sparkle.framework (auto-update) if the app links it.
+SPARKLE_FW="$(find .build -type d -name 'Sparkle.framework' -path '*macos*' 2>/dev/null | head -1)"
+if [[ -n "${SPARKLE_FW}" ]]; then
+    echo "==> Bundling Sparkle.framework"
+    mkdir -p "${BUNDLE}/Contents/Frameworks"
+    cp -R "${SPARKLE_FW}" "${BUNDLE}/Contents/Frameworks/"
 fi
+
+echo "==> Code signing"
+SIGN="${IDENTITY:--}"                       # '-' = ad-hoc
+SOPTS=(--force --options runtime --timestamp)
+[[ -z "${IDENTITY}" ]] && SOPTS=(--force)   # ad-hoc can't use runtime/timestamp
+
+# Sign Sparkle's nested code deepest-first (no --deep; it mis-signs XPC).
+FW="${BUNDLE}/Contents/Frameworks/Sparkle.framework"
+if [[ -d "${FW}" ]]; then
+    V="${FW}/Versions/B"
+    for x in "${V}/XPCServices/Downloader.xpc" "${V}/XPCServices/Installer.xpc" \
+             "${V}/Autoupdate" "${V}/Updater.app" "${FW}"; do
+        codesign "${SOPTS[@]}" --sign "${SIGN}" "$x"
+    done
+fi
+codesign "${SOPTS[@]}" --sign "${SIGN}" "${BUNDLE}"
+[[ -n "${IDENTITY}" ]] && echo "    signed with Developer ID: ${IDENTITY}" || echo "    ad-hoc signed (local only)"
 
 codesign --verify --verbose "${BUNDLE}" >/dev/null && echo "    signature verified"
 

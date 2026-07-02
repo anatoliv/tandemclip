@@ -37,5 +37,14 @@
 
     <key>NSHumanReadableCopyright</key>
     <string>LAN-only clipboard sync. No cloud, no relay.</string>
+
+    <!-- Sparkle auto-update. Public EdDSA key verifies the signed DMG; the feed
+         is served from web-01 at tandemclip.com. -->
+    <key>SUFeedURL</key>
+    <string>https://tandemclip.com/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>pDgN5Ibe6Q9QY5cxRpXmXLm/S2lBGbVLy/eBVEW1nTo=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
 </dict>
 </plist>

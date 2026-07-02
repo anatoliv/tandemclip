@@ -6,6 +6,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private lazy var engine = SyncEngine(config: config)
     private var menuBar: MenuBarController?
     private lazy var settingsWindow = SettingsWindowController(config: config, engine: engine)
+    private let updater = Updater()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Reflect persisted settings that live outside Config's own storage.
@@ -13,9 +14,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         LaunchAtLogin.set(config.launchAtLogin)
         engine.networkAllowed = { [config] in NetworkGuard.syncAllowed(config) }
 
-        let menuBar = MenuBarController(config: config, engine: engine) { [weak self] in
-            self?.settingsWindow.show()
-        }
+        let menuBar = MenuBarController(config: config, engine: engine,
+            onOpenSettings: { [weak self] in self?.settingsWindow.show() },
+            onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates() })
         self.menuBar = menuBar
         engine.onStatusChange = { [weak menuBar] in menuBar?.refresh() }
 
