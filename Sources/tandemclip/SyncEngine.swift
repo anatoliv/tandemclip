@@ -18,6 +18,7 @@ struct HistoryItem: Identifiable {
 struct PeerClip {
     var name: String
     var online: Bool = false
+    var publicKey: String?
     var timestamp: Double = 0
     var size: Int?
     var hash: String?
@@ -40,6 +41,14 @@ final class SyncEngine {
     private var pendingPull: [String: Double] = [:]  // deviceID -> time we requested from it
     private let pullTimeout: Double = 20             // a pull reply is only honored this long
     private var pullOpen: Set<String> = []           // deviceIDs whose pulled file(s) to open
+    private var lastRequestServed: [String: Double] = [:]
+
+    // Inbound DoS guards (all touched on the main thread).
+    private var inboundTimes: [String: [Double]] = [:]   // deviceID -> recent message times
+    private let inboundWindow: Double = 10               // sliding window (seconds)
+    private let inboundMax = 40                          // max messages per window per device
+    private var seenSignatures: [String: Double] = [:]  // identitySignature -> first seen (replay guard)
+    private let replayWindow: Double = 600              // how long a signature is remembered
 
     // Our current shareable clipboard (last non-secret local copy).
     private var localSnapshot: ClipSnapshot?
@@ -59,7 +68,8 @@ final class SyncEngine {
     /// (trusted when the allowlist is on). Untrusting a device makes it read as
     /// not-synced immediately, even though the TLS link may still be up.
     func isSynced(_ id: String) -> Bool {
-        (peers[id]?.online ?? false) && config.isTrusted(id)
+        guard let peer = peers[id] else { return false }
+        return peer.online && config.isTrusted(id, publicKey: peer.publicKey)
     }
     var peerCount: Int { peers.keys.filter { isSynced($0) }.count }
 
@@ -126,6 +136,7 @@ final class SyncEngine {
         pullOpen.insert(deviceID)   // grabbing a Mac's clip is user-initiated → open any files
         var req = Message(type: .request, deviceID: config.deviceID, deviceName: config.deviceName)
         req.timestamp = now()
+        config.identity.sign(&req)
         transport.send(req, to: deviceID)
     }
 
@@ -166,23 +177,40 @@ final class SyncEngine {
     }
 
     private func handleRemote(_ msg: Message) {
-        guard config.isTrusted(msg.deviceID) else {
+        let verifiedKey = DeviceIdentity.verifiedPublicKey(for: msg)
+        let hasSignedIdentity = msg.identityPublicKey != nil || msg.identitySignature != nil
+        guard !hasSignedIdentity || verifiedKey != nil else {
+            Log.trace("sync", "dropped \(msg.type.rawValue) with invalid identity signature from \(msg.deviceName)")
+            return
+        }
+        guard config.isTrusted(msg.deviceID, publicKey: verifiedKey) else {
             Log.trace("sync", "dropped \(msg.type.rawValue) from untrusted \(msg.deviceName)")
+            return
+        }
+        guard allowInbound(from: msg.deviceID) else {
+            Log.trace("sync", "rate-limited \(msg.type.rawValue) from \(msg.deviceName)")
             return
         }
 
         switch msg.type {
         case .announce:
             guard receiveAllowed else { return }   // don't learn a peer's clipboard when we can't receive
-            updatePeer(from: msg)
+            updatePeer(from: msg, publicKey: verifiedKey)
 
         case .clip:
             guard receiveAllowed else { return }
-            updatePeer(from: msg)
+            guard !isReplayedClip(msg) else {
+                Log.trace("sync", "dropped replayed clip from \(msg.deviceName)")
+                return
+            }
+            updatePeer(from: msg, publicKey: verifiedKey)
             applyIncomingClip(msg)
 
         case .request:
             guard config.role.canSend, !config.paused, networkAllowed() else { return }
+            let t = now()
+            guard t - (lastRequestServed[msg.deviceID] ?? 0) >= 1 else { return }
+            lastRequestServed[msg.deviceID] = t
             guard let reply = clipMessage(type: .clip) else { return }
             Log.trace("sync", "serving pull -> \(msg.deviceName)")
             transport.send(reply, to: msg.deviceID)
@@ -236,17 +264,41 @@ final class SyncEngine {
         return urls
     }
 
-    /// Open materialized file clips in their default app (user-initiated only).
+    /// Reveal materialized file clips in Finder. We never auto-open peer-supplied
+    /// content: the bytes are fully attacker-controlled, so opening them in a
+    /// default handler (executables, scripts, .webloc/.url handlers, documents
+    /// that exploit their app) would be a remote-code-execution path. The user
+    /// opens the file themselves after seeing what it is.
     private func openFiles(_ urls: [URL]) {
-        for url in urls {
-            Log.trace("sync", "open \(url.lastPathComponent)")
-            if !NSWorkspace.shared.open(url) {
-                // No default app / unknown type — at least reveal it in Finder
-                // so the pick isn't a silent no-op.
-                Log.error("open failed for \(url.lastPathComponent) — revealing in Finder")
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            }
-        }
+        guard !urls.isEmpty else { return }
+        for url in urls { Log.trace("sync", "reveal \(url.lastPathComponent)") }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    // MARK: - Inbound DoS / replay guards
+
+    /// Sliding-window rate limit per peer. Returns false when the peer has
+    /// exceeded `inboundMax` messages in the last `inboundWindow` seconds.
+    private func allowInbound(from deviceID: String) -> Bool {
+        let t = now()
+        var times = (inboundTimes[deviceID] ?? []).filter { t - $0 <= inboundWindow }
+        guard times.count < inboundMax else { inboundTimes[deviceID] = times; return false }
+        times.append(t)
+        inboundTimes[deviceID] = times
+        return true
+    }
+
+    /// True if we've already processed this exact signed clip recently (an
+    /// attacker or relay replaying a captured frame). Each genuine copy carries a
+    /// fresh timestamp, hence a distinct signature, so legitimate re-copies are
+    /// never blocked. Unsigned clips (allowlist off) skip this check.
+    private func isReplayedClip(_ msg: Message) -> Bool {
+        guard let sig = msg.identitySignature else { return false }
+        let t = now()
+        seenSignatures = seenSignatures.filter { t - $0.value <= replayWindow }
+        if seenSignatures[sig] != nil { return true }
+        seenSignatures[sig] = t
+        return false
     }
 
     // MARK: - History (in-memory, opt-in)
@@ -293,9 +345,10 @@ final class SyncEngine {
 
     // MARK: - Peer table
 
-    private func updatePeer(from msg: Message) {
+    private func updatePeer(from msg: Message, publicKey: String?) {
         var p = peers[msg.deviceID] ?? PeerClip(name: msg.deviceName)
         p.name = msg.deviceName
+        if let publicKey { p.publicKey = publicKey }
         if msg.timestamp > 0 { p.timestamp = msg.timestamp }
         if let s = msg.size { p.size = s }
         if let h = msg.hash { p.hash = h }
@@ -305,11 +358,12 @@ final class SyncEngine {
         onStatusChange?()
     }
 
-    private func updateConnected(_ dict: [String: String]) {
+    private func updateConnected(_ dict: [String: PeerConnectionInfo]) {
         let online = Set(dict.keys)
-        for (id, name) in dict {
-            var p = peers[id] ?? PeerClip(name: name)
-            p.name = name
+        for (id, info) in dict {
+            var p = peers[id] ?? PeerClip(name: info.name)
+            p.name = info.name
+            if let publicKey = info.publicKey { p.publicKey = publicKey }
             p.online = true
             peers[id] = p
         }
@@ -328,7 +382,10 @@ final class SyncEngine {
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
         guard config.role.canSend, config.previewLevel != .names,
-              let h = localHash, let snap = localSnapshot else { return m }
+              let h = localHash, let snap = localSnapshot else {
+            config.identity.sign(&m)
+            return m
+        }
         m.timestamp = localTimestamp
         m.hash = h
         m.size = snap.totalBytes
@@ -336,6 +393,7 @@ final class SyncEngine {
         if config.previewLevel == .preview, let t = snap.plainText {
             m.preview = String(t.prefix(80)).replacingOccurrences(of: "\n", with: " ")
         }
+        config.identity.sign(&m)
         return m
     }
 
@@ -350,6 +408,7 @@ final class SyncEngine {
         m.text = snap.plainText
         m.parts = snap.wireParts
         m.files = snap.wireFiles.isEmpty ? nil : snap.wireFiles
+        config.identity.sign(&m)
         return m
     }
 

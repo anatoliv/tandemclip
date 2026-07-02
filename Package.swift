@@ -20,6 +20,10 @@ let package = Package(
                 // Find Sparkle.framework inside the packaged .app at runtime.
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
+        ),
+        .testTarget(
+            name: "tandemclipTests",
+            dependencies: ["tandemclip"]
         )
     ]
 )

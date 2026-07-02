@@ -2,6 +2,12 @@ import Foundation
 import Network
 import Security
 
+struct PeerConnectionInfo {
+    let id: String
+    let name: String
+    let publicKey: String?
+}
+
 /// LAN peer-to-peer transport: Bonjour discovery + PSK-TLS connections.
 ///
 /// - Advertises `_tandemclip._tcp` via an NWListener and discovers peers with
@@ -18,7 +24,9 @@ final class Transport {
     private var browser: NWBrowser?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var readyIDs: Set<ObjectIdentifier> = []         // connections past TLS handshake
-    private var identity: [ObjectIdentifier: (id: String, name: String)] = [:]  // learned from messages
+    private var identity: [ObjectIdentifier: PeerConnectionInfo] = [:]  // learned from messages
+    private let maxConnections = 16
+    private let maxVisibleEndpoints = 32
 
     // Reconnection state (all touched only on `queue`):
     private var visibleEndpoints: [String: NWEndpoint] = [:]  // key -> currently-advertised peer
@@ -29,7 +37,7 @@ final class Transport {
     /// Delivered messages (identity already recorded).
     var onMessage: ((Message) -> Void)?
     /// Currently connected + identified peers: deviceID -> display name.
-    var onConnectedPeersChanged: (([String: String]) -> Void)?
+    var onConnectedPeersChanged: (([String: PeerConnectionInfo]) -> Void)?
     /// Called for each newly-ready connection to obtain the identity/announce
     /// frame to send immediately (so both ends learn each other right away).
     var helloProvider: (() -> Message?)?
@@ -159,7 +167,7 @@ final class Transport {
         b.browseResultsChangedHandler = { [weak self] results, _ in
             guard let self = self else { return }
             var visible: [String: NWEndpoint] = [:]
-            for result in results {
+            for result in results.prefix(self.maxVisibleEndpoints) {
                 // Skip our own advertisement (matched by unique deviceID).
                 if case let .service(name, _, _, _) = result.endpoint,
                    name == self.config.deviceID {
@@ -184,6 +192,11 @@ final class Transport {
     // MARK: - Connection lifecycle
 
     private func setup(_ conn: NWConnection, outKey: String? = nil) {
+        guard connections.count < maxConnections else {
+            Log.trace("tls", "connection limit reached; dropping \(conn.endpoint)")
+            conn.cancel()
+            return
+        }
         let id = ObjectIdentifier(conn)
         if let key = outKey { outboundKey[id] = key }
         conn.stateUpdateHandler = { [weak self] state in
@@ -229,9 +242,9 @@ final class Transport {
 
     /// Publish the current set of connected + identified peers (deviceID -> name).
     private func notifyPeers() {
-        var peers: [String: String] = [:]
+        var peers: [String: PeerConnectionInfo] = [:]
         for id in readyIDs {
-            if let ident = identity[id] { peers[ident.id] = ident.name }
+            if let ident = identity[id] { peers[ident.id] = ident }
         }
         DispatchQueue.main.async { [weak self] in self?.onConnectedPeersChanged?(peers) }
     }
@@ -248,7 +261,8 @@ final class Transport {
             let len = lenData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let n = Int(len)
             // Cap generously: a base64+JSON image frame is ~1.4× the raw bytes.
-            if n <= 0 || n > 48_000_000 { conn.cancel(); return }
+            let maxFrameBytes = min(48_000_000, max(1_500_000, config.maxClipBytes * 2))
+            if n <= 0 || n > maxFrameBytes { conn.cancel(); return }
             self.receiveBody(on: conn, length: n)
             if done { conn.cancel() }
         }
@@ -268,8 +282,12 @@ final class Transport {
                 }
                 Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
                 // Learn/refresh this connection's identity.
+                let publicKey = DeviceIdentity.verifiedPublicKey(for: msg)
                 let known = self.identity[id]?.id == msg.deviceID
-                self.identity[id] = (msg.deviceID, msg.deviceName)
+                    && self.identity[id]?.publicKey == publicKey
+                self.identity[id] = PeerConnectionInfo(id: msg.deviceID,
+                                                       name: msg.deviceName,
+                                                       publicKey: publicKey)
                 if !known { self.notifyPeers() }
                 DispatchQueue.main.async { self.onMessage?(msg) }
             }

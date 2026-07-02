@@ -18,6 +18,8 @@ struct Message: Codable {
     // Sender identity (present on every message).
     var deviceID: String
     var deviceName: String
+    var identityPublicKey: String?
+    var identitySignature: String?
 
     // Clipboard payload (announce carries metadata; clip also carries content).
     var contentType: String = "text"   // richest kind label: "text"/"rich text"/"image"

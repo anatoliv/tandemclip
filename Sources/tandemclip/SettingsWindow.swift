@@ -59,8 +59,9 @@ final class SettingsModel: ObservableObject {
     @Published var activeCode: String
 
     func applyPairingCode() {
-        let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = Config.normalizedPairingCode(pairingCode)
         guard !code.isEmpty, code != activeCode else { return }
+        guard Config.isAcceptablePairingCode(code) else { return }
         pairingCode = code
         config.setPairingCode(code)
         engine.reloadPairing()          // re-key transport live — no relaunch
@@ -76,8 +77,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func copyPairingCode() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(activeCode, forType: .string)
+        SecretPasteboard.copy(activeCode)
     }
     /// Status shown under the Wi-Fi list after an add attempt.
     @Published var ssidHint = ""
@@ -114,8 +114,8 @@ final class SettingsModel: ObservableObject {
     }
 
     var pairingCodeDirty: Bool {
-        let c = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !c.isEmpty && c != activeCode
+        let c = Config.normalizedPairingCode(pairingCode)
+        return Config.isAcceptablePairingCode(c) && c != activeCode
     }
 }
 
@@ -318,8 +318,8 @@ struct SettingsView: View {
                     } else {
                         ForEach(peers, id: \.id) { peer in
                             Toggle(isOn: Binding(
-                                get: { model.config.trustedDevices[peer.id] != nil },
-                                set: { model.config.setTrusted(peer.id, name: peer.clip.name, trusted: $0) }
+                                get: { model.config.trustedDevices[peer.id] == peer.clip.publicKey },
+                                set: { model.config.setTrusted(peer.id, publicKey: peer.clip.publicKey, trusted: $0) }
                             )) {
                                 HStack(spacing: 7) {
                                     Circle().fill(model.engine.isSynced(peer.id) ? Color.green : Color.secondary.opacity(0.4))
@@ -327,6 +327,7 @@ struct SettingsView: View {
                                     Text(peer.clip.name)
                                 }
                             }
+                            .disabled(peer.clip.publicKey == nil)
                         }
                     }
                 }
