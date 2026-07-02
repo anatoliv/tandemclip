@@ -99,11 +99,12 @@ struct HelpView: View {
                     .padding(.top, 2)
                     row("Filter & search", "Narrow the list with the All / Text / Images / Files chips, or just start typing to search.")
                     row("Files", "Picking a file copies it to the clipboard and opens it in its default app.")
+                    row("Drop to share", "Drag files from Finder onto the picker to send them to your other Macs right away — no need to copy them first.")
                 }
 
                 card("Private by design", "lock.shield") {
                     row("No cloud, no relay", "Peers talk directly over your LAN. There is no server, no account, and nothing to breach.")
-                    row("Password-manager safe", "Content marked secret by 1Password and others is never synced — same for one-time and transient copies.")
+                    row("Password-manager safe", "Content a password manager marks as secret is never synced — same for one-time and transient copies. This relies on the source app flagging it (1Password, Keychain and most managers do); an app that copies a password without the flag can't be recognized, so treat unmanaged secrets with care.")
                     row("A code only you hold", "The shared pairing code is the encryption key. Change it any time under Settings → Security; peers reconnect once they share the new code.")
                     row("Wi-Fi limit", "Optionally restrict sync to trusted Wi-Fi networks under Settings → Security (needs Location permission).")
                 }
