@@ -28,6 +28,16 @@ final class Transport {
     private let maxConnections = 16
     private let maxVisibleEndpoints = 32
 
+    // Per-connection inbound frame rate limit (touched only on `queue`). Keyed on
+    // the connection itself — un-spoofable, unlike a self-asserted deviceID — and
+    // bounded by maxConnections, so total inbound work (TLS reads, signature
+    // verifies, clipboard writes) stays capped even if a peer forges a fresh
+    // deviceID per frame. This is the real DoS chokepoint; app-layer trust and
+    // replay checks sit above it.
+    private var inboundFrameTimes: [ObjectIdentifier: [Double]] = [:]
+    private let inboundFrameWindow: Double = 10
+    private let inboundFrameMax = 200   // ~20 frames/s sustained per connection
+
     // Reconnection state (all touched only on `queue`):
     private var visibleEndpoints: [String: NWEndpoint] = [:]  // key -> currently-advertised peer
     private var activeOutbound: Set<String> = []              // keys with a live/pending outbound dial
@@ -238,6 +248,7 @@ final class Transport {
         connections[id] = nil
         readyIDs.remove(id)
         identity[id] = nil
+        inboundFrameTimes[id] = nil
         if let key = outboundKey[id] {
             activeOutbound.remove(key)
             outboundKey[id] = nil
@@ -252,6 +263,18 @@ final class Transport {
             if let ident = identity[id] { peers[ident.id] = ident }
         }
         DispatchQueue.main.async { [weak self] in self?.onConnectedPeersChanged?(peers) }
+    }
+
+    /// Per-connection sliding-window inbound frame limit. Returns false when a
+    /// single connection exceeds `inboundFrameMax` frames in `inboundFrameWindow`
+    /// seconds; the caller then drops the connection (reconcile re-dials later).
+    private func allowInboundFrame(_ id: ObjectIdentifier) -> Bool {
+        let t = Date().timeIntervalSince1970
+        var times = (inboundFrameTimes[id] ?? []).filter { t - $0 <= inboundFrameWindow }
+        guard times.count < inboundFrameMax else { inboundFrameTimes[id] = times; return false }
+        times.append(t)
+        inboundFrameTimes[id] = times
+        return true
     }
 
     // MARK: - Receive
@@ -281,6 +304,12 @@ final class Transport {
         let id = ObjectIdentifier(conn)
         conn.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self] data, _, done, err in
             guard let self = self else { return }
+            // Un-spoofable flood guard: a connection firing frames faster than any
+            // honest peer is dropped before we spend work decoding/verifying them.
+            guard self.allowInboundFrame(id) else {
+                Log.trace("tls", "inbound frame flood on \(conn.endpoint) — cancelling")
+                conn.cancel(); return
+            }
             if let body = data, body.count == length,
                let msg = try? JSONDecoder().decode(Message.self, from: body) {
                 // Guard against a loopback/self connection (e.g. a stale Bonjour

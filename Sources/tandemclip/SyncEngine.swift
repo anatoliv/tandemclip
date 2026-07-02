@@ -43,11 +43,9 @@ final class SyncEngine {
     private var pullOpen: Set<String> = []           // deviceIDs whose pulled file(s) to open
     private var lastRequestServed: [String: Double] = [:]
 
-    // Inbound DoS guards (all touched on the main thread).
-    private var inboundTimes: [String: [Double]] = [:]   // deviceID -> recent message times
-    private let inboundWindow: Double = 10               // sliding window (seconds)
-    private let inboundMax = 40                          // max messages per window per device
-    private let maxTrackedPeers = 512                    // cap distinct deviceIDs held in the DoS maps
+    // Replay guard (touched on the main thread). The inbound flood bound is NOT
+    // here: it lives in Transport, keyed on the connection (un-spoofable) rather
+    // than on a self-asserted, forgeable deviceID. See Transport.allowInboundFrame.
     private var seenSignatures: [String: Double] = [:]  // identitySignature -> first seen (replay guard)
     private let replayWindow: Double = 600              // how long a signature is remembered
 
@@ -195,10 +193,6 @@ final class SyncEngine {
             Log.trace("sync", "dropped \(msg.type.rawValue) from untrusted \(msg.deviceName)")
             return
         }
-        guard allowInbound(from: msg.deviceID) else {
-            Log.trace("sync", "rate-limited \(msg.type.rawValue) from \(msg.deviceName)")
-            return
-        }
 
         switch msg.type {
         case .announce:
@@ -297,24 +291,7 @@ final class SyncEngine {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
-    // MARK: - Inbound DoS / replay guards
-
-    /// Sliding-window rate limit per peer. Returns false when the peer has
-    /// exceeded `inboundMax` messages in the last `inboundWindow` seconds.
-    private func allowInbound(from deviceID: String) -> Bool {
-        let t = now()
-        // Prune fully-stale peers each call so a stream of spoofed deviceIDs (the
-        // key is self-asserted) can't grow the map without bound.
-        inboundTimes = inboundTimes.filter { entry in entry.value.contains { t - $0 <= inboundWindow } }
-        var times = (inboundTimes[deviceID] ?? []).filter { t - $0 <= inboundWindow }
-        // Hard cap on distinct tracked peers: once full, admit only already-known
-        // ones, so a spoof flood within a single window is bounded too.
-        if inboundTimes[deviceID] == nil && inboundTimes.count >= maxTrackedPeers { return false }
-        guard times.count < inboundMax else { inboundTimes[deviceID] = times; return false }
-        times.append(t)
-        inboundTimes[deviceID] = times
-        return true
-    }
+    // MARK: - Replay guard
 
     /// True if we've already processed this exact signed clip recently (an
     /// attacker or relay replaying a captured frame). Each genuine copy carries a
