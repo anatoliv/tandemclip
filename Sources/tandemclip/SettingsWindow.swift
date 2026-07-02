@@ -134,16 +134,47 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @State private var peers: [(id: String, clip: PeerClip)] = []
+    @State private var tab: Tab = .general
+
+    enum Tab: String, CaseIterable, Identifiable {
+        case general = "General", sync = "Sync", content = "Content", security = "Security"
+        var id: String { rawValue }
+    }
 
     var body: some View {
-        TabView {
-            generalTab.tabItem { Label("General", systemImage: "gearshape") }
-            syncTab.tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
-            contentTab.tabItem { Label("Content", systemImage: "doc.on.clipboard") }
-            securityTab.tabItem { Label("Security", systemImage: "lock.shield") }
+        VStack(spacing: 0) {
+            tabBar
+            Divider()
+            Group {
+                switch tab {
+                case .general:  generalTab
+                case .sync:     syncTab
+                case .content:  contentTab
+                case .security: securityTab
+                }
+            }
         }
-        .padding(.top, 12)
         .frame(width: 520, height: 500)
+    }
+
+    /// Custom segmented tab bar — avoids the full-width grey strip SwiftUI's
+    /// TabView draws behind its tabs.
+    private var tabBar: some View {
+        HStack(spacing: 3) {
+            ForEach(Tab.allCases) { t in
+                Button { tab = t } label: {
+                    Text(t.rawValue)
+                        .font(.system(size: 12.5, weight: tab == t ? .semibold : .regular))
+                        .foregroundColor(tab == t ? .white : .primary)
+                        .padding(.horizontal, 13).padding(.vertical, 5)
+                        .background(tab == t ? Color.accentColor : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: General — startup, this Mac, diagnostics
