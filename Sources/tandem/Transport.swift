@@ -4,7 +4,7 @@ import Security
 
 /// LAN peer-to-peer transport: Bonjour discovery + PSK-TLS connections.
 ///
-/// - Advertises `_clipboardd._tcp` via an NWListener and discovers peers with
+/// - Advertises `_tandem._tcp` via an NWListener and discovers peers with
 ///   an NWBrowser. LAN-only; no relay, no internet.
 /// - Every connection is TLS with a pre-shared key derived from the pairing
 ///   code. A peer with the wrong code fails the handshake and never delivers a
@@ -18,6 +18,7 @@ final class Transport {
     private var browser: NWBrowser?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var readyIDs: Set<ObjectIdentifier> = []         // connections past TLS handshake
+    private var identity: [ObjectIdentifier: (id: String, name: String)] = [:]  // learned from messages
 
     // Reconnection state (all touched only on `queue`):
     private var visibleEndpoints: [String: NWEndpoint] = [:]  // key -> currently-advertised peer
@@ -25,8 +26,13 @@ final class Transport {
     private var outboundKey: [ObjectIdentifier: String] = [:] // conn -> its outbound endpoint key
     private var reconnectTimer: DispatchSourceTimer?
 
-    var onMessage: ((ClipMessage) -> Void)?
-    var onPeersChanged: ((Int) -> Void)?
+    /// Delivered messages (identity already recorded).
+    var onMessage: ((Message) -> Void)?
+    /// Currently connected + identified peers: deviceID -> display name.
+    var onConnectedPeersChanged: (([String: String]) -> Void)?
+    /// Called for each newly-ready connection to obtain the identity/announce
+    /// frame to send immediately (so both ends learn each other right away).
+    var helloProvider: (() -> Message?)?
 
     init(config: Config) {
         self.config = config
@@ -152,6 +158,7 @@ final class Transport {
                 Log.trace("tls", "handshake ok, peer ready: \(conn.endpoint)")
                 self.readyIDs.insert(id)
                 self.receiveHeader(on: conn)
+                if let hello = self.helloProvider?() { self.sendFrame(hello, on: conn) }
                 self.notifyPeers()
             case let .waiting(err):
                 // Path unsatisfied (e.g. a stale Bonjour resolution). Cancel so
@@ -177,6 +184,7 @@ final class Transport {
     private func teardown(_ id: ObjectIdentifier) {
         connections[id] = nil
         readyIDs.remove(id)
+        identity[id] = nil
         if let key = outboundKey[id] {
             activeOutbound.remove(key)
             outboundKey[id] = nil
@@ -184,9 +192,13 @@ final class Transport {
         notifyPeers()
     }
 
+    /// Publish the current set of connected + identified peers (deviceID -> name).
     private func notifyPeers() {
-        let n = readyIDs.count
-        DispatchQueue.main.async { [weak self] in self?.onPeersChanged?(n) }
+        var peers: [String: String] = [:]
+        for id in readyIDs {
+            if let ident = identity[id] { peers[ident.id] = ident.name }
+        }
+        DispatchQueue.main.async { [weak self] in self?.onConnectedPeersChanged?(peers) }
     }
 
     // MARK: - Receive
@@ -207,11 +219,16 @@ final class Transport {
     }
 
     private func receiveBody(on conn: NWConnection, length: Int) {
+        let id = ObjectIdentifier(conn)
         conn.receive(minimumIncompleteLength: length, maximumLength: length) { [weak self] data, _, done, err in
             guard let self = self else { return }
             if let body = data, body.count == length,
-               let msg = try? JSONDecoder().decode(ClipMessage.self, from: body) {
-                Log.trace("sync", "recv \(length)B from \(msg.source) hash=\(msg.hash.prefix(8))")
+               let msg = try? JSONDecoder().decode(Message.self, from: body) {
+                Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
+                // Learn/refresh this connection's identity.
+                let known = self.identity[id]?.id == msg.deviceID
+                self.identity[id] = (msg.deviceID, msg.deviceName)
+                if !known { self.notifyPeers() }
                 DispatchQueue.main.async { self.onMessage?(msg) }
             }
             if err == nil && !done {
@@ -224,19 +241,38 @@ final class Transport {
 
     // MARK: - Send
 
-    func broadcast(_ msg: ClipMessage) {
-        guard let body = try? JSONEncoder().encode(msg) else { return }
+    private func encode(_ msg: Message) -> Data? {
+        guard let body = try? JSONEncoder().encode(msg) else { return nil }
         var len = UInt32(body.count).bigEndian
         var frame = Data(bytes: &len, count: 4)
         frame.append(body)
+        return frame
+    }
+
+    /// Send on a specific connection (used for hello on ready).
+    private func sendFrame(_ msg: Message, on conn: NWConnection) {
+        guard let frame = encode(msg) else { return }
+        conn.send(content: frame, completion: .contentProcessed { _ in })
+    }
+
+    /// Send to every ready connection.
+    func broadcast(_ msg: Message) {
+        guard let frame = encode(msg) else { return }
         queue.async { [weak self] in
             guard let self = self else { return }
-            // Only send over connections that finished the TLS handshake; a
-            // still-connecting dial would silently swallow the frame.
             let ready = self.readyIDs.compactMap { self.connections[$0] }
-            Log.trace("sync", "send \(frame.count)B to \(ready.count) peer(s) hash=\(msg.hash.prefix(8))")
-            for conn in ready {
-                conn.send(content: frame, completion: .contentProcessed { _ in })
+            Log.trace("sync", "send \(msg.type.rawValue) \(frame.count)B to \(ready.count) peer(s)")
+            for conn in ready { conn.send(content: frame, completion: .contentProcessed { _ in }) }
+        }
+    }
+
+    /// Send to the connection(s) identified as a specific device.
+    func send(_ msg: Message, to deviceID: String) {
+        guard let frame = encode(msg) else { return }
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            for (id, ident) in self.identity where ident.id == deviceID && self.readyIDs.contains(id) {
+                self.connections[id]?.send(content: frame, completion: .contentProcessed { _ in })
             }
         }
     }

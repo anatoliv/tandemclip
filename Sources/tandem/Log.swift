@@ -4,7 +4,9 @@ import Foundation
 /// off by default and enabled with `--verbose`/`-v` or `TANDEM_VERBOSE=1`.
 /// Errors always print.
 enum Log {
-    static let verbose: Bool = {
+    /// Enabled by `--verbose`/`-v`, `TANDEM_VERBOSE=1`, or the in-app setting
+    /// (AppController syncs the setting into this at launch and on change).
+    static var verbose: Bool = {
         if CommandLine.arguments.contains("--verbose") || CommandLine.arguments.contains("-v") {
             return true
         }
