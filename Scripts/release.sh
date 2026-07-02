@@ -58,28 +58,24 @@ SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 echo "==> DMG ready: $DMG"
 echo "    sha256: $SHA"
 
-# 4. Best-effort Sparkle appcast <item> (skipped if sign_update/key absent).
-SPARKLE_BIN="${SPARKLE_BIN:-$(find "$HOME/Library/Developer" ~/Library/Caches/org.swift.swiftpm 2>/dev/null -type f -name sign_update -path '*Sparkle*' | head -1 || true)}"
-if [[ -n "${SPARKLE_BIN:-}" && -x "$SPARKLE_BIN" ]]; then
-    SIG_ATTRS="$("$SPARKLE_BIN" "$DMG" 2>/dev/null || true)"
-    if [[ -n "$SIG_ATTRS" ]]; then
-        DMG_NAME="$(basename "$DMG")"
-        cat > "$DIST/appcast-item.xml" <<XML
-<item>
-    <title>${APP_NAME} ${VERSION}</title>
-    <sparkle:version>${BUILD_NUM}</sparkle:version>
-    <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
-    <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-    <pubDate>$(date -u +"%a, %d %b %Y %H:%M:%S +0000")</pubDate>
-    <enclosure url="${APPCAST_BASE}/${DMG_NAME}"
-               type="application/octet-stream"
-               $SIG_ATTRS />
-</item>
-XML
-        echo "==> Wrote $DIST/appcast-item.xml"
-    else
-        echo "==> Sparkle key not in keychain — skipped appcast item (DMG is ready)."
-    fi
+# 4. Full Sparkle appcast feed via generate_appcast (EdDSA-signs every DMG in
+#    dist/ from the keychain key; writes dist/appcast.xml).
+GA_BIN="${GA_BIN:-$(find "$HOME/Library/Developer" "$HOME/Library/Caches/org.swift.swiftpm" ./.build 2>/dev/null -type f -name generate_appcast -path '*Sparkle*' | head -1 || true)}"
+if [[ -n "${GA_BIN:-}" && -x "$GA_BIN" ]]; then
+    echo "==> Generating appcast ($DIST/appcast.xml)"
+    "$GA_BIN" "$DIST" --download-url-prefix "${APPCAST_BASE}/" -o "$DIST/appcast.xml" \
+        && echo "    appcast.xml written" \
+        || echo "    generate_appcast failed (is the Sparkle private key in the keychain?)"
 else
-    echo "==> sign_update not found — skipped appcast item (add Sparkle + run generate_keys once)."
+    echo "==> generate_appcast not found — skipping appcast (build Sparkle first)."
+fi
+
+# 5. Publish DMG + appcast to web-01 (PUBLISH=1). Serves the exact SUFeedURL.
+if [[ "${PUBLISH:-}" == "1" ]]; then
+    DEST="anatoli@192.168.3.6:/opt/docker/tandemclip-web/site/"
+    echo "==> Publishing to web-01 ($DEST)"
+    scp -q "$DMG" "$DEST"
+    [[ -f "$DIST/appcast.xml" ]] && scp -q "$DIST/appcast.xml" "$DEST"
+    echo "    published: $(basename "$DMG") + appcast.xml"
+    echo "    verify: curl -fsSI https://tandemclip.com/appcast.xml"
 fi
