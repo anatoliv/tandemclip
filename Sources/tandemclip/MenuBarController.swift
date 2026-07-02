@@ -40,16 +40,8 @@ final class MenuBarController: NSObject {
             .withSymbolConfiguration(symbolConfig) {
             image.isTemplate = true
             button.image = image
-            // Show the current clipboard size beside the glyph for at-a-glance
-            // visibility of what's being shared (hidden while paused).
-            if !config.paused, let info = engine.currentClipInfo {
-                button.imagePosition = .imageLeading
-                button.title = " " + Self.sizeString(info.bytes)
-                button.font = .systemFont(ofSize: 11, weight: .medium)
-            } else {
-                button.imagePosition = .imageOnly
-                button.title = ""
-            }
+            button.imagePosition = .imageOnly
+            button.title = ""
         } else {
             button.image = nil
             button.title = "T"
