@@ -77,7 +77,7 @@ final class ClipboardPickerController {
     }
 
     private func makeModel() -> PickerModel {
-        PickerModel(
+        let m = PickerModel(
             onPickHistory: { [weak self] hash in self?.engine.applyHistory(hash: hash); self?.hide() },
             onPullPeer:    { [weak self] id in self?.engine.pull(from: id); self?.hide() },
             onDropFiles:   { [weak self] urls in self?.handleDrop(urls) },
@@ -87,6 +87,9 @@ final class ClipboardPickerController {
                 self?.refreshIfVisible()
             },
             onClose:       { [weak self] in self?.hide() })
+        m.collapsed = Set(config.collapsedGroups)   // restore fold state across relaunches
+        m.onCollapsedChange = { [weak self] set in self?.config.collapsedGroups = set.sorted() }
+        return m
     }
 
     /// Share dropped files and surface the outcome in the picker. Kept here (not
@@ -141,6 +144,12 @@ final class PickerModel: ObservableObject {
     @Published var query = ""
     @Published var selection = 0
     @Published var kindFilter: ContentFilter = .all { didSet { selection = 0 } }
+    /// Source Macs whose group is folded up. Survives reopen (reload() leaves it
+    /// alone) and relaunch: the controller seeds it from config and persists
+    /// every change back.
+    @Published var collapsed: Set<String> = []
+    /// Called on every fold/unfold so the owner can persist the new state.
+    var onCollapsedChange: ((Set<String>) -> Void)?
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var peers: [(id: String, clip: PeerClip)] = []
     @Published private(set) var clipUsage = ""   // current clipboard "kind · size"
@@ -204,19 +213,35 @@ final class PickerModel: ObservableObject {
         }
     }
 
-    /// Query-filtered clips in **display order**: grouped by source Mac (groups
-    /// and items each in first-seen/recency order). Flat indices into this array
-    /// therefore match the on-screen top-to-bottom order, so arrow navigation,
-    /// the selection highlight, and ⌘1–9 all agree.
-    var filtered: [HistoryItem] {
-        let base = items.filter { kindFilter.matches($0) && matchesQuery($0) }
+    /// One per-Mac section of the list. `entries` is empty when collapsed; the
+    /// badge counts always reflect what the group holds under the current
+    /// query/kind filter, so a folded group still shows what's inside.
+    struct Group {
+        let source: String
+        let isCollapsed: Bool
+        /// (SF Symbol, count) per content kind, zero-count kinds omitted.
+        let badges: [(symbol: String, count: Int)]
+        let entries: [(index: Int, item: HistoryItem)]
+    }
+
+    /// Query/kind-filtered clips in **display order**: grouped by source Mac
+    /// (groups and items each in first-seen/recency order).
+    private var displayBase: (order: [String], map: [String: [HistoryItem]]) {
         var order: [String] = []
         var map: [String: [HistoryItem]] = [:]
-        for it in base {
+        for it in items where kindFilter.matches(it) && matchesQuery(it) {
             if map[it.source] == nil { order.append(it.source) }
             map[it.source, default: []].append(it)
         }
-        return order.flatMap { map[$0]! }
+        return (order, map)
+    }
+
+    /// The **visible** rows in on-screen top-to-bottom order — collapsed groups
+    /// contribute nothing. Flat indices into this array drive arrow navigation,
+    /// the selection highlight, and ⌘1–9, so all three agree with the screen.
+    var filtered: [HistoryItem] {
+        let base = displayBase
+        return base.order.flatMap { collapsed.contains($0) ? [] : base.map[$0]! }
     }
 
     private func matchesQuery(_ it: HistoryItem) -> Bool {
@@ -225,16 +250,34 @@ final class PickerModel: ObservableObject {
             || it.source.localizedCaseInsensitiveContains(query)
     }
 
-    /// The display-ordered `filtered` list carved into per-Mac sections, each
-    /// entry carrying its flat index (for selection highlight + ⌘1–9).
-    var grouped: [(source: String, entries: [(index: Int, item: HistoryItem)])] {
-        var order: [String] = []
-        var map: [String: [(Int, HistoryItem)]] = [:]
-        for (i, it) in filtered.enumerated() {
-            if map[it.source] == nil { order.append(it.source) }
-            map[it.source, default: []].append((i, it))
+    /// All per-Mac sections (collapsed ones included, for their header + badge),
+    /// expanded entries carrying their flat index into `filtered`.
+    var grouped: [Group] {
+        let base = displayBase
+        var flat = 0
+        return base.order.map { src in
+            let its = base.map[src]!
+            let folded = collapsed.contains(src)
+            var entries: [(index: Int, item: HistoryItem)] = []
+            if !folded {
+                entries = its.map { let e = (index: flat, item: $0); flat += 1; return e }
+            }
+            return Group(source: src, isCollapsed: folded, badges: Self.badges(for: its), entries: entries)
         }
-        return order.map { src in (src, map[src]!.map { (index: $0.0, item: $0.1) }) }
+    }
+
+    func toggleGroup(_ source: String) {
+        if collapsed.contains(source) { collapsed.remove(source) } else { collapsed.insert(source) }
+        selection = min(selection, max(0, filtered.count - 1))
+        onCollapsedChange?(collapsed)
+    }
+
+    /// Per-kind counts for a group's items, in the filter-chip order.
+    private static func badges(for items: [HistoryItem]) -> [(symbol: String, count: Int)] {
+        [ContentFilter.text, .image, .file].compactMap { kind in
+            let n = items.filter { kind.matches($0) }.count
+            return n > 0 ? (kind.symbol, n) : nil
+        }
     }
 
     // Keyboard actions (driven by KeyCatcher).
@@ -346,17 +389,13 @@ struct PickerView: View {
                         Spacer().frame(height: 8)
                     }
                     sectionHeader("RECENT")
-                    if model.filtered.isEmpty {
+                    if model.grouped.isEmpty {
                         Text(model.query.isEmpty ? "No clips yet — copy something, or drop files here to share." : "No matches.")
                             .foregroundColor(.secondary).font(.callout).padding(.horizontal, 14).padding(.vertical, 10)
                     } else {
-                        // Grouped by source Mac.
+                        // Grouped by source Mac; headers fold/unfold their group.
                         ForEach(model.grouped, id: \.source) { group in
-                            HStack(spacing: 6) {
-                                Circle().fill(Color.secondary.opacity(0.5)).frame(width: 5, height: 5)
-                                Text(group.source).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-                            }
-                            .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 1)
+                            groupHeader(group)
                             ForEach(group.entries, id: \.item.id) { e in
                                 HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
                                            onDelete: { model.onDeleteHistory(e.item.hash) })
@@ -461,6 +500,32 @@ struct PickerView: View {
         }
         .buttonStyle(.plain)
         .help(f.label)
+    }
+
+    /// Per-Mac group header: fold chevron, source name, and per-kind count
+    /// badges. Clicking anywhere on it folds/unfolds the group.
+    private func groupHeader(_ group: PickerModel.Group) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.8))
+                .frame(width: 9)
+            Text(group.source).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+            ForEach(group.badges, id: \.symbol) { badge in
+                HStack(spacing: 3) {
+                    Image(systemName: badge.symbol).font(.system(size: 8.5))
+                    Text("\(badge.count)").font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 5).padding(.vertical, 1.5)
+                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 1)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.toggleGroup(group.source) } }
+        .handCursorOnHover()
     }
 
     private func sectionHeader(_ t: String) -> some View {
