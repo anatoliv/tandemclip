@@ -14,6 +14,15 @@ final class SettingsModel: ObservableObject {
     @Published var syncRichText: Bool { didSet { config.syncRichText = syncRichText } }
     @Published var syncImages: Bool { didSet { config.syncImages = syncImages } }
     @Published var syncFiles: Bool { didSet { config.syncFiles = syncFiles } }
+    @Published var receivedCacheMB: Int {
+        didSet {
+            config.receivedCacheCap = receivedCacheMB * 1_000_000
+            engine.applyConfig()   // lowering the cap evicts immediately
+            cacheUsage = engine.watcher.receivedCacheUsage()
+        }
+    }
+    /// Current on-disk size of the received-files cache (for the readout).
+    @Published var cacheUsage: Int = 0
 
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
@@ -40,6 +49,8 @@ final class SettingsModel: ObservableObject {
         syncRichText = config.syncRichText
         syncImages = config.syncImages
         syncFiles = config.syncFiles
+        receivedCacheMB = config.receivedCacheCap / 1_000_000
+        cacheUsage = engine.watcher.receivedCacheUsage()
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
@@ -268,6 +279,17 @@ struct SettingsView: View {
                 Text("What to sync")
             } footer: {
                 Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity. Copied files always appear in your history and can be pulled or drop-shared either way — the Files toggle only controls whether their content is sent to your Macs automatically.")
+            }
+            Section {
+                Picker("Received-files limit", selection: $model.receivedCacheMB) {
+                    ForEach([100, 200, 500, 1000], id: \.self) { mb in
+                        Text(mb >= 1000 ? "\(mb / 1000) GB" : "\(mb) MB").tag(mb)
+                    }
+                }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Files received from your Macs are cached on disk so paste keeps working: currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically — picking them from history brings them back.")
             }
             Section {
                 Toggle("Keep clipboard history", isOn: $model.historyEnabled)
