@@ -4,13 +4,27 @@ LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
 control — just plain-text clipboard content shared between machines you've
 paired with a shared code. Runs as a menu-bar-only background agent.
 
-**Status:** MVP (plain text only). See [Roadmap](#roadmap).
+**Status:** Shipping (text). Signed, notarized, auto-updating.
+**Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
 
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
 often disabled on managed machines. TandemClip needs neither — any Macs on the same
 LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
+
+## Features
+
+- **Mirror mode** — copy anywhere, it appears everywhere (deduped, loop-safe,
+  and **relayed** so a partial mesh still fully syncs).
+- **Manual mode** — nothing auto-applies; pull a specific Mac's clipboard from
+  the menu on demand.
+- **Per-Mac role** — Send + Receive, Receive-only, or Send-only.
+- **Settings window** — mode, role, preview level, max size, device name,
+  pairing code, trusted-device allowlist, Wi-Fi network guard, launch-at-login.
+- **Private** — PSK-TLS keyed by your pairing code; password-manager/concealed
+  content is never synced.
+- **Auto-update** via Sparkle (menu → Check for Updates…).
 
 ## How it works
 
@@ -59,9 +73,9 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 ## Build & run (development)
 
 ```sh
-swift build
-.build/debug/tandemclip            # a sync-arrows glyph appears in the menu bar
-.build/debug/tandemclip --verbose  # trace discovery / TLS handshake / sync
+swift build --build-system native   # native (llbuild); the default engine hangs on Sparkle
+.build/debug/tandemclip             # a sync-arrows glyph appears in the menu bar
+.build/debug/tandemclip --verbose   # trace discovery / TLS handshake / sync
 ```
 
 `--verbose` (or `TANDEMCLIP_VERBOSE=1`) logs discovery, PSK-TLS handshake
@@ -137,14 +151,39 @@ If these are MDM-managed machines, before relying on this:
 3. For launch-at-login to survive Gatekeeper, sign with a Developer ID cert and
    notarize, or get the binary allow-listed.
 
+## Releasing
+
+`Scripts/release.sh` cuts a full release in one command: builds → bundles the
+Sparkle framework → signs → notarizes the DMG → generates the EdDSA-signed
+`appcast.xml` → (with `PUBLISH=1`) publishes both to the web-01 site dir behind
+`https://tandemclip.com`.
+
+```sh
+# bump CFBundleShortVersionString / CFBundleVersion in Packaging/Info.plist first
+IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="your-notary-profile" PUBLISH=1 \
+Scripts/release.sh
+```
+
+Every installed copy then auto-updates via Sparkle (feed: `SUFeedURL` in
+`Packaging/Info.plist`).
+
+> **Build gotcha:** the default SwiftPM build engine hangs on the Sparkle-linked
+> build; the scripts use `swift build -c release --build-system native` (llbuild,
+> ~20s). If you build by hand, pass that flag.
+
+The public landing + download site is a static `nginx` container
+(`web/docker-compose.yml`) fronted by nginx-proxy-manager with a Let's Encrypt
+cert — the same pattern as its sibling apps on web-01.
+
 ## Roadmap
 
-MVP is **plain text only** on purpose. Deferred until the text path is solid:
+Text sync ships today. Deferred:
 
 - [ ] In-app pairing-code entry + Keychain storage; HKDF key derivation
 - [ ] Rich text (`public.rtf`)
 - [ ] Images (`public.png`, `public.tiff`) with chunked framing
 - [ ] File URLs (`public.file-url`)
-- [ ] Per-device identity / allowlist (public-key pinning) beyond shared PSK
+- [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 - [ ] Optional clipboard history (off by default)
 ```
