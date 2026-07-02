@@ -87,8 +87,13 @@ final class ClipboardPickerController {
                 self?.refreshIfVisible()
             },
             onClose:       { [weak self] in self?.hide() })
-        m.collapsed = Set(config.collapsedGroups)   // restore fold state across relaunches
-        m.onCollapsedChange = { [weak self] set in self?.config.collapsedGroups = set.sorted() }
+        // Restore fold state (groups + sub-sections) across relaunches.
+        m.collapsed = Set(config.collapsedGroups)
+        m.collapsedSubs = Set(config.collapsedSubgroups)
+        m.onCollapsedChange = { [weak self] groups, subs in
+            self?.config.collapsedGroups = groups.sorted()
+            self?.config.collapsedSubgroups = subs.sorted()
+        }
         return m
     }
 
@@ -148,8 +153,16 @@ final class PickerModel: ObservableObject {
     /// alone) and relaunch: the controller seeds it from config and persists
     /// every change back.
     @Published var collapsed: Set<String> = []
-    /// Called on every fold/unfold so the owner can persist the new state.
-    var onCollapsedChange: ((Set<String>) -> Void)?
+    /// Folded per-type sub-sections within expanded groups, keyed by
+    /// `subKey(source, title)`. Same lifecycle as `collapsed`.
+    @Published var collapsedSubs: Set<String> = []
+    /// Called on every fold/unfold (groups, sub-sections) so the owner can
+    /// persist the new state.
+    var onCollapsedChange: ((_ groups: Set<String>, _ subs: Set<String>) -> Void)?
+
+    /// Unit separator keeps composite keys unambiguous even if a Mac's name
+    /// contains punctuation.
+    static func subKey(_ source: String, _ title: String) -> String { "\(source)\u{1F}\(title)" }
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var peers: [(id: String, clip: PeerClip)] = []
     @Published private(set) var clipUsage = ""   // current clipboard "kind · size"
@@ -215,17 +228,27 @@ final class PickerModel: ObservableObject {
 
     /// One per-Mac section of the list, carved into per-type sub-sections
     /// (Text / Images / Files — rich text lives with text). `sections` is empty
-    /// when collapsed; the badge counts always reflect what the group holds
-    /// under the current query/kind filter, so a folded group still shows
-    /// what's inside.
+    /// when the group is collapsed; a collapsed *sub-section* keeps its header
+    /// (with count) but has no entries. Badge/total counts always reflect what
+    /// the group holds under the current query/kind filter, so folded things
+    /// still show what's inside.
     struct Group {
         let source: String
         let isCollapsed: Bool
+        /// All items in the group under the current filter (the total badge).
+        let total: Int
         /// (SF Symbol, count) per content kind, zero-count kinds omitted.
         let badges: [(symbol: String, count: Int)]
-        let sections: [(title: String, entries: [(index: Int, item: HistoryItem)])]
+        let sections: [Section]
         /// All rows regardless of sub-section, in display order.
         var entries: [(index: Int, item: HistoryItem)] { sections.flatMap(\.entries) }
+    }
+
+    struct Section {
+        let title: String
+        let isCollapsed: Bool
+        let count: Int
+        let entries: [(index: Int, item: HistoryItem)]
     }
 
     /// Sub-section rank/title within a Mac group. Recency is preserved inside
@@ -259,11 +282,16 @@ final class PickerModel: ObservableObject {
     }
 
     /// The **visible** rows in on-screen top-to-bottom order — collapsed groups
-    /// contribute nothing. Flat indices into this array drive arrow navigation,
-    /// the selection highlight, and ⌘1–9, so all three agree with the screen.
+    /// and collapsed sub-sections contribute nothing. Flat indices into this
+    /// array drive arrow navigation, the selection highlight, and ⌘1–9, so all
+    /// three agree with the screen.
     var filtered: [HistoryItem] {
         let base = displayBase
-        return base.order.flatMap { collapsed.contains($0) ? [] : base.map[$0]! }
+        return base.order.flatMap { src in
+            collapsed.contains(src) ? [] : base.map[src]!.filter {
+                !collapsedSubs.contains(Self.subKey(src, Self.section(of: $0).title))
+            }
+        }
     }
 
     private func matchesQuery(_ it: HistoryItem) -> Bool {
@@ -280,23 +308,45 @@ final class PickerModel: ObservableObject {
         return base.order.map { src in
             let its = base.map[src]!
             let folded = collapsed.contains(src)
-            var sections: [(title: String, entries: [(index: Int, item: HistoryItem)])] = []
+            var sections: [Section] = []
             if !folded {
+                // Items arrive pre-sorted by section, so consecutive runs of one
+                // title form that title's sub-section.
+                var runs: [(title: String, items: [HistoryItem])] = []
                 for it in its {
                     let title = Self.section(of: it).title
-                    if sections.last?.title != title { sections.append((title, [])) }
-                    sections[sections.count - 1].entries.append((flat, it))
-                    flat += 1
+                    if runs.last?.title != title { runs.append((title, [])) }
+                    runs[runs.count - 1].items.append(it)
+                }
+                sections = runs.map { run in
+                    let subFolded = collapsedSubs.contains(Self.subKey(src, run.title))
+                    var entries: [(index: Int, item: HistoryItem)] = []
+                    if !subFolded {
+                        entries = run.items.map { let e = (index: flat, item: $0); flat += 1; return e }
+                    }
+                    return Section(title: run.title, isCollapsed: subFolded,
+                                   count: run.items.count, entries: entries)
                 }
             }
-            return Group(source: src, isCollapsed: folded, badges: Self.badges(for: its), sections: sections)
+            return Group(source: src, isCollapsed: folded, total: its.count,
+                         badges: Self.badges(for: its), sections: sections)
         }
     }
 
     func toggleGroup(_ source: String) {
         if collapsed.contains(source) { collapsed.remove(source) } else { collapsed.insert(source) }
+        collapseChanged()
+    }
+
+    func toggleSub(_ source: String, _ title: String) {
+        let key = Self.subKey(source, title)
+        if collapsedSubs.contains(key) { collapsedSubs.remove(key) } else { collapsedSubs.insert(key) }
+        collapseChanged()
+    }
+
+    private func collapseChanged() {
         selection = min(selection, max(0, filtered.count - 1))
-        onCollapsedChange?(collapsed)
+        onCollapsedChange?(collapsed, collapsedSubs)
     }
 
     /// Per-kind counts for a group's items. Finer-grained than the filter
@@ -435,7 +485,9 @@ struct PickerView: View {
                         ForEach(model.grouped, id: \.source) { group in
                             groupHeader(group)
                             ForEach(group.sections, id: \.title) { section in
-                                if group.sections.count > 1 { subHeader(section.title) }
+                                if group.sections.count > 1 || section.isCollapsed {
+                                    subHeader(group.source, section)
+                                }
                                 ForEach(section.entries, id: \.item.id) { e in
                                     HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
                                                onDelete: { model.onDeleteHistory(e.item.hash) })
@@ -543,8 +595,8 @@ struct PickerView: View {
         .help(f.label)
     }
 
-    /// Per-Mac group header: fold chevron, source name, and per-kind count
-    /// badges. Clicking anywhere on it folds/unfolds the group.
+    /// Per-Mac group header: fold chevron, source name, total count, and
+    /// per-kind count badges. Clicking anywhere on it folds/unfolds the group.
     private func groupHeader(_ group: PickerModel.Group) -> some View {
         HStack(spacing: 6) {
             Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
@@ -552,6 +604,11 @@ struct PickerView: View {
                 .foregroundColor(.secondary.opacity(0.8))
                 .frame(width: 9)
             Text(group.source).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+            Text("\(group.total)")
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6).padding(.vertical, 1.5)
+                .background(Capsule().fill(Color.secondary.opacity(0.2)))
             ForEach(group.badges, id: \.symbol) { badge in
                 HStack(spacing: 3) {
                     Image(systemName: badge.symbol).font(.system(size: 8.5))
@@ -575,11 +632,27 @@ struct PickerView: View {
     }
 
     /// Per-type sub-header inside a Mac group — quieter and indented so the
-    /// group header stays the dominant level.
-    private func subHeader(_ t: String) -> some View {
-        Text(t.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(0.8)
-            .foregroundColor(.secondary.opacity(0.65))
-            .padding(.leading, 29).padding(.top, 4).padding(.bottom, 1)
+    /// group header stays the dominant level. Clicking folds/unfolds the
+    /// sub-section; the count shows what's inside either way.
+    private func subHeader(_ source: String, _ section: PickerModel.Section) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: section.isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 6.5, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.55))
+                .frame(width: 7)
+            Text(section.title.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(0.8)
+                .foregroundColor(.secondary.opacity(0.65))
+            Text("\(section.count)")
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(.secondary.opacity(0.65))
+                .padding(.horizontal, 4.5).padding(.vertical, 1)
+                .background(Capsule().fill(Color.secondary.opacity(0.1)))
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 29).padding(.top, 4).padding(.bottom, 1)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.toggleSub(source, section.title) } }
+        .handCursorOnHover()
     }
     private func hint(_ k: String, _ t: String) -> some View {
         HStack(spacing: 4) {
