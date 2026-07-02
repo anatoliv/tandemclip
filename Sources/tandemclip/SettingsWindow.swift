@@ -81,6 +81,16 @@ final class SettingsModel: ObservableObject {
     }
     /// Status shown under the Wi-Fi list after an add attempt.
     @Published var ssidHint = ""
+    /// Manual network-name entry (bypasses auto-detection quirks e.g. hotspots).
+    @Published var newSSID = ""
+
+    func addSSIDManually() {
+        let s = newSSID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return }
+        if !allowedSSIDs.contains(s) { allowedSSIDs.append(s) }
+        ssidHint = "Added “\(s)”."
+        newSSID = ""
+    }
 
     func addCurrentSSID() {
         guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
@@ -351,6 +361,13 @@ struct SettingsView: View {
                     }
                     Button { model.addCurrentSSID() } label: {
                         Label("Add current network", systemImage: "plus")
+                    }
+                    HStack {
+                        TextField("Or type a network name…", text: $model.newSSID)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { model.addSSIDManually() }
+                        Button("Add") { model.addSSIDManually() }
+                            .disabled(model.newSSID.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                     if !model.ssidHint.isEmpty {
                         Text(model.ssidHint).font(.caption).foregroundColor(.secondary)
