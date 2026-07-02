@@ -179,7 +179,18 @@ final class ClipboardWatcher {
                 urls.append(dest)
             }
         }
-        pruneReceivedCache(root: support.appendingPathComponent("TandemClip/Received", isDirectory: true))
+        // Cheap-path the cap check: keep an approximate running byte total and do
+        // the full recursive size walk only when it suggests we may be over the cap
+        // (or on the first write this session, when the on-disk total is unknown).
+        // The walk recomputes the authoritative total, so the accumulator
+        // self-corrects and never drifts unbounded.
+        let root = support.appendingPathComponent("TandemClip/Received", isDirectory: true)
+        let written = urls.isEmpty ? 0 : snapshot.files.reduce(0) { $0 + $1.data.count }
+        if let current = receivedCacheBytes, current + written <= receivedCacheCap {
+            receivedCacheBytes = current + written
+        } else {
+            receivedCacheBytes = pruneReceivedCache(root: root)
+        }
         return urls
     }
 
@@ -188,10 +199,16 @@ final class ClipboardWatcher {
     /// (a peer could stream large files to fill the disk); it's otherwise only
     /// cleared on "Clear history."
     private let receivedCacheCap = 200_000_000   // 200 MB
-    private func pruneReceivedCache(root: URL) {
+    private var receivedCacheBytes: Int?         // approx running total; nil until first measured this session
+
+    /// Walk the received-file cache, evict oldest clip folders until under the
+    /// cap, and return the resulting true byte total. Authoritative but O(all
+    /// files) — callers gate it behind the cheap running-total check above.
+    @discardableResult
+    private func pruneReceivedCache(root: URL) -> Int {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return }
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return 0 }
         func dirSize(_ url: URL) -> Int {
             guard let e = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
             var total = 0
@@ -202,7 +219,7 @@ final class ClipboardWatcher {
                                   date: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast,
                                   size: dirSize($0)) }
         var total = dirs.reduce(0) { $0 + $1.size }
-        guard total > receivedCacheCap else { return }
+        guard total > receivedCacheCap else { return total }
         dirs.sort { $0.date < $1.date }   // oldest first
         for d in dirs where total > receivedCacheCap {
             if (try? fm.removeItem(at: d.url)) != nil {
@@ -210,6 +227,7 @@ final class ClipboardWatcher {
                 Log.trace("clip", "evicted received cache \(d.url.lastPathComponent)")
             }
         }
+        return total
     }
 
     private func markQuarantined(_ url: URL) {
