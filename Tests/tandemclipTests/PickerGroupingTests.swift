@@ -37,6 +37,56 @@ final class PickerGroupingTests: XCTestCase {
         XCTAssertEqual(groups[1].badges.map { "\($0.symbol):\($0.count)" }, ["text.alignleft:1"])
     }
 
+    func testImageFilesClassifyAsImages() {
+        let photo = ClipSnapshot(parts: [:], files: [ClipFile(name: "IMG_0042.HEIC", data: Data([1]))])
+        XCTAssertEqual(photo.category, .image)
+        XCTAssertEqual(photo.contentLabel, "image file")
+
+        let photos = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.png", data: Data([1])),
+                                                      ClipFile(name: "b.jpg", data: Data([2]))])
+        XCTAssertEqual(photos.category, .image)
+        XCTAssertEqual(photos.contentLabel, "2 image files")
+
+        let mixed = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.png", data: Data([1])),
+                                                     ClipFile(name: "notes.pdf", data: Data([2]))])
+        XCTAssertEqual(mixed.category, .file)
+        XCTAssertEqual(mixed.contentLabel, "2 files")
+
+        // Picture files preview their content; other files have no thumbnail.
+        let photoItem = HistoryItem(snapshot: photo, hash: "h1", timestamp: 0, label: "", source: "Home")
+        XCTAssertEqual(photoItem.imageData, Data([1]))
+        let mixedItem = HistoryItem(snapshot: mixed, hash: "h2", timestamp: 0, label: "", source: "Home")
+        XCTAssertNil(mixedItem.imageData)
+    }
+
+    func testGroupsSubSectionByTypePreservingIndexOrder() {
+        let model = makeModel()
+        // Interleaved on purpose: file, text, image-file, text.
+        load(model, [item("f.pdf", source: "Home", file: true),
+                     item("hello", source: "Home"),
+                     item("cat.jpg", source: "Home", file: true),
+                     item("world", source: "Home")])
+
+        let g = model.grouped[0]
+        XCTAssertEqual(g.sections.map(\.title), ["Text", "Images", "Files"])
+        XCTAssertEqual(g.sections.map { $0.entries.map(\.item.label) },
+                       [["hello", "world"], ["cat.jpg"], ["f.pdf"]])
+        // Flat indices follow the sub-sectioned display order and match filtered.
+        XCTAssertEqual(g.entries.map(\.index), [0, 1, 2, 3])
+        XCTAssertEqual(model.filtered.map(\.label), ["hello", "world", "cat.jpg", "f.pdf"])
+    }
+
+    func testImageFilterIncludesPictureFiles() {
+        let model = makeModel()
+        load(model, [item("hello", source: "Home"),
+                     item("cat.jpg", source: "Home", file: true),
+                     item("f.pdf", source: "Home", file: true)])
+        model.kindFilter = .image
+        XCTAssertEqual(model.filtered.map(\.label), ["cat.jpg"])
+        model.kindFilter = .file
+        XCTAssertEqual(model.filtered.map(\.label), ["f.pdf"])
+    }
+
     /// RTF outranks image parts: a formatted-text copy that also carries a TIFF
     /// rendering of the selection (Excel, Word, …) is still a text copy; a real
     /// image copy has no RTF and stays "image".
