@@ -16,15 +16,13 @@ let radius = rect.width * 0.2237
 let bg = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 bg.addClip()
 
-// Settled single-hue gradient in the KeepFloat clay family: soft light clay at
-// the top easing down to clay. One smooth vertical sweep — calm, not busy.
-let lightClay = NSColor(srgbRed: 0.949, green: 0.878, blue: 0.804, alpha: 1) // #f2e0cd
-let clay      = NSColor(srgbRed: 0.808, green: 0.541, blue: 0.384, alpha: 1) // #ce8a62
-NSGradient(starting: lightClay, ending: clay)!.draw(in: rect, angle: -90)
+// Match the website mark: solid accent square with a white sync-arrows glyph.
+// A whisper of top-lighter gradient keeps it from looking flat at icon sizes.
+let accent      = NSColor(srgbRed: 224/255, green: 122/255, blue: 75/255, alpha: 1) // #e07a4b
+let accentLight = NSColor(srgbRed: 236/255, green: 138/255, blue: 92/255, alpha: 1) // subtle highlight
+NSGradient(starting: accentLight, ending: accent)!.draw(in: rect, angle: -90)
 
-// Sync-arrows glyph, centered, in brand terracotta (reads on the light field)
-// with a soft shadow for depth.
-let terracotta = NSColor(srgbRed: 0.698, green: 0.357, blue: 0.235, alpha: 1) // #b25b3c
+// White sync-arrows glyph, centered, with a soft shadow for a little depth.
 let conf = NSImage.SymbolConfiguration(pointSize: 470, weight: .semibold)
 if let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath",
                         accessibilityDescription: nil)?.withSymbolConfiguration(conf) {
@@ -32,15 +30,15 @@ if let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath",
     let tinted = NSImage(size: s)
     tinted.lockFocus()
     symbol.draw(at: .zero, from: NSRect(origin: .zero, size: s), operation: .sourceOver, fraction: 1)
-    terracotta.set()
+    NSColor.white.set()
     NSRect(origin: .zero, size: s).fill(using: .sourceAtop)
     tinted.unlockFocus()
     let origin = NSPoint(x: (size - s.width) / 2, y: (size - s.height) / 2)
     NSGraphicsContext.saveGraphicsState()
     let shadow = NSShadow()
-    shadow.shadowColor = NSColor(calibratedWhite: 0.2, alpha: 0.22)
-    shadow.shadowBlurRadius = 22
-    shadow.shadowOffset = NSSize(width: 0, height: -8)
+    shadow.shadowColor = NSColor(calibratedWhite: 0.35, alpha: 0.18)
+    shadow.shadowBlurRadius = 20
+    shadow.shadowOffset = NSSize(width: 0, height: -6)
     shadow.set()
     tinted.draw(at: origin, from: NSRect(origin: .zero, size: s), operation: .sourceOver, fraction: 1)
     NSGraphicsContext.restoreGraphicsState()
