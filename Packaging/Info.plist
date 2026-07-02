@@ -30,6 +30,10 @@
 	<string>LAN-only clipboard sync. No cloud, no relay.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>TandemClip syncs your clipboard between your Macs on the local network only.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>TandemClip reads the current Wi-Fi network name so you can limit clipboard sync to networks you trust.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TandemClip reads the current Wi-Fi network name so you can limit clipboard sync to networks you trust.</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
