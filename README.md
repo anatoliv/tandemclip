@@ -24,6 +24,10 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   pairing code, trusted-device allowlist, Wi-Fi network guard, launch-at-login.
 - **Private** — PSK-TLS keyed by your pairing code; password-manager/concealed
   content is never synced.
+- **Clipboard picker** (⇧⌘V) — a visual browser: search + preview recent clips
+  (text/image/file), grab any Mac's current clipboard, keyboard-navigate,
+  ⌘1–9 quick-pick. Shared fleet timeline (Mirror mode) so every Mac sees the
+  same recent clips.
 - **Auto-update** via Sparkle (menu → Check for Updates…).
 
 ## How it works

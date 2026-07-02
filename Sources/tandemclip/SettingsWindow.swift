@@ -19,6 +19,8 @@ final class SettingsModel: ObservableObject {
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
     @Published var historyEnabled: Bool { didSet { config.historyEnabled = historyEnabled } }
+    @Published var historyKeep: Int { didSet { config.historyLimit = historyKeep } }
+    @Published var pickerShow: Int { didSet { config.pickerShowCount = pickerShow } }
 
     @Published var deviceDisplayName: String { didSet { config.deviceDisplayName = deviceDisplayName } }
     @Published var pairingCode: String
@@ -41,6 +43,8 @@ final class SettingsModel: ObservableObject {
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
         historyEnabled = config.historyEnabled
+        historyKeep = config.historyLimit
+        pickerShow = config.pickerShowCount
         deviceDisplayName = config.deviceDisplayName
         pairingCode = config.pairingCode
         activeCode = config.pairingCode
@@ -156,6 +160,10 @@ struct SettingsView: View {
             Toggle("Launch at login", isOn: $model.launchAtLogin)
             Toggle("Start paused", isOn: $model.startPaused)
             Toggle("Keep clipboard history (this session)", isOn: $model.historyEnabled)
+            if model.historyEnabled {
+                Stepper("Keep \(model.historyKeep) clips", value: $model.historyKeep, in: 10...200, step: 10)
+                Stepper("Show \(model.pickerShow) in picker (⇧⌘V)", value: $model.pickerShow, in: 5...50, step: 1)
+            }
             Toggle("Verbose logging", isOn: $model.verboseLogging)
             Text("Verbose logs go to /tmp/tandemclip.err.log.")
                 .font(.caption).foregroundColor(.secondary)
