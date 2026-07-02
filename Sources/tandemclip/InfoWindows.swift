@@ -51,16 +51,12 @@ struct AboutView: View {
                 .resizable().frame(width: 88, height: 88)
             Text("TandemClip").font(.system(size: 21, weight: .semibold))
             Text("Version \(version) (\(build))").font(.callout).foregroundColor(.secondary)
-            Text("LAN-only clipboard sync between your Macs.\nNo cloud, no relay — everything stays on your network.")
+            Text("Shares your clipboard between your Macs over your local network — copy on one, paste on another. End-to-end encrypted with a code only you hold. No cloud, no account.")
                 .font(.callout).foregroundColor(.secondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 10) {
-                Link("Website", destination: URL(string: "https://tandemclip.com")!)
-                Text("·").foregroundColor(.secondary)
-                Link("GitHub", destination: URL(string: "https://github.com/anatoliv/tandemclip")!)
-            }
-            .font(.callout)
-            Text("© Amnesia. LAN-only clipboard sync.")
+            Link("Website", destination: URL(string: "https://tandemclip.com")!)
+                .font(.callout)
+            Text("TandemClip — LAN clipboard sync for Macs")
                 .font(.caption2).foregroundColor(.secondary).padding(.top, 2)
         }
         .padding(.horizontal, 26).padding(.vertical, 24)
@@ -76,12 +72,12 @@ struct HelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 section("Getting started", [
-                    ("Pair your Macs", "Install TandemClip on each Mac and enter the same pairing code (Settings → Security). Macs on the same Wi-Fi pair automatically."),
-                    ("Trusted devices", "Optionally limit sync to devices you approve under Security → Trusted devices.")
+                    ("Pair your Macs", "Install TandemClip on each Mac and enter the same pairing code (Settings → Security). The shared pairing code becomes the encryption key — being on the same Wi-Fi grants nothing on its own."),
+                    ("Roles & trust", "Make a machine send-only or receive-only, and restrict sync to a trusted-device allowlist, under Security.")
                 ])
                 section("Sync modes", [
-                    ("Mirror", "Every copy syncs to your other Macs automatically."),
-                    ("Manual", "Nothing syncs until you pull a specific Mac's clipboard from the picker or menu.")
+                    ("Mirror", "Copy anywhere and it appears everywhere. Deduped, loop-safe, and it relays across Macs that can't see each other directly."),
+                    ("Manual", "Keep each Mac's clipboard its own. From the menu bar or picker, pull a specific Mac's clipboard when you want it.")
                 ])
                 section("Clipboard picker  (⇧⌘V)", [
                     ("Open", "Press ⇧⌘V anywhere to browse recent clips and grab another Mac's clipboard."),
@@ -89,10 +85,10 @@ struct HelpView: View {
                     ("Filter", "Use the All / Text / Images / Files chips to narrow the list; type to search."),
                     ("Files", "Picking a file copies it and opens it in its default app.")
                 ])
-                section("Tips", [
-                    ("Menu bar", "Click the ↻ icon for status, mode, history, and the pairing code."),
-                    ("Wi-Fi limit", "Restrict sync to trusted Wi-Fi networks under Security (needs Location permission)."),
-                    ("Privacy", "Password-manager and transient clips are never synced.")
+                section("Private by design", [
+                    ("No cloud, no relay", "Peers talk directly over your LAN. There is no server, no account, and nothing to breach."),
+                    ("Password-manager safe", "Content marked secret by 1Password and others is never synced — same for one-time and transient copies."),
+                    ("Wi-Fi limit", "Optionally restrict sync to trusted Wi-Fi networks under Security (needs Location permission).")
                 ])
             }
             .padding(22)
