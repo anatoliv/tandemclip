@@ -27,6 +27,12 @@ enum CrashReporting {
         Log.trace("app", "crash reporting started")
     }
 
+    /// Send a test event (verification only; triggered by TANDEMCLIP_TEST_SENTRY).
+    static func captureTest() {
+        SentrySDK.capture(message: "TandemClip Sentry wiring test")
+        SentrySDK.flush(timeout: 5)
+    }
+
     /// `com.tandemclip@<version>+<build>` — conventional Sentry release id.
     private static var release: String {
         let info = Bundle.main.infoDictionary

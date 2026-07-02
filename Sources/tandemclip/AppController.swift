@@ -10,6 +10,9 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CrashReporting.start()   // gated on Info.plist SentryDSN; off if absent
+        if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_SENTRY"] != nil {
+            CrashReporting.captureTest()
+        }
 
         // Reflect persisted settings that live outside Config's own storage.
         Log.verbose = Log.verbose || config.verboseLogging
