@@ -8,18 +8,14 @@ final class InfoWindowController {
 
     func showAbout() {
         if aboutWindow == nil {
-            aboutWindow = Self.panel(title: "About TandemClip",
-                                     size: NSSize(width: 340, height: 380),
-                                     view: AboutView())
+            aboutWindow = Self.panel(title: "About TandemClip", view: AboutView())
         }
         present(aboutWindow)
     }
 
     func showHelp() {
         if helpWindow == nil {
-            helpWindow = Self.panel(title: "TandemClip Help",
-                                    size: NSSize(width: 420, height: 520),
-                                    view: HelpView())
+            helpWindow = Self.panel(title: "TandemClip Help", view: HelpView())
         }
         present(helpWindow)
     }
@@ -31,13 +27,14 @@ final class InfoWindowController {
         window?.orderFrontRegardless()
     }
 
-    private static func panel<V: View>(title: String, size: NSSize, view: V) -> NSWindow {
+    private static func panel<V: View>(title: String, view: V) -> NSWindow {
+        // Size the window to the SwiftUI view's own fitting size (the views
+        // declare fixed frames), so it hugs content instead of stretching.
         let hosting = NSHostingController(rootView: view)
         let w = NSWindow(contentViewController: hosting)
         w.title = title
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
-        w.setContentSize(size)
         return w
     }
 }
@@ -49,10 +46,10 @@ struct AboutView: View {
     private var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?" }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 11) {
             Image(nsImage: NSApp.applicationIconImage)
-                .resizable().frame(width: 96, height: 96)
-            Text("TandemClip").font(.system(size: 22, weight: .semibold))
+                .resizable().frame(width: 88, height: 88)
+            Text("TandemClip").font(.system(size: 21, weight: .semibold))
             Text("Version \(version) (\(build))").font(.callout).foregroundColor(.secondary)
             Text("LAN-only clipboard sync between your Macs.\nNo cloud, no relay — everything stays on your network.")
                 .font(.callout).foregroundColor(.secondary)
@@ -63,12 +60,12 @@ struct AboutView: View {
                 Link("GitHub", destination: URL(string: "https://github.com/anatoliv/tandemclip")!)
             }
             .font(.callout)
-            Spacer()
             Text("© Amnesia. LAN-only clipboard sync.")
-                .font(.caption2).foregroundColor(.secondary)
+                .font(.caption2).foregroundColor(.secondary).padding(.top, 2)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 26).padding(.vertical, 24)
+        .frame(width: 340)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -100,6 +97,7 @@ struct HelpView: View {
             }
             .padding(22)
         }
+        .frame(width: 420, height: 520)
     }
 
     private func section(_ title: String, _ rows: [(String, String)]) -> some View {
