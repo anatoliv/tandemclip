@@ -2,11 +2,16 @@ import Foundation
 import AppKit
 
 /// A recent clipboard entry (in-memory history).
-struct HistoryItem {
+struct HistoryItem: Identifiable {
     let snapshot: ClipSnapshot
     let hash: String
     let timestamp: Double
     let label: String     // preview text or content kind
+    let source: String    // which Mac it came from
+    var id: String { hash }
+    var kindLabel: String { snapshot.contentLabel }
+    /// Thumbnail bytes for image clips (for the picker preview).
+    var imageData: Data? { snapshot.parts[.png] ?? snapshot.parts[.tiff] }
 }
 
 /// What we know about another Mac's clipboard.
@@ -106,7 +111,7 @@ final class SyncEngine {
         localSnapshot = snap
         localHash = hash
         localTimestamp = now()
-        recordHistory(snap, hash)
+        recordHistory(snap, hash, source: config.deviceName)
 
         guard config.role.canSend, !config.paused, networkAllowed() else {
             onStatusChange?()
@@ -182,7 +187,7 @@ final class SyncEngine {
         localHash = hash            // our clipboard now equals this; don't re-announce it
         localSnapshot = snap
         localTimestamp = now()
-        recordHistory(snap, hash)
+        recordHistory(snap, hash, source: name)
         watcher.write(snap)         // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
@@ -190,12 +195,12 @@ final class SyncEngine {
 
     // MARK: - History (in-memory, opt-in)
 
-    private func recordHistory(_ snap: ClipSnapshot, _ hash: String) {
+    private func recordHistory(_ snap: ClipSnapshot, _ hash: String, source: String) {
         guard config.historyEnabled else { return }
         history.removeAll { $0.hash == hash }
-        let label = snap.plainText.map { String($0.prefix(48)).replacingOccurrences(of: "\n", with: " ") }
+        let label = snap.plainText.map { String($0.prefix(64)).replacingOccurrences(of: "\n", with: " ") }
             ?? snap.contentLabel
-        history.insert(HistoryItem(snapshot: snap, hash: hash, timestamp: now(), label: label), at: 0)
+        history.insert(HistoryItem(snapshot: snap, hash: hash, timestamp: now(), label: label, source: source), at: 0)
         if history.count > config.historyLimit { history.removeLast(history.count - config.historyLimit) }
     }
 

@@ -8,14 +8,17 @@ final class MenuBarController: NSObject {
     private let engine: SyncEngine
     private let onOpenSettings: () -> Void
     private let onCheckForUpdates: () -> Void
+    private let onOpenPicker: () -> Void
 
     init(config: Config, engine: SyncEngine,
          onOpenSettings: @escaping () -> Void,
-         onCheckForUpdates: @escaping () -> Void) {
+         onCheckForUpdates: @escaping () -> Void,
+         onOpenPicker: @escaping () -> Void) {
         self.config = config
         self.engine = engine
         self.onOpenSettings = onOpenSettings
         self.onCheckForUpdates = onCheckForUpdates
+        self.onOpenPicker = onOpenPicker
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         applyStatusIcon()
@@ -74,6 +77,13 @@ final class MenuBarController: NSObject {
                 }
             }
         }
+
+        // Clipboard picker (⇧⌘V) — the visual browser.
+        menu.addItem(.separator())
+        let pick = NSMenuItem(title: "Clipboard Picker…", action: #selector(openPicker), keyEquivalent: "v")
+        pick.keyEquivalentModifierMask = [.command, .shift]
+        pick.target = self
+        menu.addItem(pick)
 
         // Mode toggle.
         menu.addItem(.separator())
@@ -177,6 +187,8 @@ final class MenuBarController: NSObject {
         config.setPaused(!config.paused)
         refresh()
     }
+
+    @objc private func openPicker() { onOpenPicker() }
 
     @objc private func openSettings() { onOpenSettings() }
 

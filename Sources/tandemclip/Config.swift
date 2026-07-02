@@ -148,14 +148,21 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
-    /// Keep a recent-clipboard history (in-memory, this session only). Off by default.
+    /// Keep a recent-clipboard history (in-memory, this session only). On by
+    /// default now that the picker is the primary way to grab clips.
     var historyEnabled: Bool {
-        get { defaults.bool(forKey: "historyEnabled") }
+        get { defaults.object(forKey: "historyEnabled") == nil ? true : defaults.bool(forKey: "historyEnabled") }
         set { set("historyEnabled", newValue) }
     }
+    /// How many entries to retain.
     var historyLimit: Int {
-        get { let v = defaults.integer(forKey: "historyLimit"); return v > 0 ? v : 25 }
+        get { let v = defaults.integer(forKey: "historyLimit"); return v > 0 ? v : 50 }
         set { set("historyLimit", newValue) }
+    }
+    /// How many entries the picker shows at once.
+    var pickerShowCount: Int {
+        get { let v = defaults.integer(forKey: "pickerShowCount"); return v > 0 ? v : 12 }
+        set { set("pickerShowCount", newValue) }
     }
 
     // MARK: - Startup & behavior
