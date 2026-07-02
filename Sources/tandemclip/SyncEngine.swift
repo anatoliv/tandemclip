@@ -176,6 +176,38 @@ final class SyncEngine {
         return peerCount
     }
 
+    /// Delete a history item on every Mac. Removes it locally right away, then
+    /// broadcasts a signed `delete` keyed by content hash so peers (and, via
+    /// relay, Macs not directly connected to us) drop it too. Sending honors the
+    /// role/pause/network gates like any outbound traffic; the local removal
+    /// happens regardless.
+    func deleteHistory(hash: String) {
+        Log.trace("sync", "delete \(hash.prefix(12)) (local user action)")
+        removeClip(hash: hash)
+        guard config.role.canSend, !config.paused, networkAllowed() else { return }
+        var m = Message(type: .delete, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = hash
+        config.identity.sign(&m)
+        transport.broadcast(m)
+    }
+
+    /// Local effects of a deletion (user- or peer-initiated): drop the history
+    /// entry, remove any files materialized for it, and if it's what our
+    /// clipboard currently holds, clear that too — deleting a clip means it
+    /// should no longer be pasteable anywhere.
+    private func removeClip(hash: String) {
+        history.removeAll { $0.hash == hash }
+        purgeReceivedFiles(hash: hash)
+        if localHash == hash {
+            localSnapshot = nil
+            localHash = nil
+            watcher.write(ClipSnapshot(parts: [:]))   // clears the pasteboard, echo-suppressed
+        }
+        if lastHash == hash { lastHash = nil }   // re-copying the content later must re-sync
+        onStatusChange?()
+    }
+
     // MARK: - Local clipboard changed
 
     private func handleLocal(_ snap: ClipSnapshot, _ hash: String) {
@@ -249,6 +281,25 @@ final class SyncEngine {
             }
             updatePeer(from: msg, publicKey: verifiedKey)
             applyIncomingClip(msg)
+
+        case .delete:
+            // Honored from any trusted peer even when receiving content is
+            // disabled: a deletion is data-minimizing, not content delivery.
+            // It must be signed and fresh — an unsigned or replayed delete could
+            // otherwise silently kill a clip the user re-copied later.
+            guard let hash = msg.hash, verifiedKey != nil else { return }
+            guard now() - msg.timestamp <= replayWindow else {
+                Log.trace("sync", "dropped stale delete (\(Int(now() - msg.timestamp))s old) from \(msg.deviceName)")
+                return
+            }
+            guard !isReplayedClip(msg) else { return }
+            Log.trace("sync", "delete \(hash.prefix(12)) from \(msg.deviceName)")
+            removeClip(hash: hash)
+            // Relay so Macs not directly connected to the origin delete too.
+            // The seen-signature cache above stops relay loops.
+            if config.role.canSend {
+                transport.broadcast(msg)
+            }
 
         case .request:
             // A pull is the peer's explicit ask for our current clipboard, so it
@@ -338,10 +389,11 @@ final class SyncEngine {
 
     // MARK: - Replay guard
 
-    /// True if we've already processed this exact signed clip recently (an
-    /// attacker or relay replaying a captured frame). Each genuine copy carries a
-    /// fresh timestamp, hence a distinct signature, so legitimate re-copies are
-    /// never blocked. Unsigned clips (allowlist off) skip this check.
+    /// True if we've already processed this exact signed message recently (an
+    /// attacker or relay replaying a captured frame). Used for clips and deletes;
+    /// it also stops delete-relay loops. Each genuine action carries a fresh
+    /// timestamp, hence a distinct signature, so legitimate re-copies are never
+    /// blocked. Unsigned clips (allowlist off) skip this check.
     private func isReplayedClip(_ msg: Message) -> Bool {
         guard let sig = msg.identitySignature else { return false }
         let t = now()
@@ -391,6 +443,15 @@ final class SyncEngine {
         guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
         let dir = support.appendingPathComponent("TandemClip/Received", isDirectory: true)
         if (try? fm.removeItem(at: dir)) != nil { Log.trace("sync", "purged received files") }
+    }
+
+    /// Delete just the materialized files of one clip (keyed the same way
+    /// ClipboardWatcher.writeReceivedFiles names its per-clip directory).
+    private func purgeReceivedFiles(hash: String) {
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let dir = support.appendingPathComponent("TandemClip/Received/\(hash.prefix(12))", isDirectory: true)
+        if (try? fm.removeItem(at: dir)) != nil { Log.trace("sync", "purged received files for \(hash.prefix(12))") }
     }
 
     // MARK: - Peer table
