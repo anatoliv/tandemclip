@@ -16,23 +16,15 @@ let radius = rect.width * 0.2237
 let bg = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 bg.addClip()
 
-// KeepFloat brand gradient, lightened: near-white paper → cream → clay →
-// terracotta. Lots of white up top, brand colour anchoring the lower corner.
-let paper      = NSColor(srgbRed: 0.980, green: 0.965, blue: 0.945, alpha: 1) // #faf6f1
-let cream      = NSColor(srgbRed: 0.902, green: 0.839, blue: 0.773, alpha: 1) // #e6d6c5 (brand-100)
-let clay       = NSColor(srgbRed: 0.784, green: 0.475, blue: 0.310, alpha: 1) // #c8794f
-let terracotta = NSColor(srgbRed: 0.698, green: 0.357, blue: 0.235, alpha: 1) // #b25b3c
-NSGradient(colorsAndLocations: (paper, 0.0), (cream, 0.32), (clay, 0.70), (terracotta, 1.0))!
-    .draw(in: rect, angle: -45)
-
-// Soft top-left white highlight so the surface reads glossy/light, not flat.
-if let glow = NSGradient(starting: NSColor(calibratedWhite: 1, alpha: 0.55),
-                         ending: NSColor(calibratedWhite: 1, alpha: 0)) {
-    glow.draw(in: rect, relativeCenterPosition: NSPoint(x: -0.45, y: 0.45))
-}
+// Settled single-hue gradient in the KeepFloat clay family: soft light clay at
+// the top easing down to clay. One smooth vertical sweep — calm, not busy.
+let lightClay = NSColor(srgbRed: 0.949, green: 0.878, blue: 0.804, alpha: 1) // #f2e0cd
+let clay      = NSColor(srgbRed: 0.808, green: 0.541, blue: 0.384, alpha: 1) // #ce8a62
+NSGradient(starting: lightClay, ending: clay)!.draw(in: rect, angle: -90)
 
 // Sync-arrows glyph, centered, in brand terracotta (reads on the light field)
 // with a soft shadow for depth.
+let terracotta = NSColor(srgbRed: 0.698, green: 0.357, blue: 0.235, alpha: 1) // #b25b3c
 let conf = NSImage.SymbolConfiguration(pointSize: 470, weight: .semibold)
 if let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath",
                         accessibilityDescription: nil)?.withSymbolConfiguration(conf) {

@@ -77,8 +77,23 @@ final class SettingsModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(activeCode, forType: .string)
     }
+    /// Status shown under the Wi-Fi list after an add attempt.
+    @Published var ssidHint = ""
+
     func addCurrentSSID() {
-        if let s = NetworkGuard.currentSSID(), !s.isEmpty, !allowedSSIDs.contains(s) { allowedSSIDs.append(s) }
+        LocationAuthorizer.shared.ensureAuthorized { [weak self] granted in
+            guard let self else { return }
+            guard granted else {
+                self.ssidHint = "Allow Location for TandemClip in System Settings → Privacy & Security → Location Services, then try again."
+                return
+            }
+            guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
+                self.ssidHint = "Couldn't read the Wi-Fi name — are you on Wi-Fi (not Ethernet/VPN)?"
+                return
+            }
+            if !self.allowedSSIDs.contains(s) { self.allowedSSIDs.append(s) }
+            self.ssidHint = "Added “\(s)”."
+        }
     }
     func removeSSID(_ ssid: String) {
         allowedSSIDs.removeAll { $0 == ssid }
@@ -127,7 +142,8 @@ struct SettingsView: View {
             contentTab.tabItem { Label("Content", systemImage: "doc.on.clipboard") }
             securityTab.tabItem { Label("Security", systemImage: "lock.shield") }
         }
-        .frame(width: 500, height: 460)
+        .padding(.top, 12)
+        .frame(width: 520, height: 500)
     }
 
     // MARK: General — startup, this Mac, diagnostics
@@ -285,6 +301,9 @@ struct SettingsView: View {
                     }
                     Button { model.addCurrentSSID() } label: {
                         Label("Add current network", systemImage: "plus")
+                    }
+                    if !model.ssidHint.isEmpty {
+                        Text(model.ssidHint).font(.caption).foregroundColor(.secondary)
                     }
                 }
             } header: {
