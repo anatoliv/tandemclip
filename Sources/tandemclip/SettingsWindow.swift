@@ -324,6 +324,11 @@ struct SettingsView: View {
             Section {
                 Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
                 if model.networkAllowlistEnabled {
+                    if model.allowedSSIDs.isEmpty {
+                        Label("No networks added — sync is paused until you add one.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundColor(.orange)
+                    }
                     ForEach(model.allowedSSIDs, id: \.self) { ssid in
                         HStack {
                             Image(systemName: "wifi").foregroundColor(.secondary)

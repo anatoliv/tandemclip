@@ -23,7 +23,13 @@ enum NetworkGuard {
     }
 
     static func syncAllowed(_ config: Config) -> Bool {
-        guard config.networkAllowlistEnabled, !config.allowedSSIDs.isEmpty else { return true }
+        guard config.networkAllowlistEnabled else { return true }
+        // Allowlist on but nothing selected → restricted to an empty set of
+        // networks → never sync (until the user adds one).
+        guard !config.allowedSSIDs.isEmpty else {
+            Log.trace("net", "network allowlist on but empty — pausing")
+            return false
+        }
         guard let ssid = currentSSID(), !ssid.isEmpty else {
             // Can't verify the network. Fail CLOSED (pause) so an unverifiable
             // network isn't silently trusted — unless the user opted to allow.
