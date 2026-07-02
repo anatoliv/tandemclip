@@ -9,6 +9,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let updater = Updater()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CrashReporting.start()   // gated on Info.plist SentryDSN; off if absent
+
         // Reflect persisted settings that live outside Config's own storage.
         Log.verbose = Log.verbose || config.verboseLogging
         LaunchAtLogin.set(config.launchAtLogin)
