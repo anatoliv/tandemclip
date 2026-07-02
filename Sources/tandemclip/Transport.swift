@@ -44,8 +44,9 @@ final class Transport {
     private var outboundKey: [ObjectIdentifier: String] = [:] // conn -> its outbound endpoint key
     private var reconnectTimer: DispatchSourceTimer?
 
-    /// Delivered messages (identity already recorded).
-    var onMessage: ((Message) -> Void)?
+    /// Delivered messages, with the identity public key already verified on the
+    /// transport queue (nil if unsigned/invalid) so the app layer needn't re-verify.
+    var onMessage: ((Message, String?) -> Void)?
     /// Currently connected + identified peers: deviceID -> display name.
     var onConnectedPeersChanged: (([String: PeerConnectionInfo]) -> Void)?
     /// Called for each newly-ready connection to obtain the identity/announce
@@ -327,7 +328,7 @@ final class Transport {
                                                        name: msg.deviceName,
                                                        publicKey: publicKey)
                 if !known { self.notifyPeers() }
-                DispatchQueue.main.async { self.onMessage?(msg) }
+                DispatchQueue.main.async { self.onMessage?(msg, publicKey) }
             }
             if err == nil && !done {
                 self.receiveHeader(on: conn)
