@@ -146,13 +146,18 @@ final class ClipboardWatcher {
         return []
     }
 
-    /// Write received files under Application Support and return their URLs.
+    /// Root of the on-disk received-file cache. Injectable for tests; the
+    /// default is the real per-user location.
+    var receivedRoot: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory,
+                                               in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return support.appendingPathComponent("TandemClip/Received", isDirectory: true)
+    }()
+
+    /// Write received files under the cache root and return their URLs.
     private func writeReceivedFiles(_ snapshot: ClipSnapshot) -> [URL] {
         let fm = FileManager.default
-        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { return [] }
-        let dir = support
-            .appendingPathComponent("TandemClip/Received/\(snapshot.hash.prefix(12))", isDirectory: true)
+        let dir = receivedRoot.appendingPathComponent(String(snapshot.hash.prefix(12)), isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         var urls: [URL] = []
@@ -174,31 +179,51 @@ final class ClipboardWatcher {
         // (or on the first write this session, when the on-disk total is unknown).
         // The walk recomputes the authoritative total, so the accumulator
         // self-corrects and never drifts unbounded.
-        let root = support.appendingPathComponent("TandemClip/Received", isDirectory: true)
+        lastMaterializedDir = urls.isEmpty ? nil : dir
         let written = urls.isEmpty ? 0 : snapshot.files.reduce(0) { $0 + $1.data.count }
-        if let current = receivedCacheBytes, current + written <= receivedCacheCap {
+        if let current = receivedCacheBytes, current + written <= cacheCap() {
             receivedCacheBytes = current + written
         } else {
-            receivedCacheBytes = pruneReceivedCache(root: root)
+            receivedCacheBytes = pruneReceivedCache()
         }
         return urls
     }
 
-    /// Cap the on-disk received-file cache: evict oldest clip folders until the
-    /// total is under `receivedCacheCap`. Without this the cache grows unbounded
-    /// (a peer could stream large files to fill the disk); it's otherwise only
-    /// cleared on "Clear history."
-    private let receivedCacheCap = 200_000_000   // 200 MB
+    /// Cap the on-disk received-file cache: evict oldest clip folders past it.
+    /// Without this the cache grows unbounded (a peer could stream large files
+    /// to fill the disk); it's otherwise only cleared on "Clear history."
+    /// User-configurable (Settings → Storage); read live via closure.
+    var cacheCap: () -> Int = { 200_000_000 }
     private var receivedCacheBytes: Int?         // approx running total; nil until first measured this session
+    /// The most recently materialized clip folder — its URLs are what's on the
+    /// pasteboard right now, so eviction must never remove it or a later paste
+    /// would silently produce nothing.
+    private var lastMaterializedDir: URL?
+
+    /// True byte total of the received-file cache right now (O(all files) walk).
+    /// For the Settings usage readout.
+    func receivedCacheUsage() -> Int {
+        let fm = FileManager.default
+        guard let e = fm.enumerator(at: receivedRoot, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        var total = 0
+        for case let f as URL in e { total += (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        return total
+    }
+
+    /// Re-apply the cap immediately (called when the user lowers the limit).
+    func enforceCacheCap() {
+        receivedCacheBytes = pruneReceivedCache()
+    }
 
     /// Walk the received-file cache, evict oldest clip folders until under the
     /// cap, and return the resulting true byte total. Authoritative but O(all
     /// files) — callers gate it behind the cheap running-total check above.
+    /// The folder whose URLs are currently on the pasteboard is never evicted.
     @discardableResult
-    private func pruneReceivedCache(root: URL) -> Int {
+    private func pruneReceivedCache() -> Int {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return 0 }
+            at: receivedRoot, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return 0 }
         func dirSize(_ url: URL) -> Int {
             guard let e = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
             var total = 0
@@ -209,9 +234,11 @@ final class ClipboardWatcher {
                                   date: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast,
                                   size: dirSize($0)) }
         var total = dirs.reduce(0) { $0 + $1.size }
-        guard total > receivedCacheCap else { return total }
+        let cap = cacheCap()
+        guard total > cap else { return total }
         dirs.sort { $0.date < $1.date }   // oldest first
-        for d in dirs where total > receivedCacheCap {
+        for d in dirs where total > cap {
+            if d.url == lastMaterializedDir { continue }   // on the pasteboard right now
             if (try? fm.removeItem(at: d.url)) != nil {
                 total -= d.size
                 Log.trace("clip", "evicted received cache \(d.url.lastPathComponent)")

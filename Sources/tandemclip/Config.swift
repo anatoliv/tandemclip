@@ -205,6 +205,13 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
+    /// On-disk cap for the received-files cache. Past it, the oldest per-clip
+    /// folders are evicted automatically (see ClipboardWatcher).
+    var receivedCacheCap: Int {
+        get { let v = defaults.integer(forKey: "receivedCacheCap"); return v > 0 ? v : 200_000_000 }
+        set { set("receivedCacheCap", newValue) }
+    }
+
     /// Picker groups (source-Mac names) the user folded up — restored across
     /// relaunches so the picker reopens the way it was left.
     var collapsedGroups: [String] {

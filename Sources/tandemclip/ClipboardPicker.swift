@@ -687,6 +687,9 @@ private struct HistoryRow: View {
                     Text(item.source).font(.system(size: 10.5)).foregroundColor(.secondary)
                     Text("·").foregroundColor(.secondary)
                     Text(age(item.timestamp)).font(.system(size: 10.5)).foregroundColor(.secondary)
+                    Text("·").foregroundColor(.secondary)
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(item.snapshot.totalBytes), countStyle: .file))
+                        .font(.system(size: 10.5)).foregroundColor(.secondary)
                 }
             }
             Spacer()
