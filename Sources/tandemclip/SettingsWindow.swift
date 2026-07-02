@@ -133,6 +133,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @State private var peers: [(id: String, clip: PeerClip)] = []
+    @State private var currentSSID: String = ""
     @State private var tab: Tab = .general
 
     enum Tab: String, CaseIterable, Identifiable {
@@ -320,6 +321,14 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
+                HStack {
+                    Text("Current network").foregroundColor(.secondary)
+                    Spacer()
+                    Text(currentSSID.isEmpty ? "Not on Wi-Fi" : currentSSID)
+                        .foregroundColor(currentSSID.isEmpty ? .secondary : .primary)
+                        .textSelection(.enabled)
+                        .lineLimit(1).truncationMode(.middle)
+                }
                 if model.networkAllowlistEnabled {
                     if model.allowedSSIDs.isEmpty {
                         Label("No networks added — sync is paused until you add one.",
@@ -353,9 +362,18 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { peers = model.engine.sortedPeers() }
+        .onAppear { refreshSecurity() }
         .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
-            peers = model.engine.sortedPeers()   // keep the list live while open
+            refreshSecurity()   // keep the peer list + current network live while open
+        }
+    }
+
+    private func refreshSecurity() {
+        peers = model.engine.sortedPeers()
+        // Reading the SSID may shell out to ipconfig — do it off the main thread.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ssid = NetworkGuard.currentSSID() ?? ""
+            DispatchQueue.main.async { if ssid != currentSSID { currentSSID = ssid } }
         }
     }
 }
