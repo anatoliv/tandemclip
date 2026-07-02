@@ -94,7 +94,6 @@ final class SyncEngine {
         watcher.maxBytes = config.maxClipBytes
         watcher.isPaused = { false }   // we gate in handleLocal; still want to observe copies to serve requests
         watcher.enabledKinds = { [weak self] in self?.config.enabledKinds ?? [.text] }
-        watcher.syncFiles = { [weak self] in self?.config.syncFiles ?? false }
         watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
         transport.onMessage = { [weak self] msg, verifiedKey in self?.handleRemote(msg, verifiedKey: verifiedKey) }
@@ -146,6 +145,37 @@ final class SyncEngine {
         transport.send(req, to: deviceID)
     }
 
+    /// Share dropped files to the mesh right now. This is an explicit user action
+    /// (drag-onto-picker), so it sends in both Mirror and Manual mode and
+    /// regardless of the file auto-sync toggle — but it still honors
+    /// the send role, pause, the network guard, and the size cap, and never sends
+    /// folders. It does NOT touch the local clipboard (you dropped these to share,
+    /// not to copy). Records a history entry so the share is visible/re-usable.
+    /// Returns how many synced Macs it was broadcast to (0 = nothing sent).
+    ///
+    /// Note: like any Mirror broadcast, only peers in Mirror mode auto-apply it;
+    /// a Manual-mode peer would still pull it on demand.
+    @discardableResult
+    func shareFiles(_ urls: [URL]) -> Int {
+        guard config.role.canSend, !config.paused, networkAllowed() else { return 0 }
+        let files = ClipboardWatcher.collectFiles(urls, maxBytes: config.maxClipBytes)
+        guard !files.isEmpty else { return 0 }
+        let snap = ClipSnapshot(parts: [:], files: files)
+        var m = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = snap.hash
+        m.size = snap.totalBytes
+        m.contentType = snap.contentLabel
+        m.files = snap.wireFiles
+        config.identity.sign(&m)
+        recordHistory(snap, snap.hash, source: "\(config.deviceName) (shared)")
+        Log.trace("sync", "share \(files.count) file(s) \(snap.totalBytes)B")
+        transport.broadcast(m)
+        lastSyncSource = "\(config.deviceName) (shared)"
+        onStatusChange?()
+        return peerCount
+    }
+
     // MARK: - Local clipboard changed
 
     private func handleLocal(_ snap: ClipSnapshot, _ hash: String) {
@@ -160,7 +190,18 @@ final class SyncEngine {
         }
 
         if config.mode == .mirror {
-            guard hash != lastHash, let msg = clipMessage(type: .clip) else { return }
+            guard hash != lastHash else { return }
+            // File content auto-broadcasts only when opted in (Settings → Files).
+            // The copy is still captured above (history + shareable snapshot), so
+            // peers see its metadata and can pull it on demand — the toggle gates
+            // pushing bytes unasked, not having them.
+            guard snap.files.isEmpty || config.syncFiles else {
+                Log.trace("sync", "mirror: file copy captured; auto-sync off — announce only")
+                transport.broadcast(makeAnnounce())
+                onStatusChange?()
+                return
+            }
+            guard let msg = clipMessage(type: .clip) else { return }
             lastHash = hash
             Log.trace("sync", "mirror: broadcast \(snap.contentLabel) \(snap.totalBytes)B")
             transport.broadcast(msg)
@@ -210,6 +251,9 @@ final class SyncEngine {
             applyIncomingClip(msg)
 
         case .request:
+            // A pull is the peer's explicit ask for our current clipboard, so it
+            // is served whatever the snapshot holds — including file content when
+            // the auto-sync toggle is off (that toggle gates unasked pushes only).
             guard config.role.canSend, !config.paused, networkAllowed() else { return }
             let t = now()
             // Drop entries older than the 1s throttle so this map can't grow

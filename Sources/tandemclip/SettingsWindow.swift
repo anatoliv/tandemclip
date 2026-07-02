@@ -267,7 +267,7 @@ struct SettingsView: View {
             } header: {
                 Text("What to sync")
             } footer: {
-                Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity.")
+                Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity. Copied files always appear in your history and can be pulled or drop-shared either way — the Files toggle only controls whether their content is sent to your Macs automatically.")
             }
             Section {
                 Toggle("Keep clipboard history", isOn: $model.historyEnabled)
@@ -333,6 +333,10 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Trusted devices")
+            } footer: {
+                Text(model.allowlistEnabled
+                     ? "Only the devices you check can sync. Unchecking a device revokes it immediately, even if it still knows the pairing code — the safe way to cut off a Mac you've stopped using."
+                     : "Off: any Mac with the pairing code can sync. Turn this on to pin specific devices and to be able to revoke one without changing the code everywhere.")
             }
 
             Section {
