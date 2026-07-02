@@ -211,11 +211,17 @@ final class SyncEngine {
         if history.count > config.historyLimit { history.removeLast(history.count - config.historyLimit) }
     }
 
-    /// Re-copy a history entry (re-syncs it in Mirror mode).
+    /// Re-copy a history entry (re-syncs it in Mirror mode). File clips are also
+    /// opened in their default app — the clipboard still holds the file URLs, so
+    /// they can be pasted elsewhere too.
     func applyHistory(hash: String) {
         guard let item = history.first(where: { $0.hash == hash }) else { return }
         Log.trace("sync", "history re-apply \(item.label)")
-        watcher.repost(item.snapshot)   // not echo-suppressed → watcher re-detects & re-syncs
+        let urls = watcher.repost(item.snapshot)   // not echo-suppressed → watcher re-detects & re-syncs
+        for url in urls {
+            Log.trace("sync", "open \(url.lastPathComponent)")
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func clearHistory() { history.removeAll(); onStatusChange?() }
