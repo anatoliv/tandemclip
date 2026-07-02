@@ -257,8 +257,12 @@ struct SettingsView: View {
             Section {
                 Toggle("Keep clipboard history", isOn: $model.historyEnabled)
                 if model.historyEnabled {
-                    Stepper("Keep \(model.historyKeep) clips", value: $model.historyKeep, in: 10...200, step: 10)
-                    Stepper("Show \(model.pickerShow) in picker", value: $model.pickerShow, in: 5...50, step: 1)
+                    Picker("Keep in history", selection: $model.historyKeep) {
+                        ForEach([10, 20, 50, 100, 150, 200], id: \.self) { Text("\($0) clips").tag($0) }
+                    }
+                    Picker("Show in picker", selection: $model.pickerShow) {
+                        ForEach([5, 8, 10, 12, 15, 20, 30, 50], id: \.self) { Text("\($0) clips").tag($0) }
+                    }
                 }
             } header: {
                 Text("History")
