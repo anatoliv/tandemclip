@@ -145,7 +145,7 @@ final class MenuBarController: NSObject {
         menu.addItem(.separator())
         menu.addItem(action: "Settings…", selector: #selector(openSettings), target: self, key: ",")
         menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
-        menu.addItem(disabled: "Pairing code: \(config.pairingCode)")
+        menu.addItem(disabled: "Pairing code: ••••")
         menu.addItem(action: "Copy pairing code", selector: #selector(copyPairing), target: self)
 
         menu.addItem(.separator())
@@ -225,8 +225,7 @@ final class MenuBarController: NSObject {
     @objc private func checkForUpdates() { onCheckForUpdates() }
 
     @objc private func copyPairing() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(config.pairingCode, forType: .string)
+        SecretPasteboard.copy(config.pairingCode)
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
