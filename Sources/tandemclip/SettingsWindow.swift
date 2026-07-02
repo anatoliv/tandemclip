@@ -349,5 +349,8 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { peers = model.engine.sortedPeers() }
+        .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
+            peers = model.engine.sortedPeers()   // keep the list live while open
+        }
     }
 }

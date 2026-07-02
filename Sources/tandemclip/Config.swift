@@ -50,22 +50,39 @@ final class Config {
             deviceID = id
         }
 
-        // Pairing code: env override (in-memory only, for headless testing) >
-        // Keychain > migrate legacy UserDefaults code into the Keychain > new.
-        if let envCode = ProcessInfo.processInfo.environment["TANDEMCLIP_PAIRING_CODE"],
-           !envCode.isEmpty {
+        // Pairing code resolution, in order:
+        //  - TANDEMCLIP_SET_CODE  → persist this code into the Keychain (one-shot
+        //    heal that re-pairs a Mac under the current app's ACL).
+        //  - TANDEMCLIP_PAIRING_CODE → in-memory only (headless testing).
+        //  - Keychain → the stored secret.
+        //  - legacy UserDefaults → migrate into the Keychain.
+        //  - nothing stored → generate a fresh code.
+        // CRUCIAL: if the Keychain item EXISTS but can't be read (access denied
+        // after a re-sign, or locked), we must NOT generate a new code — doing so
+        // overwrites the real secret and silently un-pairs this Mac from the fleet.
+        let env = ProcessInfo.processInfo.environment
+        if let setCode = env["TANDEMCLIP_SET_CODE"], !setCode.isEmpty {
+            KeychainStore.delete("pairingCode")
+            KeychainStore.set("pairingCode", setCode)
+            pairingCode = setCode
+        } else if let envCode = env["TANDEMCLIP_PAIRING_CODE"], !envCode.isEmpty {
             pairingCode = envCode
-        } else if let code = KeychainStore.get("pairingCode"), !code.isEmpty {
-            pairingCode = code
-        } else if let legacy = defaults.string(forKey: "pairingCode"), !legacy.isEmpty {
-            // One-time migration off plaintext UserDefaults into the Keychain.
-            KeychainStore.set("pairingCode", legacy)
-            defaults.removeObject(forKey: "pairingCode")
-            pairingCode = legacy
         } else {
-            let code = Config.generateCode()
-            KeychainStore.set("pairingCode", code)
-            pairingCode = code
+            let (kcCode, status) = KeychainStore.getStatus("pairingCode")
+            if let code = kcCode, !code.isEmpty {
+                pairingCode = code
+            } else if status != errSecItemNotFound {
+                Log.error("pairing code present but unreadable (status \(status)) — not regenerating (would un-pair this Mac)")
+                pairingCode = ""
+            } else if let legacy = defaults.string(forKey: "pairingCode"), !legacy.isEmpty {
+                KeychainStore.set("pairingCode", legacy)
+                defaults.removeObject(forKey: "pairingCode")
+                pairingCode = legacy
+            } else {
+                let code = Config.generateCode()
+                KeychainStore.set("pairingCode", code)
+                pairingCode = code
+            }
         }
 
         // Runtime pause starts from the persisted preference.

@@ -6,7 +6,12 @@ import Security
 enum KeychainStore {
     private static let service = "com.tandemclip"
 
-    static func get(_ account: String) -> String? {
+    static func get(_ account: String) -> String? { getStatus(account).value }
+
+    /// Reads the item and returns the raw OSStatus so callers can distinguish
+    /// "not found" (safe to create fresh) from "access denied / locked" (must
+    /// NOT overwrite — the secret is still there, just unreadable right now).
+    static func getStatus(_ account: String) -> (value: String?, status: OSStatus) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -15,9 +20,11 @@ enum KeychainStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        if status == errSecSuccess, let data = out as? Data {
+            return (String(data: data, encoding: .utf8), status)
+        }
+        return (nil, status)
     }
 
     @discardableResult
