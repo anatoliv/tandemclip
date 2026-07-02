@@ -105,6 +105,17 @@ final class Transport {
         )
 
         let params = NWParameters(tls: tls)
+        // TCP keepalive so a peer that vanishes without a clean close (sleep,
+        // Wi-Fi roam) is detected and the connection fails — otherwise it lingers
+        // in `.ready`, teardown never runs, and the peer stays counted forever
+        // (the "peers connected" number goes stale). Dead within ~20s.
+        if let tcp = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
+            tcp.enableKeepalive = true
+            tcp.keepaliveIdle = 8       // begin probing after 8s idle
+            tcp.keepaliveInterval = 4   // probe every 4s
+            tcp.keepaliveCount = 3      // give up after 3 missed probes (~20s)
+            tcp.connectionDropTime = 5  // fail fast on unacknowledged data
+        }
         // Infrastructure LAN only. Peer-to-peer (AWDL) resolutions flap and add
         // noise; both Macs are on the same Wi-Fi, so plain Bonjour is stabler.
         params.includePeerToPeer = false

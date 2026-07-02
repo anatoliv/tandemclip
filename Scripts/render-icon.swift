@@ -16,26 +16,42 @@ let radius = rect.width * 0.2237
 let bg = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 bg.addClip()
 
-// KeepFloat brand gradient: clay → terracotta → brass.
+// KeepFloat brand gradient, lightened: near-white paper → cream → clay →
+// terracotta. Lots of white up top, brand colour anchoring the lower corner.
+let paper      = NSColor(srgbRed: 0.980, green: 0.965, blue: 0.945, alpha: 1) // #faf6f1
+let cream      = NSColor(srgbRed: 0.902, green: 0.839, blue: 0.773, alpha: 1) // #e6d6c5 (brand-100)
 let clay       = NSColor(srgbRed: 0.784, green: 0.475, blue: 0.310, alpha: 1) // #c8794f
 let terracotta = NSColor(srgbRed: 0.698, green: 0.357, blue: 0.235, alpha: 1) // #b25b3c
-let brass      = NSColor(srgbRed: 0.561, green: 0.412, blue: 0.188, alpha: 1) // #8f6930
-NSGradient(colorsAndLocations: (clay, 0.0), (terracotta, 0.55), (brass, 1.0))!
+NSGradient(colorsAndLocations: (paper, 0.0), (cream, 0.32), (clay, 0.70), (terracotta, 1.0))!
     .draw(in: rect, angle: -45)
 
-// White sync-arrows glyph, centered.
-let conf = NSImage.SymbolConfiguration(pointSize: 480, weight: .semibold)
+// Soft top-left white highlight so the surface reads glossy/light, not flat.
+if let glow = NSGradient(starting: NSColor(calibratedWhite: 1, alpha: 0.55),
+                         ending: NSColor(calibratedWhite: 1, alpha: 0)) {
+    glow.draw(in: rect, relativeCenterPosition: NSPoint(x: -0.45, y: 0.45))
+}
+
+// Sync-arrows glyph, centered, in brand terracotta (reads on the light field)
+// with a soft shadow for depth.
+let conf = NSImage.SymbolConfiguration(pointSize: 470, weight: .semibold)
 if let symbol = NSImage(systemSymbolName: "arrow.triangle.2.circlepath",
                         accessibilityDescription: nil)?.withSymbolConfiguration(conf) {
     let s = symbol.size
     let tinted = NSImage(size: s)
     tinted.lockFocus()
     symbol.draw(at: .zero, from: NSRect(origin: .zero, size: s), operation: .sourceOver, fraction: 1)
-    NSColor.white.set()
+    terracotta.set()
     NSRect(origin: .zero, size: s).fill(using: .sourceAtop)
     tinted.unlockFocus()
     let origin = NSPoint(x: (size - s.width) / 2, y: (size - s.height) / 2)
+    NSGraphicsContext.saveGraphicsState()
+    let shadow = NSShadow()
+    shadow.shadowColor = NSColor(calibratedWhite: 0.2, alpha: 0.22)
+    shadow.shadowBlurRadius = 22
+    shadow.shadowOffset = NSSize(width: 0, height: -8)
+    shadow.set()
     tinted.draw(at: origin, from: NSRect(origin: .zero, size: s), operation: .sourceOver, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
 }
 
 image.unlockFocus()
