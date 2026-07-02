@@ -205,6 +205,13 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
+    /// Picker groups (source-Mac names) the user folded up — restored across
+    /// relaunches so the picker reopens the way it was left.
+    var collapsedGroups: [String] {
+        get { defaults.stringArray(forKey: "collapsedGroups") ?? [] }
+        set { set("collapsedGroups", newValue) }
+    }
+
     /// Keep a recent-clipboard history (in-memory, this session only). On by
     /// default now that the picker is the primary way to grab clips.
     var historyEnabled: Bool {
