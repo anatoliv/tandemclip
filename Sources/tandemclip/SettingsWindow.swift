@@ -321,14 +321,14 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
-                HStack {
-                    Text("Current network").foregroundColor(.secondary)
-                    Spacer()
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Current network").font(.caption).foregroundColor(.secondary)
                     Text(currentSSID.isEmpty ? "Not on Wi-Fi" : currentSSID)
                         .foregroundColor(currentSSID.isEmpty ? .secondary : .primary)
                         .textSelection(.enabled)
-                        .lineLimit(1).truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)   // show the full name, wrap if long
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if model.networkAllowlistEnabled {
                     if model.allowedSSIDs.isEmpty {
                         Label("No networks added — sync is paused until you add one.",
@@ -336,9 +336,11 @@ struct SettingsView: View {
                             .font(.caption).foregroundColor(.orange)
                     }
                     ForEach(model.allowedSSIDs, id: \.self) { ssid in
-                        HStack {
+                        HStack(alignment: .top) {
                             Image(systemName: "wifi").foregroundColor(.secondary)
                             Text(ssid)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)   // full name, wrap if long
                             Spacer()
                             Button { model.removeSSID(ssid) } label: {
                                 Image(systemName: "minus.circle.fill").foregroundColor(.secondary)
@@ -362,7 +364,15 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { refreshSecurity() }
+        .onAppear {
+            refreshSecurity()
+            // Ask for Location so CoreWLAN can return the exact SSID (the name
+            // other apps/System Settings show). Without it we fall back to
+            // ipconfig, which can differ. Re-read once the user responds.
+            LocationAuthorizer.shared.ensureAuthorized { _ in
+                DispatchQueue.main.async { refreshSecurity() }
+            }
+        }
         .onReceive(Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()) { _ in
             refreshSecurity()   // keep the peer list + current network live while open
         }
