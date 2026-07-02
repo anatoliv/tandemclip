@@ -6,7 +6,10 @@ import Foundation
 /// - `clip`: full clipboard content. Broadcast in Mirror mode, or sent as the
 ///   reply to a `request` in Manual mode.
 /// - `request`: "send me your current clipboard" — addressed to one peer.
-enum MessageType: String, Codable { case announce, clip, request }
+/// - `delete`: "remove the history item with this `hash` everywhere" — a signed
+///   user action, broadcast and relayed like a clip. Older builds fail to decode
+///   the unknown type and skip the frame, so this is forward-compatible.
+enum MessageType: String, Codable { case announce, clip, request, delete }
 
 /// Wire format. JSON body, length-prefixed on the wire (see Transport). Every
 /// message carries the sender's identity so peers can be listed, addressed, and
