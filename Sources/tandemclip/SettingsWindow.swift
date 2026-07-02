@@ -18,6 +18,7 @@ final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
+    @Published var historyEnabled: Bool { didSet { config.historyEnabled = historyEnabled } }
 
     @Published var deviceDisplayName: String { didSet { config.deviceDisplayName = deviceDisplayName } }
     @Published var pairingCode: String
@@ -39,6 +40,7 @@ final class SettingsModel: ObservableObject {
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
+        historyEnabled = config.historyEnabled
         deviceDisplayName = config.deviceDisplayName
         pairingCode = config.pairingCode
         activeCode = config.pairingCode
@@ -153,6 +155,7 @@ struct SettingsView: View {
         Form {
             Toggle("Launch at login", isOn: $model.launchAtLogin)
             Toggle("Start paused", isOn: $model.startPaused)
+            Toggle("Keep clipboard history (this session)", isOn: $model.historyEnabled)
             Toggle("Verbose logging", isOn: $model.verboseLogging)
             Text("Verbose logs go to /tmp/tandemclip.err.log.")
                 .font(.caption).foregroundColor(.secondary)
