@@ -11,7 +11,35 @@ import CoreLocation
 /// that Location is needed to actually enforce this.
 enum NetworkGuard {
     static func currentSSID() -> String? {
-        CWWiFiClient.shared().interface()?.ssid()
+        // Primary: CoreWLAN (needs Location auth on modern macOS).
+        if let s = CWWiFiClient.shared().interface()?.ssid(), !s.isEmpty { return s }
+        // Fallback that does NOT need Location: parse `ipconfig getsummary`.
+        return ssidFromIpconfig()
+    }
+
+    /// Read the Wi-Fi SSID via `/usr/sbin/ipconfig getsummary <iface>` — works
+    /// without Location permission (which CoreWLAN's ssid() requires and which
+    /// re-signing the app resets). Returns nil off Wi-Fi.
+    private static func ssidFromIpconfig() -> String? {
+        let iface = CWWiFiClient.shared().interface()?.interfaceName ?? "en0"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/sbin/ipconfig")
+        proc.arguments = ["getsummary", iface]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do { try proc.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard let out = String(data: data, encoding: .utf8) else { return nil }
+        for raw in out.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("SSID : ") {
+                let name = String(line.dropFirst("SSID : ".count)).trimmingCharacters(in: .whitespaces)
+                return name.isEmpty ? nil : name
+            }
+        }
+        return nil
     }
 
     /// Whether we currently hold Location authorization (required to read SSID).
