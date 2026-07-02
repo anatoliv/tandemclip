@@ -289,12 +289,14 @@ final class Transport {
             // Big-endian assembly (avoids unaligned loads).
             let len = lenData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let n = Int(len)
-            // Fixed protocol-wide DoS ceiling, independent of the local
-            // maxClipBytes preference. Tying it to *this* Mac's clip-size setting
-            // would tear down the whole TLS connection whenever a peer configured
-            // for larger clips sent a legitimate frame above our own limit; the
-            // sender already bounds payloads by its own maxClipBytes.
-            let maxFrameBytes = 48_000_000
+            // DoS ceiling, scaled to the local maxClipBytes preference so a peer
+            // holding the PSK can't force oversized allocations. The whole frame
+            // is buffered before the per-connection rate check runs, so this cap
+            // (not the rate limit) bounds transient inbound memory: worst case is
+            // maxConnections * maxFrameBytes. Headroom of 2x + base64/JSON overhead
+            // over the local clip cap covers a peer configured for slightly larger
+            // clips; a hard 48 MB ceiling caps it regardless of preference.
+            let maxFrameBytes = min(48_000_000, max(2_000_000, self.config.maxClipBytes * 2))
             if n <= 0 || n > maxFrameBytes { conn.cancel(); return }
             self.receiveBody(on: conn, length: n)
             if done { conn.cancel() }
