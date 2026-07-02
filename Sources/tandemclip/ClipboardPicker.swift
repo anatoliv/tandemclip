@@ -272,10 +272,18 @@ final class PickerModel: ObservableObject {
         onCollapsedChange?(collapsed)
     }
 
-    /// Per-kind counts for a group's items, in the filter-chip order.
+    /// Per-kind counts for a group's items. Finer-grained than the filter
+    /// chips: plain and rich text get separate badges, using the same symbols
+    /// as the row icons so the two stay visually consistent.
     private static func badges(for items: [HistoryItem]) -> [(symbol: String, count: Int)] {
-        [ContentFilter.text, .image, .file].compactMap { kind in
-            let n = items.filter { kind.matches($0) }.count
+        let kinds: [(symbol: String, matches: (String) -> Bool)] = [
+            ("text.alignleft", { $0 == "text" }),
+            ("textformat",     { $0 == "rich text" }),
+            ("photo",          { $0 == "image" }),
+            ("doc",            { $0 == "file" || $0.hasSuffix("files") }),
+        ]
+        return kinds.compactMap { kind in
+            let n = items.filter { kind.matches($0.kindLabel) }.count
             return n > 0 ? (kind.symbol, n) : nil
         }
     }
