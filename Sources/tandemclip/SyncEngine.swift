@@ -63,9 +63,12 @@ final class SyncEngine {
     }
     var peerCount: Int { peers.keys.filter { isSynced($0) }.count }
 
-    /// Peers we can actually pull from right now (online + trusted).
+    /// Peers we can actually pull from right now (online + trusted). Empty when
+    /// receiving isn't allowed (paused / disallowed network / send-only role),
+    /// so the picker shows nothing to grab.
     func syncablePeers() -> [(id: String, clip: PeerClip)] {
-        sortedPeers().filter { isSynced($0.id) }
+        guard receiveAllowed else { return [] }
+        return sortedPeers().filter { isSynced($0.id) }
     }
 
     /// Current local clipboard (kind label + total bytes), for menu-bar
@@ -155,6 +158,13 @@ final class SyncEngine {
 
     // MARK: - Remote message
 
+    /// Whether we may currently take in another Mac's clipboard: receiving role,
+    /// not paused, and on an allowed network. When false we neither SEE (peer
+    /// metadata) nor RECEIVE (clips) — an unallowed state reveals nothing.
+    private var receiveAllowed: Bool {
+        config.role.canReceive && !config.paused && networkAllowed()
+    }
+
     private func handleRemote(_ msg: Message) {
         guard config.isTrusted(msg.deviceID) else {
             Log.trace("sync", "dropped \(msg.type.rawValue) from untrusted \(msg.deviceName)")
@@ -163,9 +173,11 @@ final class SyncEngine {
 
         switch msg.type {
         case .announce:
+            guard receiveAllowed else { return }   // don't learn a peer's clipboard when we can't receive
             updatePeer(from: msg)
 
         case .clip:
+            guard receiveAllowed else { return }
             updatePeer(from: msg)
             applyIncomingClip(msg)
 
