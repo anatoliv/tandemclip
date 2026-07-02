@@ -94,12 +94,14 @@ struct HelpView: View {
                         shortcut(["↑", "↓"], "Move the selection")
                         shortcut(["⏎"], "Use the selected clip")
                         shortcut(["⌘", "1–9"], "Quick-pick by number")
+                        shortcut(["⌘", "⌫"], "Delete the selected clip everywhere")
                         shortcut(["⎋"], "Close")
                     }
                     .padding(.top, 2)
                     row("Filter & search", "Narrow the list with the All / Text / Images / Files chips, or just start typing to search.")
                     row("Files", "Picking a file copies it to the clipboard and opens it in its default app.")
                     row("Drop to share", "Drag files from Finder onto the picker to send them to your other Macs right away — no need to copy them first.")
+                    row("Delete everywhere", "Hover a clip and click ✕ (or press ⌘⌫) to remove it from history on every Mac — including any clipboard or received file still holding it.")
                 }
 
                 card("Private by design", "lock.shield") {
