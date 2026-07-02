@@ -109,26 +109,33 @@ final class ClipboardWatcher {
 
     /// Re-apply a snapshot as if freshly copied here — does NOT echo-suppress,
     /// so the watcher re-detects it and re-syncs (used for history re-apply).
-    func repost(_ snapshot: ClipSnapshot) {
+    /// Returns the on-disk URLs of any materialized files (empty for non-file
+    /// clips) so the caller can open them.
+    @discardableResult
+    func repost(_ snapshot: ClipSnapshot) -> [URL] {
         put(snapshot)
     }
 
-    private func put(_ snapshot: ClipSnapshot) {
+    /// Writes the snapshot to the pasteboard. For file clips, materializes the
+    /// files to disk, puts their URLs on the pasteboard, and returns those URLs.
+    @discardableResult
+    private func put(_ snapshot: ClipSnapshot) -> [URL] {
         pasteboard.clearContents()
         if !snapshot.files.isEmpty {
             // Materialize received files to disk and put file URLs on the
             // pasteboard so paste works in Finder and apps.
             let urls = writeReceivedFiles(snapshot)
             if !urls.isEmpty { pasteboard.writeObjects(urls as [NSURL]) }
-        } else {
-            for (kind, data) in snapshot.parts {
-                if kind == .text, let s = String(data: data, encoding: .utf8) {
-                    pasteboard.setString(s, forType: .string)
-                } else {
-                    pasteboard.setData(data, forType: kind.pasteboardType)
-                }
+            return urls
+        }
+        for (kind, data) in snapshot.parts {
+            if kind == .text, let s = String(data: data, encoding: .utf8) {
+                pasteboard.setString(s, forType: .string)
+            } else {
+                pasteboard.setData(data, forType: kind.pasteboardType)
             }
         }
+        return []
     }
 
     /// Write received files under Application Support and return their URLs.
