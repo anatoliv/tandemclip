@@ -105,13 +105,24 @@ final class PickerModel: ObservableObject {
         if selection >= filtered.count { selection = max(0, filtered.count - 1) }
     }
 
+    /// Query-filtered clips in **display order**: grouped by source Mac (groups
+    /// and items each in first-seen/recency order). Flat indices into this array
+    /// therefore match the on-screen top-to-bottom order, so arrow navigation,
+    /// the selection highlight, and ⌘1–9 all agree.
     var filtered: [HistoryItem] {
-        query.isEmpty ? items
+        let base = query.isEmpty ? items
             : items.filter { $0.label.localizedCaseInsensitiveContains(query) || $0.source.localizedCaseInsensitiveContains(query) }
+        var order: [String] = []
+        var map: [String: [HistoryItem]] = [:]
+        for it in base {
+            if map[it.source] == nil { order.append(it.source) }
+            map[it.source, default: []].append(it)
+        }
+        return order.flatMap { map[$0]! }
     }
 
-    /// Recent clips grouped by source Mac (preserving recency order), each entry
-    /// carrying its flat index (for selection highlight + ⌘1–9).
+    /// The display-ordered `filtered` list carved into per-Mac sections, each
+    /// entry carrying its flat index (for selection highlight + ⌘1–9).
     var grouped: [(source: String, entries: [(index: Int, item: HistoryItem)])] {
         var order: [String] = []
         var map: [String: [(Int, HistoryItem)]] = [:]
@@ -203,7 +214,8 @@ struct PickerView: View {
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
 
-            ScrollView {
+            ScrollViewReader { proxy in
+             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if !model.peers.isEmpty {
                         sectionHeader("GRAB A MAC’S CLIPBOARD")
@@ -234,6 +246,12 @@ struct PickerView: View {
                     }
                 }
                 .padding(.vertical, 6)
+             }
+             .onChange(of: model.selection) { sel in
+                 let f = model.filtered
+                 guard f.indices.contains(sel) else { return }
+                 withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(f[sel].id, anchor: .center) }
+             }
             }
 
             Divider()
