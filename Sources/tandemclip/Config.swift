@@ -109,10 +109,37 @@ final class Config {
         set { set("role", newValue.rawValue) }
     }
 
-    /// 1 MB default. Stored value of 0/absent falls back to the default.
+    /// 5 MB default (fits screenshots). Stored value of 0/absent → default.
     var maxClipBytes: Int {
-        get { let v = defaults.integer(forKey: "maxClipBytes"); return v > 0 ? v : 1_000_000 }
+        get { let v = defaults.integer(forKey: "maxClipBytes"); return v > 0 ? v : 5_000_000 }
         set { set("maxClipBytes", newValue) }
+    }
+
+    /// Which content kinds to sync. Text is always on. Rich text + images
+    /// default on; toggled in Settings. Stored as rawValue strings.
+    var enabledKinds: Set<ClipKind> {
+        get {
+            guard let arr = defaults.array(forKey: "enabledKinds") as? [String] else {
+                return [.text, .rtf, .png, .tiff]   // default: everything
+            }
+            var s: Set<ClipKind> = [.text]          // text is always enabled
+            for r in arr { if let k = ClipKind(rawValue: r) { s.insert(k) } }
+            return s
+        }
+        set { set("enabledKinds", newValue.map { $0.rawValue }) }
+    }
+
+    var syncRichText: Bool {
+        get { enabledKinds.contains(.rtf) }
+        set { var k = enabledKinds; if newValue { k.insert(.rtf) } else { k.remove(.rtf) }; enabledKinds = k }
+    }
+    var syncImages: Bool {
+        get { enabledKinds.contains(.png) || enabledKinds.contains(.tiff) }
+        set {
+            var k = enabledKinds
+            if newValue { k.insert(.png); k.insert(.tiff) } else { k.remove(.png); k.remove(.tiff) }
+            enabledKinds = k
+        }
     }
 
     // MARK: - Startup & behavior

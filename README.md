@@ -1,8 +1,8 @@
 # TandemClip
 
 LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
-control — just plain-text clipboard content shared between machines you've
-paired with a shared code. Runs as a menu-bar-only background agent.
+control — text, rich text, and images shared between machines you've paired
+with a shared code. Runs as a menu-bar-only background agent.
 
 **Status:** Shipping (text). Signed, notarized, auto-updating.
 **Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
@@ -178,12 +178,13 @@ cert — the same pattern as its sibling apps on web-01.
 
 ## Roadmap
 
-Text sync ships today. Deferred:
+Text, rich text, and images sync today (each copy carries every enabled
+representation, so paste keeps full fidelity). Deferred:
 
-- [ ] In-app pairing-code entry + Keychain storage; HKDF key derivation
-- [ ] Rich text (`public.rtf`)
-- [ ] Images (`public.png`, `public.tiff`) with chunked framing
-- [ ] File URLs (`public.file-url`)
+- [x] In-app pairing-code entry + Keychain storage; HKDF key derivation
+- [x] Rich text (`public.rtf`)
+- [x] Images (`public.png`, `public.tiff`)
+- [ ] File URLs (`public.file-url`) — needs real file transfer, not just the URL
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 - [ ] Optional clipboard history (off by default)
 ```

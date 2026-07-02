@@ -232,7 +232,8 @@ final class Transport {
             // Big-endian assembly (avoids unaligned loads).
             let len = lenData.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let n = Int(len)
-            if n <= 0 || n > 10_000_000 { conn.cancel(); return }
+            // Cap generously: a base64+JSON image frame is ~1.4× the raw bytes.
+            if n <= 0 || n > 48_000_000 { conn.cancel(); return }
             self.receiveBody(on: conn, length: n)
             if done { conn.cancel() }
         }
