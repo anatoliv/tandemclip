@@ -37,7 +37,8 @@ final class SyncEngine {
     let transport: Transport
 
     private var lastHash: String?          // dedup / echo-loop key
-    private var pendingPull: Set<String> = []  // deviceIDs we've asked to fetch from
+    private var pendingPull: [String: Double] = [:]  // deviceID -> time we requested from it
+    private let pullTimeout: Double = 20             // a pull reply is only honored this long
 
     // Our current shareable clipboard (last non-secret local copy).
     private var localSnapshot: ClipSnapshot?
@@ -99,7 +100,7 @@ final class SyncEngine {
     func pull(from deviceID: String) {
         guard config.role.canReceive else { return }
         Log.trace("sync", "pull request -> \(peers[deviceID]?.name ?? deviceID)")
-        pendingPull.insert(deviceID)
+        pendingPull[deviceID] = now()
         var req = Message(type: .request, deviceID: config.deviceID, deviceName: config.deviceName)
         req.timestamp = now()
         transport.send(req, to: deviceID)
@@ -175,8 +176,14 @@ final class SyncEngine {
                 transport.broadcast(msg)
             }
         } else {
-            // Manual: apply only the clip we explicitly requested.
-            guard config.role.canReceive, pendingPull.remove(msg.deviceID) != nil else { return }
+            // Manual: apply only a clip we explicitly requested, and only if the
+            // reply is recent. A pull whose reply was lost must NOT leave a latent
+            // permission that silently swallows the peer's next (e.g. Mirror-mode)
+            // broadcast as if it were the requested clip.
+            guard config.role.canReceive,
+                  let requestedAt = pendingPull[msg.deviceID],
+                  now() - requestedAt <= pullTimeout else { return }
+            pendingPull[msg.deviceID] = nil
             apply(snap, hash: hash, from: msg.deviceName)
         }
     }
@@ -237,6 +244,7 @@ final class SyncEngine {
         }
         for id in peers.keys where !online.contains(id) {
             peers[id]?.online = false
+            pendingPull[id] = nil   // an offline peer won't answer a pending pull
         }
         onStatusChange?()
     }
