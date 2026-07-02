@@ -457,7 +457,8 @@ struct PickerView: View {
                 Spacer(minLength: 8)
                 ForEach(PickerModel.ContentFilter.allCases) { f in filterChip(f) }
             }
-            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 11)
+            // 14pt horizontal aligns the search icon with row content below.
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 13)
             .contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
