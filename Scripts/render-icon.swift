@@ -16,9 +16,12 @@ let radius = rect.width * 0.2237
 let bg = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
 bg.addClip()
 
-let top = NSColor(calibratedRed: 0.40, green: 0.36, blue: 0.90, alpha: 1)  // indigo
-let bottom = NSColor(calibratedRed: 0.16, green: 0.46, blue: 0.96, alpha: 1) // blue
-NSGradient(starting: top, ending: bottom)!.draw(in: rect, angle: -60)
+// KeepFloat brand gradient: clay → terracotta → brass.
+let clay       = NSColor(srgbRed: 0.784, green: 0.475, blue: 0.310, alpha: 1) // #c8794f
+let terracotta = NSColor(srgbRed: 0.698, green: 0.357, blue: 0.235, alpha: 1) // #b25b3c
+let brass      = NSColor(srgbRed: 0.561, green: 0.412, blue: 0.188, alpha: 1) // #8f6930
+NSGradient(colorsAndLocations: (clay, 0.0), (terracotta, 0.55), (brass, 1.0))!
+    .draw(in: rect, angle: -45)
 
 // White sync-arrows glyph, centered.
 let conf = NSImage.SymbolConfiguration(pointSize: 480, weight: .semibold)
