@@ -105,6 +105,7 @@ final class MenuBarController: NSObject {
         else if let pv = clip.preview, !pv.isEmpty { parts.append("“\(pv.prefix(24))”") }
         else {
             var meta: [String] = []
+            if let k = clip.kindLabel, k != "text" { meta.append(k) }   // "image" / "rich text"
             if let s = clip.size { meta.append(ByteCountFormatter.string(fromByteCount: Int64(s), countStyle: .file)) }
             if clip.timestamp > 0 { meta.append(age(clip.timestamp)) }
             if !meta.isEmpty { parts.append(meta.joined(separator: " · ")) }
