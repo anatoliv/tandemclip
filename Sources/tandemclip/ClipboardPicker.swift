@@ -26,7 +26,8 @@ final class ClipboardPickerController {
     func show() {
         let model = self.model ?? makeModel()
         self.model = model
-        model.reload(history: engine.history, peers: engine.sortedPeers(), showCount: config.pickerShowCount)
+        model.reload(history: engine.history, peers: engine.sortedPeers(),
+                     showCount: config.pickerShowCount, clipUsage: usageString())
 
         if panel == nil {
             let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
@@ -59,10 +60,17 @@ final class ClipboardPickerController {
     /// on other Macs appear without reopening. Preserves query + selection.
     func refreshIfVisible() {
         guard let panel, panel.isVisible, let model else { return }
-        model.refresh(history: engine.history, peers: engine.sortedPeers(), showCount: config.pickerShowCount)
+        model.refresh(history: engine.history, peers: engine.sortedPeers(),
+                      showCount: config.pickerShowCount, clipUsage: usageString())
     }
 
     func hide() { panel?.orderOut(nil) }
+
+    /// "kind · size" for the current local clipboard (empty if nothing yet).
+    private func usageString() -> String {
+        guard let i = engine.currentClipInfo else { return "" }
+        return "\(i.kind) · \(ByteCountFormatter.string(fromByteCount: Int64(i.bytes), countStyle: .file))"
+    }
 
     private func makeModel() -> PickerModel {
         PickerModel(
@@ -108,6 +116,7 @@ final class PickerModel: ObservableObject {
     @Published var kindFilter: ContentFilter = .all { didSet { selection = 0 } }
     @Published private(set) var items: [HistoryItem] = []
     @Published private(set) var peers: [(id: String, clip: PeerClip)] = []
+    @Published private(set) var clipUsage = ""   // current clipboard "kind · size"
 
     let onPickHistory: (String) -> Void
     let onPullPeer: (String) -> Void
@@ -122,16 +131,32 @@ final class PickerModel: ObservableObject {
     }
 
     /// Full reset (on open).
-    func reload(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int) {
+    func reload(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int, clipUsage: String) {
         query = ""; selection = 0
-        refresh(history: history, peers: peers, showCount: showCount)
+        refresh(history: history, peers: peers, showCount: showCount, clipUsage: clipUsage)
     }
 
-    /// Live update while open — preserves query + clamps selection.
-    func refresh(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int) {
-        items = Array(history.prefix(max(showCount, 1)))
-        self.peers = peers.filter { $0.clip.online }
-        if selection >= filtered.count { selection = max(0, filtered.count - 1) }
+    /// Live update while open — preserves query + clamps selection. Only mutates
+    /// @Published state when something actually changed, so a burst of peer
+    /// announcements can't re-render the list on a loop (which flickered).
+    func refresh(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int, clipUsage: String) {
+        let newItems = Array(history.prefix(max(showCount, 1)))
+        if !Self.sameItems(newItems, items) { items = newItems }
+        let newPeers = peers.filter { $0.clip.online }
+        if !Self.samePeers(newPeers, self.peers) { self.peers = newPeers }
+        if clipUsage != self.clipUsage { self.clipUsage = clipUsage }
+        let clamped = max(0, filtered.count - 1)
+        if selection > clamped { selection = clamped }
+    }
+
+    private static func sameItems(_ a: [HistoryItem], _ b: [HistoryItem]) -> Bool {
+        a.count == b.count && zip(a, b).allSatisfy { $0.hash == $1.hash }
+    }
+    private static func samePeers(_ a: [(id: String, clip: PeerClip)], _ b: [(id: String, clip: PeerClip)]) -> Bool {
+        a.count == b.count && zip(a, b).allSatisfy {
+            $0.id == $1.id && $0.clip.online == $1.clip.online
+                && $0.clip.hash == $1.clip.hash && $0.clip.size == $1.clip.size
+        }
     }
 
     /// Query-filtered clips in **display order**: grouped by source Mac (groups
@@ -233,18 +258,18 @@ struct PickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: 12))
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: 11))
                 HStack(spacing: 1) {
                     Text(model.query.isEmpty ? "Search clips…" : model.query)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12.5))
                         .foregroundColor(model.query.isEmpty ? .secondary : .primary)
                     SearchCaret()
                 }
                 Spacer(minLength: 8)
                 ForEach(PickerModel.ContentFilter.allCases) { f in filterChip(f) }
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
+            .padding(.horizontal, 11).padding(.vertical, 4)
             .contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
@@ -293,6 +318,13 @@ struct PickerView: View {
             HStack(spacing: 14) {
                 hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1–9", "quick"); hint("⎋", "close")
                 Spacer()
+                if !model.clipUsage.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.clipboard").font(.system(size: 9))
+                        Text(model.clipUsage).font(.system(size: 10))
+                    }
+                    .foregroundColor(.secondary)
+                }
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
         }
@@ -305,11 +337,11 @@ struct PickerView: View {
         let active = model.kindFilter == f
         return Button { model.kindFilter = f } label: {
             Image(systemName: f.symbol)
-                .font(.system(size: 11, weight: active ? .semibold : .regular))
+                .font(.system(size: 10, weight: active ? .semibold : .regular))
                 .foregroundColor(active ? .white : .secondary)
-                .frame(width: 24, height: 20)
+                .frame(width: 22, height: 17)
                 .background(active ? Color.accentColor : Color.secondary.opacity(0.12))
-                .cornerRadius(5)
+                .cornerRadius(4)
         }
         .buttonStyle(.plain)
         .help(f.label)
@@ -328,14 +360,11 @@ struct PickerView: View {
     }
 }
 
-/// Isolated so its 0.55s blink re-renders only the caret — not the whole
-/// picker (which caused the list to flicker while the search was open).
+/// Static (non-blinking) caret. A blinking caret drove a 0.55s timer that
+/// re-rendered the picker and made the list flicker; a steady bar avoids that.
 private struct SearchCaret: View {
-    @State private var on = true
     var body: some View {
-        Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 15)
-            .opacity(on ? 1 : 0)
-            .onReceive(Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()) { _ in on.toggle() }
+        Rectangle().fill(Color.accentColor.opacity(0.8)).frame(width: 1.5, height: 14)
     }
 }
 
