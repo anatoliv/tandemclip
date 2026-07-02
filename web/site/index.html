@@ -1,75 +1,181 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TandemClip — Clipboard sync for your Macs</title>
-<meta name="description" content="Your clipboard, in sync across all your Macs. LAN-only, end-to-end encrypted, no cloud." />
+<meta name="description" content="Your clipboard, in sync across your Macs. LAN-only, end-to-end encrypted, no cloud." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  :root { --indigo:#635fe6; --blue:#2a75f4; --bg:#0b0e17; --panel:#121726; --ink:#eef1f8; --muted:#9aa4bf; }
+  /* Design tokens — ported from Tonebox (@tonebox/shared). Midnight dark, terracotta accent. */
+  :root {
+    --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-display:'Fraunces',Georgia,serif;
+    --s-3:12px; --s-4:16px; --s-6:24px; --s-8:32px; --s-12:48px; --s-16:64px;
+    --r-chip:4px; --r-btn:6px; --r-card:8px; --r-sheet:12px;
+    --m-state:150ms ease-out;
+    --bg:13 14 17; --surface-0:8 8 10; --surface-1:28 28 32; --surface-2:44 44 49;
+    --text:232 234 236; --text-muted:138 138 148; --text-faint:98 98 107;
+    --hairline:38 38 44; --hairline-strong:56 56 62;
+    --accent:224 122 75;
+  }
   * { box-sizing:border-box; margin:0; padding:0; }
-  body { font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased; }
-  a { color:inherit; }
-  .wrap { max-width:960px; margin:0 auto; padding:0 24px; }
-  header { padding:28px 0; display:flex; align-items:center; gap:12px; }
-  .logo { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,var(--indigo),var(--blue)); display:grid; place-items:center; }
-  .logo svg { width:22px; height:22px; }
-  .brand { font-weight:650; letter-spacing:-.01em; }
-  .hero { text-align:center; padding:64px 0 40px; }
-  .hero h1 { font-size:clamp(34px,6vw,58px); line-height:1.05; letter-spacing:-.03em; font-weight:720; }
-  .grad { background:linear-gradient(120deg,var(--indigo),var(--blue)); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .hero p { color:var(--muted); font-size:clamp(17px,2.4vw,21px); max-width:640px; margin:20px auto 0; }
-  .cta { margin-top:36px; display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
-  .btn { display:inline-flex; align-items:center; gap:10px; padding:14px 24px; border-radius:12px; font-weight:600; text-decoration:none; transition:.15s transform,.15s box-shadow; }
-  .btn-primary { background:linear-gradient(135deg,var(--indigo),var(--blue)); color:#fff; box-shadow:0 10px 30px -8px rgba(58,90,246,.6); }
-  .btn-primary:hover { transform:translateY(-1px); }
-  .btn-ghost { border:1px solid #2a3350; color:var(--ink); }
-  .meta { margin-top:14px; color:var(--muted); font-size:13.5px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:18px; padding:48px 0 24px; }
-  .card { background:var(--panel); border:1px solid #1c2338; border-radius:16px; padding:22px; }
-  .card h3 { font-size:16px; margin-bottom:8px; letter-spacing:-.01em; }
-  .card p { color:var(--muted); font-size:14.5px; }
-  .card .ic { font-size:20px; margin-bottom:10px; }
-  footer { color:var(--muted); font-size:13px; text-align:center; padding:48px 0 40px; border-top:1px solid #161d30; margin-top:32px; }
-  .arrows { fill:none; stroke:#fff; stroke-width:2.1; stroke-linecap:round; }
+  html,body { background:rgb(var(--bg)); color:rgb(var(--text)); }
+  body { font-family:var(--font-sans); font-feature-settings:'tnum','cv11'; -webkit-font-smoothing:antialiased; line-height:1.5; }
+  a { color:inherit; text-decoration:none; }
+
+  /* Grain + atmosphere */
+  .grain { position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.035;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .atmos { position:absolute; top:-160px; left:50%; transform:translateX(-50%); width:900px; height:600px; z-index:0; pointer-events:none;
+    background:radial-gradient(closest-side, rgb(var(--accent) / .14), transparent 70%); }
+
+  .shell { max-width:1200px; margin:0 auto; padding:0 var(--s-6); position:relative; z-index:1; }
+  .hr { border:0; border-top:1px solid rgb(var(--hairline)); }
+
+  /* Type scale (Fraunces display, Inter body) */
+  .t-display { font-family:var(--font-display); font-size:clamp(44px,5.8vw,80px); line-height:1.02; letter-spacing:-.015em; font-weight:500; text-wrap:balance; }
+  .t-display em { font-style:italic; font-weight:400; color:rgb(var(--accent)); }
+  .t-h2 { font-family:var(--font-display); font-size:clamp(26px,3vw,38px); line-height:1.12; letter-spacing:-.01em; font-weight:500; }
+  .t-h3 { font-size:17px; line-height:1.3; letter-spacing:-.01em; font-weight:600; }
+  .t-body { font-size:15px; line-height:1.55; }
+  .t-small { font-size:13px; }
+  .t-mono { font-family:ui-monospace,'JetBrains Mono',Menlo,monospace; font-feature-settings:'tnum'; }
+  .t-mute { color:rgb(var(--text-muted)); }
+  .t-faint { color:rgb(var(--text-faint)); }
+
+  /* Buttons */
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:var(--r-btn); font:inherit; font-size:14px; font-weight:500; border:1px solid transparent; cursor:pointer; transition:background var(--m-state),border-color var(--m-state),color var(--m-state); white-space:nowrap; }
+  .btn-primary { background:rgb(var(--accent)); color:#fff; }
+  .btn-primary:hover { background:rgb(var(--accent) / .9); }
+  .btn-ghost { color:rgb(var(--text)); border-color:rgb(var(--hairline-strong)); }
+  .btn-ghost:hover { background:rgb(var(--surface-2)); }
+
+  .card { background:rgb(var(--surface-1)); border:1px solid rgb(var(--hairline)); border-radius:var(--r-card); padding:22px; }
+
+  /* Header */
+  header { position:relative; z-index:1; }
+  .bar { display:flex; align-items:center; justify-content:space-between; padding:22px 0; }
+  .lockup { display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:-.01em; }
+  .mark { width:28px; height:28px; border-radius:7px; background:rgb(var(--accent)); display:grid; place-items:center; }
+  .mark svg { width:18px; height:18px; }
+
+  /* Section mark (editorial cue) */
+  .cue { display:inline-flex; align-items:center; gap:9px; margin-bottom:22px; }
+  .cue .dot { width:7px; height:7px; border-radius:50%; background:rgb(var(--accent)); box-shadow:0 0 0 3px rgb(var(--accent) / .18); }
+  .cue .code { font-family:ui-monospace,Menlo,monospace; font-size:12px; letter-spacing:.04em; color:rgb(var(--text-faint)); }
+  .cue .lbl { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:rgb(var(--text-muted)); }
+
+  section { padding:var(--s-16) 0; }
+  .hero { padding-top:64px; }
+  .lede { max-width:600px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; margin-top:var(--s-8); }
+  .trust { display:flex; flex-wrap:wrap; gap:24px; margin-top:40px; }
+  .trust span { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:rgb(var(--text-muted)); }
+  .trust svg { stroke:rgb(var(--text-muted)); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-top:var(--s-8); }
+  .kicker { color:rgb(var(--text-faint)); font-size:13px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:14px; }
+  footer { padding:var(--s-12) 0 var(--s-16); }
+  .foot { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-top:24px; color:rgb(var(--text-faint)); font-size:13px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <span class="logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24"><g class="arrows">
-        <path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M20 12A8 8 0 0 1 6.3 17.6"/>
-        <path d="M17 3.2v3.6h-3.6"/><path d="M7 20.8v-3.6h3.6"/>
-      </g></svg>
-    </span>
-    <span class="brand">TandemClip</span>
-  </header>
+<div class="grain" aria-hidden="true"></div>
 
-  <section class="hero">
-    <h1>Your clipboard,<br><span class="grad">in sync across your Macs.</span></h1>
-    <p>Copy on one Mac, paste on another. LAN-only and end-to-end encrypted — nothing ever touches the cloud.</p>
-    <div class="cta">
-      <a class="btn btn-primary" href="/TandemClip_0.1.0_aarch64.dmg" download>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 12l5 5 5-5"/><path d="M5 21h14"/></svg>
-        Download for macOS
-      </a>
-      <a class="btn btn-ghost" href="#features">How it works</a>
+<header>
+  <div class="shell">
+    <div class="bar">
+      <div class="lockup">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round">
+            <path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M20 12A8 8 0 0 1 6.3 17.6"/>
+            <path d="M17 3.2v3.6h-3.6"/><path d="M7 20.8v-3.6h3.6"/>
+          </svg>
+        </span>
+        TandemClip
+      </div>
+      <a class="btn btn-ghost" href="/TandemClip_0.1.0_aarch64.dmg" download>Download</a>
     </div>
-    <div class="meta">Apple Silicon · macOS 13+ · Developer ID signed &amp; notarized</div>
+  </div>
+</header>
+
+<main>
+  <section class="hero" style="position:relative;">
+    <div class="atmos" aria-hidden="true"></div>
+    <div class="shell">
+      <div class="cue"><span class="dot"></span><span class="code t-mono">⌘C · ⌘V</span><span class="lbl">Synced</span></div>
+      <h1 class="t-display">Your clipboard,<br><em>in sync</em>. Across your Macs.</h1>
+      <p class="t-body t-mute lede" style="margin-top:24px; font-size:17px;">
+        TandemClip shares your clipboard between your Macs over the local network — copy
+        on one, paste on another. End-to-end encrypted with a code only you hold. No cloud,
+        no account, nothing ever leaves your network.
+      </p>
+      <div class="row">
+        <a class="btn btn-primary" href="/TandemClip_0.1.0_aarch64.dmg" download>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 12l5 5 5-5"/><path d="M5 21h14"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+      <p class="t-small t-faint" style="margin-top:14px;">macOS 13+ · Apple Silicon · Developer ID signed &amp; notarized</p>
+      <div class="trust">
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>LAN-only, PSK-TLS encrypted</span>
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>Propagates in under a second</span>
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5z"/><path d="M2 16l10 5 10-5"/></svg>Mirror or Manual</span>
+      </div>
+    </div>
   </section>
 
-  <section class="grid" id="features">
-    <div class="card"><div class="ic">🔒</div><h3>LAN-only, encrypted</h3><p>Every connection is PSK-TLS, keyed by a pairing code you set. No relay, no internet, no accounts.</p></div>
-    <div class="card"><div class="ic">🔁</div><h3>Mirror or Manual</h3><p>Auto-sync everything, or pull a specific Mac's clipboard on demand from the menu bar.</p></div>
-    <div class="card"><div class="ic">🛡️</div><h3>Password-manager safe</h3><p>Content marked secret by 1Password &amp; friends is never synced. Per-Mac send/receive roles too.</p></div>
-    <div class="card"><div class="ic">⚡</div><h3>Instant &amp; self-healing</h3><p>Copies propagate in well under a second, and sync survives sleep, wake, and Wi-Fi roams.</p></div>
+  <div class="shell"><hr class="hr" /></div>
+
+  <section id="how">
+    <div class="shell">
+      <div class="kicker">How it works</div>
+      <h2 class="t-h2 lede">Two Macs, one clipboard —<br>or pull a specific one on demand.</h2>
+      <div class="grid">
+        <div class="card"><h3 class="t-h3">Mirror mode</h3><p class="t-body t-mute" style="margin-top:8px;">Copy anywhere and it appears everywhere. Deduped, loop-safe, and it relays across machines that can't see each other directly.</p></div>
+        <div class="card"><h3 class="t-h3">Manual mode</h3><p class="t-body t-mute" style="margin-top:8px;">Keep each Mac's clipboard its own. From the menu bar, pull the clipboard from a specific Mac when you want it.</p></div>
+        <div class="card"><h3 class="t-h3">Roles &amp; trust</h3><p class="t-body t-mute" style="margin-top:8px;">Make a machine send-only or receive-only, and restrict sync to a trusted-device allowlist.</p></div>
+      </div>
+    </div>
   </section>
 
-  <footer>
-    TandemClip · LAN clipboard sync · <a href="/appcast.xml">appcast</a><br>
-    No cloud. No tracking. Your clipboard stays on your network.
-  </footer>
-</div>
+  <div class="shell"><hr class="hr" /></div>
+
+  <section>
+    <div class="shell">
+      <div class="kicker">Private by design</div>
+      <h2 class="t-h2 lede">Your clipboard never leaves your network.</h2>
+      <div class="grid">
+        <div class="card"><h3 class="t-h3">No cloud, no relay</h3><p class="t-body t-mute" style="margin-top:8px;">Peers talk directly over your LAN. There is no server, no account, and nothing to breach.</p></div>
+        <div class="card"><h3 class="t-h3">Password-manager safe</h3><p class="t-body t-mute" style="margin-top:8px;">Content marked secret by 1Password and others is never synced. Same for one-time and transient copies.</p></div>
+        <div class="card"><h3 class="t-h3">A code only you hold</h3><p class="t-body t-mute" style="margin-top:8px;">A shared pairing code becomes the encryption key. Being on the same Wi-Fi grants nothing on its own.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="shell"><hr class="hr" /></div>
+
+  <section style="text-align:center;">
+    <div class="shell">
+      <h2 class="t-display" style="font-size:clamp(34px,4.4vw,58px);">Copy here. <em>Paste</em> there.</h2>
+      <div class="row" style="justify-content:center;">
+        <a class="btn btn-primary" href="/TandemClip_0.1.0_aarch64.dmg" download>Download for macOS</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="shell">
+    <hr class="hr" />
+    <div class="foot">
+      <span>TandemClip — LAN clipboard sync for Macs</span>
+      <span>No cloud · No tracking · <a href="/appcast.xml">appcast</a></span>
+    </div>
+  </div>
+</footer>
 </body>
 </html>
