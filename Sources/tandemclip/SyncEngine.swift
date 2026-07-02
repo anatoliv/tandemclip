@@ -39,6 +39,7 @@ final class SyncEngine {
     private var lastHash: String?          // dedup / echo-loop key
     private var pendingPull: [String: Double] = [:]  // deviceID -> time we requested from it
     private let pullTimeout: Double = 20             // a pull reply is only honored this long
+    private var pullOpen: Set<String> = []           // deviceIDs whose pulled file(s) to open
 
     // Our current shareable clipboard (last non-secret local copy).
     private var localSnapshot: ClipSnapshot?
@@ -101,6 +102,7 @@ final class SyncEngine {
         guard config.role.canReceive else { return }
         Log.trace("sync", "pull request -> \(peers[deviceID]?.name ?? deviceID)")
         pendingPull[deviceID] = now()
+        pullOpen.insert(deviceID)   // grabbing a Mac's clip is user-initiated → open any files
         var req = Message(type: .request, deviceID: config.deviceID, deviceName: config.deviceName)
         req.timestamp = now()
         transport.send(req, to: deviceID)
@@ -167,7 +169,8 @@ final class SyncEngine {
                 Log.trace("sync", "mirror: dropped clip (already seen/echo)")
                 return
             }
-            apply(snap, hash: hash, from: msg.deviceName)
+            let urls = apply(snap, hash: hash, from: msg.deviceName)
+            if pullOpen.remove(msg.deviceID) != nil { openFiles(urls) }
             // Relay (gossip) to the rest of the mesh so machines that aren't
             // directly connected to the source still receive it. Hash dedup on
             // every node stops loops; a clip circulates at most once.
@@ -184,20 +187,31 @@ final class SyncEngine {
                   let requestedAt = pendingPull[msg.deviceID],
                   now() - requestedAt <= pullTimeout else { return }
             pendingPull[msg.deviceID] = nil
-            apply(snap, hash: hash, from: msg.deviceName)
+            let urls = apply(snap, hash: hash, from: msg.deviceName)
+            if pullOpen.remove(msg.deviceID) != nil { openFiles(urls) }
         }
     }
 
-    private func apply(_ snap: ClipSnapshot, hash: String, from name: String) {
+    @discardableResult
+    private func apply(_ snap: ClipSnapshot, hash: String, from name: String) -> [URL] {
         Log.trace("sync", "apply \(snap.contentLabel) from \(name)")
         lastHash = hash
         localHash = hash            // our clipboard now equals this; don't re-announce it
         localSnapshot = snap
         localTimestamp = now()
         recordHistory(snap, hash, source: name)
-        watcher.write(snap)         // echo-suppressed inside write()
+        let urls = watcher.write(snap)   // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
+        return urls
+    }
+
+    /// Open materialized file clips in their default app (user-initiated only).
+    private func openFiles(_ urls: [URL]) {
+        for url in urls {
+            Log.trace("sync", "open \(url.lastPathComponent)")
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - History (in-memory, opt-in)
@@ -218,10 +232,7 @@ final class SyncEngine {
         guard let item = history.first(where: { $0.hash == hash }) else { return }
         Log.trace("sync", "history re-apply \(item.label)")
         let urls = watcher.repost(item.snapshot)   // not echo-suppressed → watcher re-detects & re-syncs
-        for url in urls {
-            Log.trace("sync", "open \(url.lastPathComponent)")
-            NSWorkspace.shared.open(url)
-        }
+        openFiles(urls)
     }
 
     func clearHistory() { history.removeAll(); onStatusChange?() }
@@ -251,6 +262,7 @@ final class SyncEngine {
         for id in peers.keys where !online.contains(id) {
             peers[id]?.online = false
             pendingPull[id] = nil   // an offline peer won't answer a pending pull
+            pullOpen.remove(id)
         }
         onStatusChange?()
     }
