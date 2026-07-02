@@ -34,7 +34,10 @@ final class AppController: NSObject, NSApplicationDelegate {
             onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates() },
             onOpenPicker: { [weak self] in self?.picker.show() })
         self.menuBar = menuBar
-        engine.onStatusChange = { [weak menuBar] in menuBar?.refresh() }
+        engine.onStatusChange = { [weak self, weak menuBar] in
+            menuBar?.refresh()
+            self?.picker.refreshIfVisible()   // live-update the picker if open
+        }
 
         // Settings changed from the window → refresh the menu/icon.
         NotificationCenter.default.addObserver(forName: Config.didChange, object: nil, queue: .main) { [weak menuBar] _ in
