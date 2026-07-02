@@ -19,9 +19,10 @@
     <key>KeepAlive</key>
     <true/>
 
-    <key>StandardOutPath</key>
-    <string>/tmp/tandemclip.out.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/tandemclip.err.log</string>
+    <!-- No StandardOutPath/StandardErrorPath: writing to world-readable /tmp
+         leaked logs to other local users. The app logs via NSLog to the unified
+         logging system (access-controlled); enable "verbose" in Settings and
+         read it with Console.app or:
+         log stream --predicate 'process == "tandemclip"' -->
 </dict>
 </plist>

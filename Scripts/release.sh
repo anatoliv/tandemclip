@@ -72,11 +72,16 @@ echo "    sha256: $SHA"
 GA_BIN="${GA_BIN:-$(find "$HOME/Library/Developer" "$HOME/Library/Caches/org.swift.swiftpm" ./.build 2>/dev/null -type f -name generate_appcast -path '*Sparkle*' | head -1 || true)}"
 if [[ -n "${GA_BIN:-}" && -x "$GA_BIN" ]]; then
     echo "==> Generating appcast ($DIST/appcast.xml)"
-    "$GA_BIN" "$DIST" --download-url-prefix "${APPCAST_BASE}/" -o "$DIST/appcast.xml" \
-        && echo "    appcast.xml written" \
-        || echo "    generate_appcast failed (is the Sparkle private key in the keychain?)"
+    "$GA_BIN" "$DIST" --download-url-prefix "${APPCAST_BASE}/" -o "$DIST/appcast.xml"
+    echo "    appcast.xml written"
+    APPCAST_BUILD="$(perl -0ne 'if (/<sparkle:version>(\d+)<\/sparkle:version>/) { print $1; exit }' "$DIST/appcast.xml")"
+    if [[ -z "$APPCAST_BUILD" || "$APPCAST_BUILD" -lt "$BUILD_NUM" ]]; then
+        echo "error: appcast latest build (${APPCAST_BUILD:-missing}) is older than bundle build $BUILD_NUM" >&2
+        exit 1
+    fi
 else
-    echo "==> generate_appcast not found — skipping appcast (build Sparkle first)."
+    echo "error: generate_appcast not found — refusing to publish a release without appcast verification." >&2
+    exit 1
 fi
 
 # 5. Publish DMG + appcast to web-01 (PUBLISH=1). Serves the exact SUFeedURL.

@@ -1,5 +1,7 @@
 import Foundation
 import CryptoKit
+import CommonCrypto
+import Darwin
 
 /// How this Mac participates in sync.
 enum SyncMode: String { case mirror, manual }
@@ -36,9 +38,16 @@ final class Config {
     /// Stable per-install identity, used for the trusted-device allowlist and
     /// for addressing pull requests to a specific Mac.
     let deviceID: String
+    let identity = DeviceIdentity()
 
     private(set) var pairingCode: String
     private(set) var paused: Bool
+
+    /// Derived PSK is expensive to compute (PBKDF2, 600k iters), so cache it and
+    /// invalidate only when the pairing code changes. Guarded by `pskLock`
+    /// because `psk` is read from the transport queue.
+    private var pskCache: Data?
+    private let pskLock = NSLock()
 
     init() {
         // Device ID — generated once, then stable.
@@ -61,31 +70,45 @@ final class Config {
         // after a re-sign, or locked), we must NOT generate a new code — doing so
         // overwrites the real secret and silently un-pairs this Mac from the fleet.
         let env = ProcessInfo.processInfo.environment
-        if let fileCode = Config.consumeBootstrapCode() {
+        let bootstrapCode = Config.consumeBootstrapCode()
+        if let fileCode = bootstrapCode, Config.isAcceptablePairingCode(fileCode) {
             // A one-shot code file dropped by deploy tooling. The app persists it
             // into the Keychain here (running in the GUI session, so the write
             // succeeds), then deletes the file. This heals a diverged fleet even
             // when the Keychain can't be written from a headless ssh session.
             KeychainStore.delete("pairingCode")
-            KeychainStore.set("pairingCode", fileCode)
-            pairingCode = fileCode
-        } else if let setCode = env["TANDEMCLIP_SET_CODE"], !setCode.isEmpty {
+            let code = Config.normalizedPairingCode(fileCode)
+            KeychainStore.set("pairingCode", code)
+            pairingCode = code
+        } else if let setCode = env["TANDEMCLIP_SET_CODE"], Config.isAcceptablePairingCode(setCode) {
             KeychainStore.delete("pairingCode")
-            KeychainStore.set("pairingCode", setCode)
-            pairingCode = setCode
-        } else if let envCode = env["TANDEMCLIP_PAIRING_CODE"], !envCode.isEmpty {
-            pairingCode = envCode
+            let code = Config.normalizedPairingCode(setCode)
+            KeychainStore.set("pairingCode", code)
+            pairingCode = code
+        } else if let envCode = env["TANDEMCLIP_PAIRING_CODE"], Config.isAcceptablePairingCode(envCode) {
+            pairingCode = Config.normalizedPairingCode(envCode)
         } else {
+            if bootstrapCode != nil { Log.error("ignoring bootstrap pairing code because it is too weak") }
+            if env["TANDEMCLIP_SET_CODE"] != nil { Log.error("ignoring TANDEMCLIP_SET_CODE because it is too weak") }
+            if env["TANDEMCLIP_PAIRING_CODE"] != nil { Log.error("ignoring TANDEMCLIP_PAIRING_CODE because it is too weak") }
             let (kcCode, status) = KeychainStore.getStatus("pairingCode")
-            if let code = kcCode, !code.isEmpty {
-                pairingCode = code
+            if let code = kcCode {
+                if Config.isAcceptablePairingCode(code) {
+                    pairingCode = Config.normalizedPairingCode(code)
+                } else {
+                    Log.error("stored pairing code is too weak — rotating to a new generated code")
+                    let code = Config.generateCode()
+                    KeychainStore.set("pairingCode", code)
+                    pairingCode = code
+                }
             } else if status != errSecItemNotFound {
                 Log.error("pairing code present but unreadable (status \(status)) — not regenerating (would un-pair this Mac)")
                 pairingCode = ""
-            } else if let legacy = defaults.string(forKey: "pairingCode"), !legacy.isEmpty {
-                KeychainStore.set("pairingCode", legacy)
+            } else if let legacy = defaults.string(forKey: "pairingCode"), Config.isAcceptablePairingCode(legacy) {
+                let code = Config.normalizedPairingCode(legacy)
+                KeychainStore.set("pairingCode", code)
                 defaults.removeObject(forKey: "pairingCode")
-                pairingCode = legacy
+                pairingCode = code
             } else {
                 let code = Config.generateCode()
                 KeychainStore.set("pairingCode", code)
@@ -211,23 +234,30 @@ final class Config {
     // MARK: - Security
 
     var allowlistEnabled: Bool {
-        get { defaults.bool(forKey: "allowlistEnabled") }
+        get { defaults.object(forKey: "allowlistEnabled") == nil ? true : defaults.bool(forKey: "allowlistEnabled") }
         set { set("allowlistEnabled", newValue) }
     }
 
-    /// Device IDs permitted when the allowlist is on. Format: "id|displayName".
+    /// Device IDs permitted when the allowlist is on. Values are each device's
+    /// signing public key, base64-encoded.
     var trustedDevices: [String: String] {
         get { defaults.dictionary(forKey: "trustedDevices") as? [String: String] ?? [:] }
         set { set("trustedDevices", newValue) }
     }
 
-    func isTrusted(_ id: String) -> Bool {
-        !allowlistEnabled || id == deviceID || trustedDevices[id] != nil
+    func isTrusted(_ id: String, publicKey: String?) -> Bool {
+        Self.isTrusted(allowlistEnabled: allowlistEnabled,
+                       ownDeviceID: deviceID,
+                       ownPublicKey: identity.publicKeyBase64,
+                       trustedDevices: trustedDevices,
+                       id: id,
+                       publicKey: publicKey)
     }
 
-    func setTrusted(_ id: String, name: String, trusted: Bool) {
+    func setTrusted(_ id: String, publicKey: String?, trusted: Bool) {
+        guard id != deviceID, let publicKey, !publicKey.isEmpty else { return }
         var t = trustedDevices
-        if trusted { t[id] = name } else { t[id] = nil }
+        if trusted { t[id] = publicKey } else { t[id] = nil }
         trustedDevices = t
     }
 
@@ -251,15 +281,36 @@ final class Config {
 
     // MARK: - Secret
 
-    /// 256-bit pre-shared key derived from the pairing code via HKDF-SHA256
-    /// (fixed salt + info). All peers must run the same derivation to connect.
+    /// 256-bit pre-shared key derived from the pairing code with PBKDF2-HMAC-SHA256
+    /// at a high iteration count, adding a brute-force work factor against a
+    /// captured PSK-TLS handshake. All peers must run the same derivation (same
+    /// code, salt, iterations) to connect. Cached; recomputed only when the code
+    /// changes.
     var psk: Data {
-        let key = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: SymmetricKey(data: Data(pairingCode.utf8)),
-            salt: Data("com.tandemclip.psk".utf8),
-            info: Data("tandemclip-psk-v1".utf8),
-            outputByteCount: 32)
-        return key.withUnsafeBytes { Data($0) }
+        pskLock.lock(); defer { pskLock.unlock() }
+        if let cached = pskCache { return cached }
+        let key = Config.derivePSK(from: pairingCode)
+        pskCache = key
+        return key
+    }
+
+    /// PBKDF2-HMAC-SHA256, 600,000 iterations, 32-byte output. The salt is a
+    /// fixed application constant: it must be identical fleet-wide (the only
+    /// shared secret between Macs is the code itself), and the iteration count —
+    /// not salt secrecy — is what provides the work factor.
+    static func derivePSK(from code: String) -> Data {
+        guard !code.isEmpty else { return Data(count: 32) }
+        let pw = Array(code.utf8).map { CChar(bitPattern: $0) }
+        let salt = Array("com.tandemclip.psk.v2".utf8)
+        var out = [UInt8](repeating: 0, count: 32)
+        let status = CCKeyDerivationPBKDF(
+            CCPBKDFAlgorithm(kCCPBKDF2),
+            pw, pw.count,
+            salt, salt.count,
+            CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
+            600_000,
+            &out, out.count)
+        return status == Int32(kCCSuccess) ? Data(out) : Data(count: 32)
     }
 
     // MARK: - Mutators
@@ -270,8 +321,11 @@ final class Config {
     }
 
     func setPairingCode(_ code: String) {
-        pairingCode = code
-        KeychainStore.set("pairingCode", code)   // secret lives in the Keychain, not defaults
+        let normalized = Config.normalizedPairingCode(code)
+        guard Config.isAcceptablePairingCode(normalized) else { return }
+        pairingCode = normalized
+        pskLock.lock(); pskCache = nil; pskLock.unlock()   // re-derive on next use
+        KeychainStore.set("pairingCode", normalized)   // secret lives in the Keychain, not defaults
         DispatchQueue.main.async { NotificationCenter.default.post(name: Config.didChange, object: nil) }
     }
 
@@ -288,6 +342,38 @@ final class Config {
         return out
     }
 
+    static func normalizedPairingCode(_ code: String) -> String {
+        let chars = code.uppercased().filter { $0.isLetter || $0.isNumber }
+        guard chars.count > 4 else { return String(chars) }
+        var out = ""
+        for (i, ch) in chars.enumerated() {
+            if i > 0 && i % 4 == 0 { out.append("-") }
+            out.append(ch)
+        }
+        return out
+    }
+
+    static func isAcceptablePairingCode(_ code: String) -> Bool {
+        let chars = code.uppercased().filter { $0.isLetter || $0.isNumber }
+        let alphabet = Set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        guard chars.count >= 12, chars.allSatisfy({ alphabet.contains($0) }) else { return false }
+        // Reject low-diversity codes (e.g. "AAAA-AAAA-AAAA", "ABAB-ABAB-ABAB")
+        // that pass the length/alphabet test but carry almost no entropy.
+        return Set(chars).count >= 6
+    }
+
+    static func isTrusted(allowlistEnabled: Bool,
+                          ownDeviceID: String,
+                          ownPublicKey: String,
+                          trustedDevices: [String: String],
+                          id: String,
+                          publicKey: String?) -> Bool {
+        if !allowlistEnabled { return true }
+        if id == ownDeviceID { return publicKey == nil || publicKey == ownPublicKey }
+        guard let publicKey else { return false }
+        return trustedDevices[id] == publicKey
+    }
+
     static func newDeviceID() -> String {
         let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
         return "d-" + (0..<12).map { _ in String(alphabet.randomElement()!) }.joined()
@@ -302,10 +388,29 @@ final class Config {
         guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
         let url = support.appendingPathComponent("TandemClip/pairing-code.txt")
+        guard secureBootstrapFile(url) else { return nil }
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         try? fm.removeItem(at: url)
         let code = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         return code.isEmpty ? nil : code
+    }
+
+    private static func secureBootstrapFile(_ url: URL) -> Bool {
+        var st = stat()
+        guard lstat(url.path, &st) == 0 else { return false }
+        guard (st.st_mode & S_IFMT) == S_IFREG else {
+            Log.error("ignoring pairing-code.txt because it is not a regular file")
+            return false
+        }
+        guard st.st_uid == getuid() else {
+            Log.error("ignoring pairing-code.txt because it is not owned by this user")
+            return false
+        }
+        guard (st.st_mode & 0o077) == 0 else {
+            Log.error("ignoring pairing-code.txt because group/other permissions are too broad")
+            return false
+        }
+        return true
     }
 
     private func set(_ key: String, _ value: Any) {

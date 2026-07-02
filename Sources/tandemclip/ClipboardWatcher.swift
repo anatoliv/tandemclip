@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Darwin
 
 /// Watches the local pasteboard and reports new *local* copies.
 ///
@@ -45,7 +46,8 @@ final class ClipboardWatcher {
 
     private func poll() {
         guard pasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = pasteboard.changeCount
+        let observedChange = pasteboard.changeCount
+        lastChangeCount = observedChange
 
         if isPaused() { return }
 
@@ -111,6 +113,9 @@ final class ClipboardWatcher {
             }
         }
 
+        // Drop mixed snapshots if another app changed the pasteboard while we were
+        // reading; the next poll will inspect the new types before reading data.
+        guard pasteboard.changeCount == observedChange else { return }
         onLocalCopy?(snapshot, snapshot.hash)
     }
 
@@ -163,13 +168,55 @@ final class ClipboardWatcher {
         let dir = support
             .appendingPathComponent("TandemClip/Received/\(snapshot.hash.prefix(12))", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         var urls: [URL] = []
         for f in snapshot.files {
             let safe = (f.name as NSString).lastPathComponent
             let dest = dir.appendingPathComponent(safe.isEmpty ? "file" : safe)
-            if (try? f.data.write(to: dest)) != nil { urls.append(dest) }
+            if (try? f.data.write(to: dest, options: [.atomic])) != nil {
+                try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dest.path)
+                markQuarantined(dest)
+                urls.append(dest)
+            }
         }
+        pruneReceivedCache(root: support.appendingPathComponent("TandemClip/Received", isDirectory: true))
         return urls
+    }
+
+    /// Cap the on-disk received-file cache: evict oldest clip folders until the
+    /// total is under `receivedCacheCap`. Without this the cache grows unbounded
+    /// (a peer could stream large files to fill the disk); it's otherwise only
+    /// cleared on "Clear history."
+    private let receivedCacheCap = 200_000_000   // 200 MB
+    private func pruneReceivedCache(root: URL) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: []) else { return }
+        func dirSize(_ url: URL) -> Int {
+            guard let e = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+            var total = 0
+            for case let f as URL in e { total += (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+            return total
+        }
+        var dirs = entries.map { (url: $0,
+                                  date: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast,
+                                  size: dirSize($0)) }
+        var total = dirs.reduce(0) { $0 + $1.size }
+        guard total > receivedCacheCap else { return }
+        dirs.sort { $0.date < $1.date }   // oldest first
+        for d in dirs where total > receivedCacheCap {
+            if (try? fm.removeItem(at: d.url)) != nil {
+                total -= d.size
+                Log.trace("clip", "evicted received cache \(d.url.lastPathComponent)")
+            }
+        }
+    }
+
+    private func markQuarantined(_ url: URL) {
+        let value = "0081;00000000;TandemClip;\0"
+        value.withCString { ptr in
+            _ = setxattr(url.path, "com.apple.quarantine", ptr, strlen(ptr), 0, 0)
+        }
     }
 
     static func hash(_ data: Data) -> String {
