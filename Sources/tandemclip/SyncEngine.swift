@@ -47,6 +47,7 @@ final class SyncEngine {
     private var inboundTimes: [String: [Double]] = [:]   // deviceID -> recent message times
     private let inboundWindow: Double = 10               // sliding window (seconds)
     private let inboundMax = 40                          // max messages per window per device
+    private let maxTrackedPeers = 512                    // cap distinct deviceIDs held in the DoS maps
     private var seenSignatures: [String: Double] = [:]  // identitySignature -> first seen (replay guard)
     private let replayWindow: Double = 600              // how long a signature is remembered
 
@@ -105,6 +106,13 @@ final class SyncEngine {
 
     func start() {
         watcher.start()
+        guard config.hasPairingSecret else {
+            // No readable pairing secret → derivePSK would fall back to a fixed,
+            // publicly-known key. Do not advertise or accept connections; wait for
+            // the user to set a code (setPairingCode → reloadPairing brings it up).
+            Log.error("no usable pairing code — not starting networking (would key TLS with a known PSK)")
+            return
+        }
         transport.start()
     }
 
@@ -117,7 +125,7 @@ final class SyncEngine {
     /// the new PSK immediately. Peers drop until they also have the new code.
     func reloadPairing() {
         peers.removeAll()
-        transport.restart()
+        if config.hasPairingSecret { transport.restart() }
         onStatusChange?()
     }
 
@@ -209,6 +217,9 @@ final class SyncEngine {
         case .request:
             guard config.role.canSend, !config.paused, networkAllowed() else { return }
             let t = now()
+            // Drop entries older than the 1s throttle so this map can't grow
+            // without bound under spoofed deviceIDs.
+            lastRequestServed = lastRequestServed.filter { t - $0.value < 60 }
             guard t - (lastRequestServed[msg.deviceID] ?? 0) >= 1 else { return }
             lastRequestServed[msg.deviceID] = t
             guard let reply = clipMessage(type: .clip) else { return }
@@ -223,6 +234,17 @@ final class SyncEngine {
 
         if config.mode == .mirror {
             guard config.role.canReceive, !config.paused, networkAllowed() else { return }
+            // Freshness bound for signed clips. `seenSignatures` only remembers a
+            // signature for `replayWindow`; a captured mirror broadcast replayed
+            // after that would pass dedup and silently re-apply to the clipboard.
+            // The timestamp is inside the signed payload, so a valid signature
+            // vouches for it. Mirror broadcasts are always sent at copy time, so a
+            // stale timestamp means a replay (manual pulls go through the else
+            // branch and are gated by pendingPull instead).
+            if msg.identitySignature != nil, now() - msg.timestamp > replayWindow {
+                Log.trace("sync", "dropped stale signed clip (\(Int(now() - msg.timestamp))s old) from \(msg.deviceName)")
+                return
+            }
             guard hash != lastHash else {
                 Log.trace("sync", "mirror: dropped clip (already seen/echo)")
                 return
@@ -281,7 +303,13 @@ final class SyncEngine {
     /// exceeded `inboundMax` messages in the last `inboundWindow` seconds.
     private func allowInbound(from deviceID: String) -> Bool {
         let t = now()
+        // Prune fully-stale peers each call so a stream of spoofed deviceIDs (the
+        // key is self-asserted) can't grow the map without bound.
+        inboundTimes = inboundTimes.filter { entry in entry.value.contains { t - $0 <= inboundWindow } }
         var times = (inboundTimes[deviceID] ?? []).filter { t - $0 <= inboundWindow }
+        // Hard cap on distinct tracked peers: once full, admit only already-known
+        // ones, so a spoof flood within a single window is bounded too.
+        if inboundTimes[deviceID] == nil && inboundTimes.count >= maxTrackedPeers { return false }
         guard times.count < inboundMax else { inboundTimes[deviceID] = times; return false }
         times.append(t)
         inboundTimes[deviceID] = times
