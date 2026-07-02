@@ -185,6 +185,6 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Rich text (`public.rtf`)
 - [x] Images (`public.png`, `public.tiff`)
 - [x] Files (`public.file-url`) — transferred by content, opt-in (Settings → Sync files)
+- [x] Clipboard history — in-memory, opt-in (Settings), menu submenu to re-copy
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
-- [ ] Optional clipboard history (off by default)
 ```

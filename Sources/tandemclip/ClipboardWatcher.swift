@@ -103,6 +103,17 @@ final class ClipboardWatcher {
     /// Apply remote content locally (all representations), suppressing the echo
     /// it would otherwise trigger by advancing our baseline changeCount.
     func write(_ snapshot: ClipSnapshot) {
+        put(snapshot)
+        lastChangeCount = pasteboard.changeCount   // echo-suppress
+    }
+
+    /// Re-apply a snapshot as if freshly copied here — does NOT echo-suppress,
+    /// so the watcher re-detects it and re-syncs (used for history re-apply).
+    func repost(_ snapshot: ClipSnapshot) {
+        put(snapshot)
+    }
+
+    private func put(_ snapshot: ClipSnapshot) {
         pasteboard.clearContents()
         if !snapshot.files.isEmpty {
             // Materialize received files to disk and put file URLs on the
@@ -118,7 +129,6 @@ final class ClipboardWatcher {
                 }
             }
         }
-        lastChangeCount = pasteboard.changeCount
     }
 
     /// Write received files under Application Support and return their URLs.
