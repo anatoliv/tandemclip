@@ -9,6 +9,7 @@ struct PeerClip {
     var size: Int?
     var hash: String?
     var preview: String?
+    var kindLabel: String?   // "text" / "rich text" / "image"
 }
 
 /// Glue between the local clipboard and the network. Honors the current mode
@@ -26,9 +27,8 @@ final class SyncEngine {
     private var pendingPull: Set<String> = []  // deviceIDs we've asked to fetch from
 
     // Our current shareable clipboard (last non-secret local copy).
-    private var localText: String?
+    private var localSnapshot: ClipSnapshot?
     private var localHash: String?
-    private var localSize: Int = 0
     private var localTimestamp: Double = 0
 
     private(set) var peers: [String: PeerClip] = [:]   // by deviceID
@@ -47,7 +47,8 @@ final class SyncEngine {
 
         watcher.maxBytes = config.maxClipBytes
         watcher.isPaused = { false }   // we gate in handleLocal; still want to observe copies to serve requests
-        watcher.onLocalCopy = { [weak self] text, hash in self?.handleLocal(text, hash) }
+        watcher.enabledKinds = { [weak self] in self?.config.enabledKinds ?? [.text] }
+        watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
         transport.onMessage = { [weak self] msg in self?.handleRemote(msg) }
         transport.helloProvider = { [weak self] in self?.makeAnnounce() }
@@ -91,10 +92,9 @@ final class SyncEngine {
 
     // MARK: - Local clipboard changed
 
-    private func handleLocal(_ text: String, _ hash: String) {
-        localText = text
+    private func handleLocal(_ snap: ClipSnapshot, _ hash: String) {
+        localSnapshot = snap
         localHash = hash
-        localSize = text.utf8.count
         localTimestamp = now()
 
         guard config.role.canSend, !config.paused, networkAllowed() else {
@@ -103,11 +103,9 @@ final class SyncEngine {
         }
 
         if config.mode == .mirror {
-            guard hash != lastHash else { return }
+            guard hash != lastHash, let msg = clipMessage(type: .clip) else { return }
             lastHash = hash
-            var msg = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
-            msg.timestamp = localTimestamp; msg.hash = hash; msg.size = localSize; msg.text = text
-            Log.trace("sync", "mirror: broadcast clip \(text.count) chars")
+            Log.trace("sync", "mirror: broadcast \(snap.richestKind.label) \(snap.totalBytes)B")
             transport.broadcast(msg)
             lastSyncSource = "\(config.deviceName) (local)"
         } else {
@@ -136,17 +134,15 @@ final class SyncEngine {
 
         case .request:
             guard config.role.canSend, !config.paused, networkAllowed() else { return }
-            guard let text = localText, let h = localHash else { return }
-            var reply = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
-            reply.timestamp = localTimestamp; reply.hash = h; reply.size = localSize; reply.text = text
+            guard let reply = clipMessage(type: .clip) else { return }
             Log.trace("sync", "serving pull -> \(msg.deviceName)")
             transport.send(reply, to: msg.deviceID)
         }
     }
 
     private func applyIncomingClip(_ msg: Message) {
-        guard let text = msg.text else { return }
-        let hash = msg.hash ?? ClipboardWatcher.hash(Data(text.utf8))
+        guard let snap = snapshot(from: msg) else { return }
+        let hash = msg.hash ?? snap.hash
 
         if config.mode == .mirror {
             guard config.role.canReceive, !config.paused, networkAllowed() else { return }
@@ -154,7 +150,7 @@ final class SyncEngine {
                 Log.trace("sync", "mirror: dropped clip (already seen/echo)")
                 return
             }
-            apply(text, hash: hash, from: msg.deviceName)
+            apply(snap, hash: hash, from: msg.deviceName)
             // Relay (gossip) to the rest of the mesh so machines that aren't
             // directly connected to the source still receive it. Hash dedup on
             // every node stops loops; a clip circulates at most once.
@@ -165,17 +161,17 @@ final class SyncEngine {
         } else {
             // Manual: apply only the clip we explicitly requested.
             guard config.role.canReceive, pendingPull.remove(msg.deviceID) != nil else { return }
-            apply(text, hash: hash, from: msg.deviceName)
+            apply(snap, hash: hash, from: msg.deviceName)
         }
     }
 
-    private func apply(_ text: String, hash: String, from name: String) {
-        Log.trace("sync", "apply clip from \(name)")
+    private func apply(_ snap: ClipSnapshot, hash: String, from name: String) {
+        Log.trace("sync", "apply \(snap.richestKind.label) from \(name)")
         lastHash = hash
         localHash = hash            // our clipboard now equals this; don't re-announce it
-        localText = text
-        localSize = text.utf8.count
-        watcher.write(text)         // echo-suppressed inside write()
+        localSnapshot = snap
+        localTimestamp = now()
+        watcher.write(snap)         // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
     }
@@ -189,6 +185,7 @@ final class SyncEngine {
         if let s = msg.size { p.size = s }
         if let h = msg.hash { p.hash = h }
         p.preview = msg.preview     // may be nil depending on peer's preview level
+        if msg.type != .announce || msg.size != nil { p.kindLabel = msg.contentType }
         peers[msg.deviceID] = p
         onStatusChange?()
     }
@@ -213,14 +210,36 @@ final class SyncEngine {
     /// the preview level. Sent on connect and on local change in Manual mode.
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
-        guard config.role.canSend, config.previewLevel != .names, let h = localHash else { return m }
+        guard config.role.canSend, config.previewLevel != .names,
+              let h = localHash, let snap = localSnapshot else { return m }
         m.timestamp = localTimestamp
         m.hash = h
-        m.size = localSize
-        if config.previewLevel == .preview, let t = localText {
+        m.size = snap.totalBytes
+        m.contentType = snap.richestKind.label
+        if config.previewLevel == .preview, let t = snap.plainText {
             m.preview = String(t.prefix(80)).replacingOccurrences(of: "\n", with: " ")
         }
         return m
+    }
+
+    /// Build a full `clip` message from our current snapshot.
+    private func clipMessage(type: MessageType) -> Message? {
+        guard let snap = localSnapshot, let h = localHash else { return nil }
+        var m = Message(type: type, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = localTimestamp
+        m.hash = h
+        m.size = snap.totalBytes
+        m.contentType = snap.richestKind.label
+        m.text = snap.plainText
+        m.parts = snap.wireParts
+        return m
+    }
+
+    /// Reconstruct a snapshot from a clip message (falls back to legacy text).
+    private func snapshot(from msg: Message) -> ClipSnapshot? {
+        if let snap = ClipSnapshot(wire: msg.parts) { return snap }
+        if let t = msg.text { return ClipSnapshot(parts: [.text: Data(t.utf8)]) }
+        return nil
     }
 
     private func now() -> Double { Date().timeIntervalSince1970 }

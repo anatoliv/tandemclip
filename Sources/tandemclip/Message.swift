@@ -19,11 +19,12 @@ struct Message: Codable {
     var deviceID: String
     var deviceName: String
 
-    // Clipboard payload (announce carries metadata; clip also carries text).
-    var contentType: String = "text"
+    // Clipboard payload (announce carries metadata; clip also carries content).
+    var contentType: String = "text"   // richest kind label: "text"/"rich text"/"image"
     var timestamp: Double = 0
     var hash: String?
     var size: Int?
     var preview: String?   // included only when previewLevel == .preview
-    var text: String?      // present only on `clip`
+    var text: String?      // plain-text representation (preview / legacy)
+    var parts: [ClipPart]? // full multi-representation payload on `clip`
 }

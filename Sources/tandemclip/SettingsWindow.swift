@@ -11,6 +11,8 @@ final class SettingsModel: ObservableObject {
     @Published var previewLevel: PreviewLevel { didSet { config.previewLevel = previewLevel } }
     @Published var role: Role { didSet { config.role = role } }
     @Published var maxMB: Double { didSet { config.maxClipBytes = Int(maxMB * 1_000_000); engine.applyConfig() } }
+    @Published var syncRichText: Bool { didSet { config.syncRichText = syncRichText } }
+    @Published var syncImages: Bool { didSet { config.syncImages = syncImages } }
 
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
@@ -30,6 +32,8 @@ final class SettingsModel: ObservableObject {
         previewLevel = config.previewLevel
         role = config.role
         maxMB = Double(config.maxClipBytes) / 1_000_000
+        syncRichText = config.syncRichText
+        syncImages = config.syncImages
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
@@ -128,14 +132,16 @@ struct SettingsView: View {
                 Text("Names only").tag(PreviewLevel.names)
             }
             Picker("Max clipboard size", selection: $model.maxMB) {
-                Text("256 KB").tag(0.256)
-                Text("512 KB").tag(0.512)
                 Text("1 MB").tag(1.0)
                 Text("2 MB").tag(2.0)
                 Text("5 MB").tag(5.0)
                 Text("10 MB").tag(10.0)
+                Text("25 MB").tag(25.0)
             }
-            Text("Mirror: every copy propagates everywhere. Manual: nothing is applied automatically — pull a specific Mac's clipboard from the menu.")
+            Divider()
+            Toggle("Sync rich text", isOn: $model.syncRichText)
+            Toggle("Sync images", isOn: $model.syncImages)
+            Text("Plain text always syncs. Copies carry every enabled representation so paste keeps full fidelity. Content over the size limit falls back to text only.")
                 .font(.caption).foregroundColor(.secondary)
         }
     }
