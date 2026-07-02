@@ -142,6 +142,12 @@ final class Config {
         }
     }
 
+    /// Transfer copied files by content. Off by default (opt-in; larger payloads).
+    var syncFiles: Bool {
+        get { defaults.bool(forKey: "syncFiles") }
+        set { set("syncFiles", newValue) }
+    }
+
     // MARK: - Startup & behavior
 
     var startPaused: Bool {

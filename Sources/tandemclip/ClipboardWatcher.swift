@@ -30,6 +30,8 @@ final class ClipboardWatcher {
     var isPaused: () -> Bool = { false }
     /// Which representations to capture (text is always included).
     var enabledKinds: () -> Set<ClipKind> = { Set(ClipKind.allCases) }
+    /// Whether to capture/transfer copied files by content.
+    var syncFiles: () -> Bool = { false }
 
     init() {
         lastChangeCount = pasteboard.changeCount
@@ -62,10 +64,30 @@ final class ClipboardWatcher {
                 parts[kind] = d
             }
         }
-        guard !parts.isEmpty else { return }
+        // Copied files — transfer by content (skip folders; needs zipping).
+        var files: [ClipFile] = []
+        if syncFiles() {
+            let urls = (pasteboard.readObjects(forClasses: [NSURL.self],
+                        options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+            var used = parts.values.reduce(0) { $0 + $1.count }
+            for url in urls where url.isFileURL {
+                var isDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                if isDir.boolValue { continue }
+                guard let data = try? Data(contentsOf: url) else { continue }
+                if used + data.count > maxBytes {
+                    Log.trace("clip", "file \(url.lastPathComponent) over cap — skipped")
+                    continue
+                }
+                used += data.count
+                files.append(ClipFile(name: url.lastPathComponent, data: data))
+            }
+        }
+
+        guard !parts.isEmpty || !files.isEmpty else { return }
 
         // Size policy: if over the cap, fall back to text-only; else skip.
-        var snapshot = ClipSnapshot(parts: parts)
+        var snapshot = ClipSnapshot(parts: parts, files: files)
         if snapshot.totalBytes > maxBytes {
             if let t = parts[.text], t.count <= maxBytes {
                 snapshot = ClipSnapshot(parts: [.text: t])
@@ -82,14 +104,38 @@ final class ClipboardWatcher {
     /// it would otherwise trigger by advancing our baseline changeCount.
     func write(_ snapshot: ClipSnapshot) {
         pasteboard.clearContents()
-        for (kind, data) in snapshot.parts {
-            if kind == .text, let s = String(data: data, encoding: .utf8) {
-                pasteboard.setString(s, forType: .string)
-            } else {
-                pasteboard.setData(data, forType: kind.pasteboardType)
+        if !snapshot.files.isEmpty {
+            // Materialize received files to disk and put file URLs on the
+            // pasteboard so paste works in Finder and apps.
+            let urls = writeReceivedFiles(snapshot)
+            if !urls.isEmpty { pasteboard.writeObjects(urls as [NSURL]) }
+        } else {
+            for (kind, data) in snapshot.parts {
+                if kind == .text, let s = String(data: data, encoding: .utf8) {
+                    pasteboard.setString(s, forType: .string)
+                } else {
+                    pasteboard.setData(data, forType: kind.pasteboardType)
+                }
             }
         }
         lastChangeCount = pasteboard.changeCount
+    }
+
+    /// Write received files under Application Support and return their URLs.
+    private func writeReceivedFiles(_ snapshot: ClipSnapshot) -> [URL] {
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return [] }
+        let dir = support
+            .appendingPathComponent("TandemClip/Received/\(snapshot.hash.prefix(12))", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        var urls: [URL] = []
+        for f in snapshot.files {
+            let safe = (f.name as NSString).lastPathComponent
+            let dest = dir.appendingPathComponent(safe.isEmpty ? "file" : safe)
+            if (try? f.data.write(to: dest)) != nil { urls.append(dest) }
+        }
+        return urls
     }
 
     static func hash(_ data: Data) -> String {

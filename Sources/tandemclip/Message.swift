@@ -27,4 +27,5 @@ struct Message: Codable {
     var preview: String?   // included only when previewLevel == .preview
     var text: String?      // plain-text representation (preview / legacy)
     var parts: [ClipPart]? // full multi-representation payload on `clip`
+    var files: [ClipFileWire]? // copied files, transferred by content
 }

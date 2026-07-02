@@ -48,6 +48,7 @@ final class SyncEngine {
         watcher.maxBytes = config.maxClipBytes
         watcher.isPaused = { false }   // we gate in handleLocal; still want to observe copies to serve requests
         watcher.enabledKinds = { [weak self] in self?.config.enabledKinds ?? [.text] }
+        watcher.syncFiles = { [weak self] in self?.config.syncFiles ?? false }
         watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
         transport.onMessage = { [weak self] msg in self?.handleRemote(msg) }
@@ -105,7 +106,7 @@ final class SyncEngine {
         if config.mode == .mirror {
             guard hash != lastHash, let msg = clipMessage(type: .clip) else { return }
             lastHash = hash
-            Log.trace("sync", "mirror: broadcast \(snap.richestKind.label) \(snap.totalBytes)B")
+            Log.trace("sync", "mirror: broadcast \(snap.contentLabel) \(snap.totalBytes)B")
             transport.broadcast(msg)
             lastSyncSource = "\(config.deviceName) (local)"
         } else {
@@ -166,7 +167,7 @@ final class SyncEngine {
     }
 
     private func apply(_ snap: ClipSnapshot, hash: String, from name: String) {
-        Log.trace("sync", "apply \(snap.richestKind.label) from \(name)")
+        Log.trace("sync", "apply \(snap.contentLabel) from \(name)")
         lastHash = hash
         localHash = hash            // our clipboard now equals this; don't re-announce it
         localSnapshot = snap
@@ -215,7 +216,7 @@ final class SyncEngine {
         m.timestamp = localTimestamp
         m.hash = h
         m.size = snap.totalBytes
-        m.contentType = snap.richestKind.label
+        m.contentType = snap.contentLabel
         if config.previewLevel == .preview, let t = snap.plainText {
             m.preview = String(t.prefix(80)).replacingOccurrences(of: "\n", with: " ")
         }
@@ -229,15 +230,16 @@ final class SyncEngine {
         m.timestamp = localTimestamp
         m.hash = h
         m.size = snap.totalBytes
-        m.contentType = snap.richestKind.label
+        m.contentType = snap.contentLabel
         m.text = snap.plainText
         m.parts = snap.wireParts
+        m.files = snap.wireFiles.isEmpty ? nil : snap.wireFiles
         return m
     }
 
     /// Reconstruct a snapshot from a clip message (falls back to legacy text).
     private func snapshot(from msg: Message) -> ClipSnapshot? {
-        if let snap = ClipSnapshot(wire: msg.parts) { return snap }
+        if let snap = ClipSnapshot(wire: msg.parts, wireFiles: msg.files) { return snap }
         if let t = msg.text { return ClipSnapshot(parts: [.text: Data(t.utf8)]) }
         return nil
     }

@@ -32,22 +32,36 @@ struct ClipPart: Codable {
     let b64: String
 }
 
+/// A copied file, transferred by *content* (not just its path).
+struct ClipFile {
+    let name: String
+    let data: Data
+}
+struct ClipFileWire: Codable {
+    let name: String
+    let b64: String
+}
+
 /// The set of representations for one clipboard state.
 struct ClipSnapshot {
     var parts: [ClipKind: Data]
+    var files: [ClipFile] = []
 
-    var isEmpty: Bool { parts.isEmpty }
-    var totalBytes: Int { parts.values.reduce(0) { $0 + $1.count } }
+    var isEmpty: Bool { parts.isEmpty && files.isEmpty }
+    var totalBytes: Int {
+        parts.values.reduce(0) { $0 + $1.count } + files.reduce(0) { $0 + $1.data.count }
+    }
 
     var plainText: String? {
         parts[.text].flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    /// Richest representation present (image > rich text > text) — for labels.
-    var richestKind: ClipKind {
-        if parts[.png] != nil || parts[.tiff] != nil { return .png }
-        if parts[.rtf] != nil { return .rtf }
-        return .text
+    /// Human label for menus / previews.
+    var contentLabel: String {
+        if !files.isEmpty { return files.count == 1 ? "file" : "\(files.count) files" }
+        if parts[.png] != nil || parts[.tiff] != nil { return "image" }
+        if parts[.rtf] != nil { return "rich text" }
+        return "text"
     }
 
     /// Stable content hash for dedup / echo-loop prevention.
@@ -57,6 +71,10 @@ struct ClipSnapshot {
             guard let d = parts[kind] else { continue }
             hasher.update(data: Data(kind.rawValue.utf8))
             hasher.update(data: d)
+        }
+        for f in files {
+            hasher.update(data: Data("file:\(f.name):".utf8))
+            hasher.update(data: f.data)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
@@ -68,16 +86,26 @@ struct ClipSnapshot {
             parts[kind].map { ClipPart(kind: kind, b64: $0.base64EncodedString()) }
         }
     }
+    var wireFiles: [ClipFileWire] {
+        files.map { ClipFileWire(name: $0.name, b64: $0.data.base64EncodedString()) }
+    }
 
-    init(parts: [ClipKind: Data]) { self.parts = parts }
+    init(parts: [ClipKind: Data], files: [ClipFile] = []) {
+        self.parts = parts
+        self.files = files
+    }
 
-    init?(wire: [ClipPart]?) {
-        guard let wire, !wire.isEmpty else { return nil }
+    init?(wire: [ClipPart]?, wireFiles: [ClipFileWire]? = nil) {
         var p: [ClipKind: Data] = [:]
-        for part in wire {
+        for part in wire ?? [] {
             if let d = Data(base64Encoded: part.b64) { p[part.kind] = d }
         }
-        guard !p.isEmpty else { return nil }
+        var f: [ClipFile] = []
+        for wf in wireFiles ?? [] {
+            if let d = Data(base64Encoded: wf.b64) { f.append(ClipFile(name: wf.name, data: d)) }
+        }
+        guard !p.isEmpty || !f.isEmpty else { return nil }
         self.parts = p
+        self.files = f
     }
 }
