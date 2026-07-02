@@ -82,7 +82,10 @@ final class MenuBarController: NSObject {
         if config.mode == .manual {
             menu.addItem(.separator())
             menu.addItem(disabled: "Get clipboard from:")
-            let peers = engine.sortedPeers()
+            // syncablePeers() is empty (and shows no previews) when receiving
+            // isn't allowed — so a paused / disallowed-network / send-only Mac
+            // reveals no peer clipboard metadata here.
+            let peers = engine.syncablePeers()
             if peers.isEmpty {
                 menu.addItem(disabled: "   (no peers)")
             } else {

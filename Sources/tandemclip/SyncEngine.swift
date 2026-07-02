@@ -120,7 +120,7 @@ final class SyncEngine {
 
     /// Manually pull a specific peer's clipboard into ours (Manual mode).
     func pull(from deviceID: String) {
-        guard config.role.canReceive else { return }
+        guard receiveAllowed else { return }   // no pulling when paused / disallowed network / send-only
         Log.trace("sync", "pull request -> \(peers[deviceID]?.name ?? deviceID)")
         pendingPull[deviceID] = now()
         pullOpen.insert(deviceID)   // grabbing a Mac's clip is user-initiated → open any files
