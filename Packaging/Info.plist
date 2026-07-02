@@ -37,6 +37,6 @@
 	<key>SUPublicEDKey</key>
 	<string>pDgN5Ibe6Q9QY5cxRpXmXLm/S2lBGbVLy/eBVEW1nTo=</string>
 	<key>SentryDSN</key>
-	<string></string>
+	<string>https://a4fc33220c8656524c8346d31d658cb8@o4511083449090049.ingest.us.sentry.io/4511665213210624</string>
 </dict>
 </plist>
