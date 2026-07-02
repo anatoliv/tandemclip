@@ -318,7 +318,7 @@ struct SettingsView: View {
                     } else {
                         ForEach(peers, id: \.id) { peer in
                             Toggle(isOn: Binding(
-                                get: { model.config.trustedDevices[peer.id] == peer.clip.publicKey },
+                                get: { peer.clip.publicKey != nil && model.config.trustedDevices[peer.id] == peer.clip.publicKey },
                                 set: { model.config.setTrusted(peer.id, publicKey: peer.clip.publicKey, trusted: $0) }
                             )) {
                                 HStack(spacing: 7) {
