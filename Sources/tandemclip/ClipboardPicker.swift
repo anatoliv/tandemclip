@@ -66,10 +66,13 @@ final class ClipboardPickerController {
 
     func hide() { panel?.orderOut(nil) }
 
-    /// "kind · size" for the current local clipboard (empty if nothing yet).
+    /// Total size of everything held in clipboard history (what the picker uses).
     private func usageString() -> String {
-        guard let i = engine.currentClipInfo else { return "" }
-        return "\(i.kind) · \(ByteCountFormatter.string(fromByteCount: Int64(i.bytes), countStyle: .file))"
+        let history = engine.history
+        guard !history.isEmpty else { return "" }
+        let bytes = history.reduce(0) { $0 + $1.snapshot.totalBytes }
+        let n = history.count
+        return "\(n) clip\(n == 1 ? "" : "s") · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))"
     }
 
     private func makeModel() -> PickerModel {
@@ -269,7 +272,7 @@ struct PickerView: View {
                 Spacer(minLength: 8)
                 ForEach(PickerModel.ContentFilter.allCases) { f in filterChip(f) }
             }
-            .padding(.horizontal, 11).padding(.vertical, 4)
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 11)
             .contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
@@ -330,6 +333,7 @@ struct PickerView: View {
         }
         .frame(minWidth: 380, minHeight: 320)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .top)   // don't reserve the title-bar gap above search
         .background(KeyCatcher(model: model).frame(width: 0, height: 0))
     }
 

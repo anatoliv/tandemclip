@@ -217,7 +217,12 @@ final class SyncEngine {
     private func openFiles(_ urls: [URL]) {
         for url in urls {
             Log.trace("sync", "open \(url.lastPathComponent)")
-            NSWorkspace.shared.open(url)
+            if !NSWorkspace.shared.open(url) {
+                // No default app / unknown type — at least reveal it in Finder
+                // so the pick isn't a silent no-op.
+                Log.error("open failed for \(url.lastPathComponent) — revealing in Finder")
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
         }
     }
 
