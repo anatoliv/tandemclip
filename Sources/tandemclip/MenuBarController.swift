@@ -71,6 +71,9 @@ final class MenuBarController: NSObject {
             menu.addItem(disabled: "Clipboard: empty")
         }
         menu.addItem(disabled: "Peers connected: \(engine.peerCount)")
+        if config.networkAllowlistEnabled, !NetworkGuard.syncAllowed(config) {
+            menu.addItem(disabled: "⚠︎ Paused — Wi-Fi not allowed/verified")
+        }
         if let src = engine.lastSyncSource {
             menu.addItem(disabled: "Last sync: \(src)")
         }

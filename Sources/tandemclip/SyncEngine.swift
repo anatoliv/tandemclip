@@ -264,7 +264,20 @@ final class SyncEngine {
         openFiles(urls)
     }
 
-    func clearHistory() { history.removeAll(); onStatusChange?() }
+    func clearHistory() {
+        history.removeAll()
+        purgeReceivedFiles()   // don't leave synced files sitting in the clear on disk
+        onStatusChange?()
+    }
+
+    /// Delete the on-disk cache of received files (materialized under
+    /// Application Support). Called on Clear history.
+    private func purgeReceivedFiles() {
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let dir = support.appendingPathComponent("TandemClip/Received", isDirectory: true)
+        if (try? fm.removeItem(at: dir)) != nil { Log.trace("sync", "purged received files") }
+    }
 
     // MARK: - Peer table
 

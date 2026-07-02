@@ -25,8 +25,14 @@ enum NetworkGuard {
     static func syncAllowed(_ config: Config) -> Bool {
         guard config.networkAllowlistEnabled, !config.allowedSSIDs.isEmpty else { return true }
         guard let ssid = currentSSID(), !ssid.isEmpty else {
-            Log.trace("net", "SSID unreadable (wired/VPN or missing Location permission) — allowing")
-            return true
+            // Can't verify the network. Fail CLOSED (pause) so an unverifiable
+            // network isn't silently trusted — unless the user opted to allow.
+            if config.wifiFailOpen {
+                Log.trace("net", "SSID unreadable — allowing (fail-open enabled)")
+                return true
+            }
+            Log.trace("net", "SSID unreadable — pausing (fail-closed)")
+            return false
         }
         let ok = config.allowedSSIDs.contains(ssid)
         if !ok { Log.trace("net", "SSID \(ssid) not in allowlist — sync paused") }
