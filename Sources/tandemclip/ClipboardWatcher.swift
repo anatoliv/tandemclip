@@ -74,11 +74,15 @@ final class ClipboardWatcher {
                 var isDir: ObjCBool = false
                 FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
                 if isDir.boolValue { continue }
-                guard let data = try? Data(contentsOf: url) else { continue }
-                if used + data.count > maxBytes {
-                    Log.trace("clip", "file \(url.lastPathComponent) over cap — skipped")
+                // Check the size from metadata FIRST — never read a huge file
+                // into memory just to reject it (a multi-GB copy would otherwise
+                // spike RAM before being skipped).
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
+                if used + size > maxBytes {
+                    Log.trace("clip", "file \(url.lastPathComponent) (\(size)B) over cap — skipped")
                     continue
                 }
+                guard let data = try? Data(contentsOf: url) else { continue }
                 used += data.count
                 files.append(ClipFile(name: url.lastPathComponent, data: data))
             }
