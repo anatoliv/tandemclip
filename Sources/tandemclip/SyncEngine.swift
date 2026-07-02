@@ -10,8 +10,13 @@ struct HistoryItem: Identifiable {
     let source: String    // which Mac it came from
     var id: String { hash }
     var kindLabel: String { snapshot.contentLabel }
-    /// Thumbnail bytes for image clips (for the picker preview).
-    var imageData: Data? { snapshot.parts[.png] ?? snapshot.parts[.tiff] }
+    var category: ClipCategory { snapshot.category }
+    /// Thumbnail bytes for image clips (picker preview). Image *files* preview
+    /// their first file's content — NSImage decodes the common formats.
+    var imageData: Data? {
+        snapshot.parts[.png] ?? snapshot.parts[.tiff]
+            ?? (snapshot.filesAreAllImages ? snapshot.files.first?.data : nil)
+    }
 }
 
 /// What we know about another Mac's clipboard.
