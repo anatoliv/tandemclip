@@ -127,7 +127,11 @@ final class Transport {
     private func startListener() {
         do {
             let l = try NWListener(using: tlsParameters())
-            l.service = NWListener.Service(name: config.deviceName, type: config.serviceType)
+            // Advertise under the unique deviceID, NOT the display name. Two Macs
+            // with the same name would otherwise make Bonjour rename one service,
+            // which breaks skip-own-by-name (a Mac skips the real peer and can
+            // even dial itself). The human name travels in the message payload.
+            l.service = NWListener.Service(name: config.deviceID, type: config.serviceType)
             l.newConnectionHandler = { [weak self] conn in
                 Log.trace("discovery", "inbound connection from \(conn.endpoint)")
                 self?.setup(conn)
@@ -156,9 +160,9 @@ final class Transport {
             guard let self = self else { return }
             var visible: [String: NWEndpoint] = [:]
             for result in results {
-                // Skip our own advertisement.
+                // Skip our own advertisement (matched by unique deviceID).
                 if case let .service(name, _, _, _) = result.endpoint,
-                   name == self.config.deviceName {
+                   name == self.config.deviceID {
                     continue
                 }
                 visible["\(result.endpoint)"] = result.endpoint
@@ -256,6 +260,12 @@ final class Transport {
             guard let self = self else { return }
             if let body = data, body.count == length,
                let msg = try? JSONDecoder().decode(Message.self, from: body) {
+                // Guard against a loopback/self connection (e.g. a stale Bonjour
+                // resolution of our own service): never treat ourselves as a peer.
+                if msg.deviceID == self.config.deviceID {
+                    Log.trace("tls", "self-connection detected — dropping \(conn.endpoint)")
+                    conn.cancel(); return
+                }
                 Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
                 // Learn/refresh this connection's identity.
                 let known = self.identity[id]?.id == msg.deviceID
@@ -292,7 +302,18 @@ final class Transport {
         guard let frame = encode(msg) else { return }
         queue.async { [weak self] in
             guard let self = self else { return }
-            let ready = self.readyIDs.compactMap { self.connections[$0] }
+            // One connection per identified peer: an inbound + outbound pair to the
+            // same Mac would otherwise each get a copy (doubling traffic and relay
+            // amplification). Connections not yet identified still get sent.
+            var seen = Set<String>()
+            var ready: [NWConnection] = []
+            for id in self.readyIDs {
+                guard let conn = self.connections[id] else { continue }
+                if let did = self.identity[id]?.id {
+                    if !seen.insert(did).inserted { continue }
+                }
+                ready.append(conn)
+            }
             Log.trace("sync", "send \(msg.type.rawValue) \(frame.count)B to \(ready.count) peer(s)")
             for conn in ready { conn.send(content: frame, completion: .contentProcessed { _ in }) }
         }
