@@ -80,6 +80,14 @@ final class SettingsModel: ObservableObject {
     func addCurrentSSID() {
         if let s = NetworkGuard.currentSSID(), !s.isEmpty, !allowedSSIDs.contains(s) { allowedSSIDs.append(s) }
     }
+    func removeSSID(_ ssid: String) {
+        allowedSSIDs.removeAll { $0 == ssid }
+    }
+
+    var pairingCodeDirty: Bool {
+        let c = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !c.isEmpty && c != activeCode
+    }
 }
 
 /// Presents the SwiftUI settings in a window from the menu-bar-only app.
@@ -114,105 +122,178 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            generalTab.tabItem { Label("General", systemImage: "gearshape") }
             syncTab.tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
-            startupTab.tabItem { Label("Startup", systemImage: "power") }
-            identityTab.tabItem { Label("Identity", systemImage: "person.crop.circle") }
+            contentTab.tabItem { Label("Content", systemImage: "doc.on.clipboard") }
             securityTab.tabItem { Label("Security", systemImage: "lock.shield") }
         }
-        .frame(width: 460, height: 380)
-        .padding()
+        .frame(width: 500, height: 460)
     }
+
+    // MARK: General — startup, this Mac, diagnostics
+
+    private var generalTab: some View {
+        Form {
+            Section("Startup") {
+                Toggle("Launch at login", isOn: $model.launchAtLogin)
+                Toggle("Start paused", isOn: $model.startPaused)
+            }
+            Section {
+                TextField("Display name", text: $model.deviceDisplayName,
+                          prompt: Text(Host.current().localizedName ?? "Mac"))
+            } header: {
+                Text("This Mac")
+            } footer: {
+                Text("The name other Macs see for this computer.")
+            }
+            Section {
+                Toggle("Verbose logging", isOn: $model.verboseLogging)
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                Text("Detailed logs are written to /tmp/tandemclip.err.log.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: Sync — behavior + limits
 
     private var syncTab: some View {
         Form {
-            Picker("Mode", selection: $model.mode) {
-                Text("Mirror (auto-sync)").tag(SyncMode.mirror)
-                Text("Manual (pull on demand)").tag(SyncMode.manual)
+            Section("Behavior") {
+                Picker("Mode", selection: $model.mode) {
+                    Text("Mirror — auto-sync").tag(SyncMode.mirror)
+                    Text("Manual — pull on demand").tag(SyncMode.manual)
+                }
+                Picker("This Mac's role", selection: $model.role) {
+                    Text("Send & receive").tag(Role.sendReceive)
+                    Text("Receive only").tag(Role.receiveOnly)
+                    Text("Send only").tag(Role.sendOnly)
+                }
+                Picker("Peer preview", selection: $model.previewLevel) {
+                    Text("Metadata — age + size").tag(PreviewLevel.metadata)
+                    Text("Live text preview").tag(PreviewLevel.preview)
+                    Text("Names only").tag(PreviewLevel.names)
+                }
             }
-            Picker("This Mac's role", selection: $model.role) {
-                Text("Send & Receive").tag(Role.sendReceive)
-                Text("Receive only").tag(Role.receiveOnly)
-                Text("Send only").tag(Role.sendOnly)
+            Section {
+                Picker("Max clipboard size", selection: $model.maxMB) {
+                    Text("1 MB").tag(1.0)
+                    Text("2 MB").tag(2.0)
+                    Text("5 MB").tag(5.0)
+                    Text("10 MB").tag(10.0)
+                    Text("25 MB").tag(25.0)
+                }
+            } header: {
+                Text("Limits")
+            } footer: {
+                Text("Content larger than this falls back to plain text, or is skipped if there's no text.")
             }
-            Picker("Peer preview", selection: $model.previewLevel) {
-                Text("Metadata (age + size)").tag(PreviewLevel.metadata)
-                Text("Live text preview").tag(PreviewLevel.preview)
-                Text("Names only").tag(PreviewLevel.names)
-            }
-            Picker("Max clipboard size", selection: $model.maxMB) {
-                Text("1 MB").tag(1.0)
-                Text("2 MB").tag(2.0)
-                Text("5 MB").tag(5.0)
-                Text("10 MB").tag(10.0)
-                Text("25 MB").tag(25.0)
-            }
-            Divider()
-            Toggle("Sync rich text", isOn: $model.syncRichText)
-            Toggle("Sync images", isOn: $model.syncImages)
-            Toggle("Sync files (by content)", isOn: $model.syncFiles)
-            Text("Plain text always syncs. Copies carry every enabled representation so paste keeps full fidelity. Content over the size limit falls back to text only.")
-                .font(.caption).foregroundColor(.secondary)
         }
+        .formStyle(.grouped)
     }
 
-    private var startupTab: some View {
+    // MARK: Content — what to sync + history/picker
+
+    private var contentTab: some View {
         Form {
-            Toggle("Launch at login", isOn: $model.launchAtLogin)
-            Toggle("Start paused", isOn: $model.startPaused)
-            Toggle("Keep clipboard history (this session)", isOn: $model.historyEnabled)
-            if model.historyEnabled {
-                Stepper("Keep \(model.historyKeep) clips", value: $model.historyKeep, in: 10...200, step: 10)
-                Stepper("Show \(model.pickerShow) in picker (⇧⌘V)", value: $model.pickerShow, in: 5...50, step: 1)
+            Section {
+                Toggle("Rich text", isOn: $model.syncRichText)
+                Toggle("Images", isOn: $model.syncImages)
+                Toggle("Files (by content)", isOn: $model.syncFiles)
+            } header: {
+                Text("What to sync")
+            } footer: {
+                Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity.")
             }
-            Toggle("Verbose logging", isOn: $model.verboseLogging)
-            Text("Verbose logs go to /tmp/tandemclip.err.log.")
-                .font(.caption).foregroundColor(.secondary)
+            Section {
+                Toggle("Keep clipboard history", isOn: $model.historyEnabled)
+                if model.historyEnabled {
+                    Stepper("Keep \(model.historyKeep) clips", value: $model.historyKeep, in: 10...200, step: 10)
+                    Stepper("Show \(model.pickerShow) in picker", value: $model.pickerShow, in: 5...50, step: 1)
+                }
+            } header: {
+                Text("History")
+            } footer: {
+                Text("History is in-memory for this session only. Open the picker with ⇧⌘V.")
+            }
         }
+        .formStyle(.grouped)
     }
 
-    private var identityTab: some View {
-        Form {
-            TextField("Display name", text: $model.deviceDisplayName, prompt: Text(Host.current().localizedName ?? "Mac"))
-            Divider()
-            HStack {
-                TextField("Pairing code", text: $model.pairingCode)
-                    .font(.system(.body, design: .monospaced))
-                    .onSubmit { model.applyPairingCode() }
-                Button("Apply") { model.applyPairingCode() }
-                    .disabled(model.pairingCode.trimmingCharacters(in: .whitespaces).isEmpty
-                              || model.pairingCode == model.activeCode)
-                Button("Regenerate") { model.regeneratePairingCode() }
-                Button("Copy") { model.copyPairingCode() }
-            }
-            Text("Enter the same code on every Mac. Applying re-keys the connection immediately — peers reconnect once they share the new code (no relaunch).")
-                .font(.caption).foregroundColor(.secondary)
-        }
-    }
+    // MARK: Security — pairing, trusted devices, Wi-Fi
 
     private var securityTab: some View {
         Form {
-            Toggle("Only sync with trusted devices", isOn: $model.allowlistEnabled)
-            if model.allowlistEnabled {
-                if peers.isEmpty {
-                    Text("No devices seen yet.").font(.caption).foregroundColor(.secondary)
-                } else {
-                    ForEach(peers, id: \.id) { peer in
-                        Toggle(peer.clip.name + (peer.clip.online ? " ●" : ""), isOn: Binding(
-                            get: { model.config.trustedDevices[peer.id] != nil },
-                            set: { model.config.setTrusted(peer.id, name: peer.clip.name, trusted: $0) }
-                        ))
+            Section {
+                TextField("Pairing code", text: $model.pairingCode)
+                    .font(.system(.body, design: .monospaced))
+                    .onSubmit { model.applyPairingCode() }
+                HStack {
+                    Button("Copy") { model.copyPairingCode() }
+                    Button("Regenerate") { model.regeneratePairingCode() }
+                    Spacer()
+                    Button("Apply") { model.applyPairingCode() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.pairingCodeDirty)
+                }
+            } header: {
+                Text("Pairing code")
+            } footer: {
+                Text("Enter the same code on every Mac. Applying re-keys the connection immediately — peers reconnect once they share the new code (no relaunch).")
+            }
+
+            Section {
+                Toggle("Only sync with trusted devices", isOn: $model.allowlistEnabled)
+                if model.allowlistEnabled {
+                    if peers.isEmpty {
+                        Text("No devices seen yet.").foregroundColor(.secondary)
+                    } else {
+                        ForEach(peers, id: \.id) { peer in
+                            Toggle(isOn: Binding(
+                                get: { model.config.trustedDevices[peer.id] != nil },
+                                set: { model.config.setTrusted(peer.id, name: peer.clip.name, trusted: $0) }
+                            )) {
+                                HStack(spacing: 7) {
+                                    Circle().fill(peer.clip.online ? Color.green : Color.secondary.opacity(0.4))
+                                        .frame(width: 7, height: 7)
+                                    Text(peer.clip.name)
+                                }
+                            }
+                        }
                     }
                 }
+            } header: {
+                Text("Trusted devices")
             }
-            Divider()
-            Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
-            if model.networkAllowlistEnabled {
-                ForEach(model.allowedSSIDs, id: \.self) { ssid in Text(ssid) }
-                Button("Add current network") { model.addCurrentSSID() }
-                Text("Reading the Wi-Fi name needs Location permission; without it, this can't enforce and sync stays on.")
-                    .font(.caption).foregroundColor(.secondary)
+
+            Section {
+                Toggle("Sync only on selected Wi-Fi networks", isOn: $model.networkAllowlistEnabled)
+                if model.networkAllowlistEnabled {
+                    ForEach(model.allowedSSIDs, id: \.self) { ssid in
+                        HStack {
+                            Image(systemName: "wifi").foregroundColor(.secondary)
+                            Text(ssid)
+                            Spacer()
+                            Button { model.removeSSID(ssid) } label: {
+                                Image(systemName: "minus.circle.fill").foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove this network")
+                        }
+                    }
+                    Button { model.addCurrentSSID() } label: {
+                        Label("Add current network", systemImage: "plus")
+                    }
+                }
+            } header: {
+                Text("Wi-Fi networks")
+            } footer: {
+                Text("Reading the Wi-Fi name needs Location permission; without it this can't enforce, and sync stays on.")
             }
         }
+        .formStyle(.grouped)
         .onAppear { peers = model.engine.sortedPeers() }
     }
 }
