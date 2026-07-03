@@ -973,10 +973,10 @@ struct PickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: 11))
+                Image(systemName: "magnifyingglass").foregroundColor(.secondary).font(.system(size: Tokens.CompactSize.meta))
                 HStack(spacing: 1) {
                     Text(model.query.isEmpty ? "Search clips…" : model.query)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: Tokens.CompactSize.rowText))
                         .foregroundColor(model.query.isEmpty ? .secondary : .primary)
                     SearchCaret()
                 }
@@ -1086,8 +1086,8 @@ struct PickerView: View {
                 Spacer(minLength: 6)
                 if !model.clipUsage.isEmpty {
                     HStack(spacing: 4) {
-                        Image(systemName: "doc.on.clipboard").font(.system(size: 9))
-                        Text(model.clipUsage).font(.system(size: 10)).lineLimit(1)
+                        Image(systemName: "doc.on.clipboard").font(.system(size: Tokens.CompactSize.badge))
+                        Text(model.clipUsage).font(.system(size: Tokens.CompactSize.label)).lineLimit(1)
                     }
                     .foregroundColor(.secondary)
                     .layoutPriority(-1)   // first to give way when the panel is narrow
@@ -1137,18 +1137,18 @@ struct PickerView: View {
             HStack(spacing: 8) {
                 Button { model.endCompose() } label: {
                     HStack(spacing: 3) {
-                        Image(systemName: "chevron.left").font(.system(size: 9, weight: .semibold))
-                        Text("Back").font(.system(size: 11.5))
+                        Image(systemName: "chevron.left").font(.system(size: Tokens.CompactSize.badge, weight: .semibold))
+                        Text("Back").font(.system(size: Tokens.CompactSize.meta))
                     }
                 }
                 .buttonStyle(.plain).foregroundColor(.secondary)
-                Text("COMPOSE").font(.system(size: 10.5, weight: .semibold)).tracking(0.6)
+                Text("COMPOSE").font(.system(size: Tokens.CompactSize.label, weight: .semibold)).tracking(0.6)
                     .foregroundColor(.secondary)
                 Spacer()
                 if model.composeBusy { ProgressView().controlSize(.small) }
             }
             TextEditor(text: $model.composeText)
-                .font(.system(size: 12.5))
+                .font(.system(size: Tokens.CompactSize.rowText))
                 .focused($composeFocused)
                 .scrollContentBackground(.hidden)
                 .padding(6)
@@ -1156,13 +1156,13 @@ struct PickerView: View {
                 .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.card).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5))
                 .disabled(model.composeBusy)
             if let err = model.composeError {
-                Text(err).font(.system(size: 10.5)).foregroundColor(.red).lineLimit(2)
+                Text(err).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.red).lineLimit(2)
             }
             if let answer = model.askAnswer {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 4) {
-                        Image(systemName: "questionmark.bubble").font(.system(size: 9))
-                        Text("From your clipboard").font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "questionmark.bubble").font(.system(size: Tokens.CompactSize.badge))
+                        Text("From your clipboard").font(.system(size: Tokens.CompactSize.label, weight: .semibold))
                         if model.askBusy { ProgressView().controlSize(.mini) }
                         Spacer()
                         Button { model.clearAsk() } label: {
@@ -1171,13 +1171,13 @@ struct PickerView: View {
                         }.buttonStyle(.plain)
                     }
                     ScrollView {
-                        Text(answer).font(.system(size: 11.5)).textSelection(.enabled)
+                        Text(answer).font(.system(size: Tokens.CompactSize.meta)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 140)
                     if !model.askSources.isEmpty {
                         Text("Clips used: " + model.askSources.joined(separator: " · "))
-                            .font(.system(size: 9.5)).foregroundColor(.secondary).lineLimit(2)
+                            .font(.system(size: Tokens.CompactSize.badge)).foregroundColor(.secondary).lineLimit(2)
                     }
                 }
                 .padding(8)
@@ -1185,8 +1185,8 @@ struct PickerView: View {
             }
             if let changes = model.composeChanges {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkles").font(.system(size: 9))
-                    Text("Changed: \(changes)").font(.system(size: 10.5)).lineLimit(2)
+                    Image(systemName: "sparkles").font(.system(size: Tokens.CompactSize.badge))
+                    Text("Changed: \(changes)").font(.system(size: Tokens.CompactSize.label)).lineLimit(2)
                 }
                 .foregroundColor(.secondary)
             }
@@ -1196,7 +1196,7 @@ struct PickerView: View {
                 } label: {
                     Label(model.composeBusy ? "Working…" : model.selectedPreset.name,
                           systemImage: "sparkles")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
                 }
                 .disabled(model.composeBusy || model.composeText.isEmpty)
                 // Tone preset switcher: the button above runs whichever is checked.
@@ -1213,32 +1213,32 @@ struct PickerView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "chevron.down").font(.system(size: Tokens.CompactSize.badge, weight: .semibold))
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .frame(width: 24)
                 .disabled(model.composeBusy)
                 if model.composeOriginal != nil, !model.composeBusy {
-                    Button("Undo") { model.undoCleanup() }.font(.system(size: 11.5))
+                    Button("Undo") { model.undoCleanup() }.font(.system(size: Tokens.CompactSize.meta))
                 }
                 Button {
                     model.askClipboard()
                 } label: {
                     Label(model.askBusy ? "Asking…" : "Ask Clipboard", systemImage: "questionmark.bubble")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
                 }
                 .disabled(model.askBusy || model.composeBusy || model.composeText.isEmpty)
                 .help("Answer this question from your clip history (retrieval + AI)")
                 Spacer()
                 Button("Cancel") { model.endCompose() }
-                    .font(.system(size: 11.5))
+                    .font(.system(size: Tokens.CompactSize.meta))
                     .keyboardShortcut(.cancelAction)
                 Button {
                     model.useCompose()
                 } label: {
                     Label("Use", systemImage: "checkmark.circle")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(model.composeText.isEmpty || model.composeBusy)
@@ -1267,8 +1267,8 @@ struct PickerView: View {
                 .foregroundColor(Tokens.accent.opacity(0.6))
                 .padding(6)
             VStack(spacing: 9) {
-                Image(systemName: "arrow.up.doc.on.clipboard").font(.system(size: 27))
-                Text("Drop to share with your Macs").font(.system(size: 13.5, weight: .medium))
+                Image(systemName: "arrow.up.doc.on.clipboard").font(.system(size: Tokens.CompactSize.hero))
+                Text("Drop to share with your Macs").font(.system(size: Tokens.CompactSize.rowTitle, weight: .medium))
             }
             .foregroundColor(.tandemAccent)
         }
@@ -1278,7 +1278,7 @@ struct PickerView: View {
     /// Transient status line after a drop (shared to N Macs, or a reason nothing sent).
     private func dropToast(_ msg: String) -> some View {
         Text(msg)
-            .font(.system(size: 11.5, weight: .medium))
+            .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
             .foregroundColor(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Capsule().fill(model.dropIsError
@@ -1292,7 +1292,7 @@ struct PickerView: View {
         let active = model.kindFilter == f
         return Button { model.kindFilter = f } label: {
             Image(systemName: f.symbol)
-                .font(.system(size: 10, weight: active ? .semibold : .regular))
+                .font(.system(size: Tokens.CompactSize.label, weight: active ? .semibold : .regular))
                 .foregroundColor(active ? .white : .secondary)
                 .frame(width: 22, height: 17)
                 .background(active ? Color.tandemAccent : Color.secondary.opacity(0.12))
@@ -1307,19 +1307,19 @@ struct PickerView: View {
     private func groupHeader(_ group: PickerModel.Group) -> some View {
         HStack(spacing: 6) {
             Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: Tokens.CompactSize.tiny, weight: .semibold))
                 .foregroundColor(.secondary.opacity(0.8))
                 .frame(width: 9)
-            Text(group.source).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+            Text(group.source).font(.system(size: Tokens.CompactSize.meta, weight: .medium)).foregroundColor(.secondary)
             Text("\(group.total)")
-                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .font(.system(size: Tokens.CompactSize.badge, weight: .bold, design: .monospaced))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 6).padding(.vertical, 1.5)
                 .background(Capsule().fill(Color.secondary.opacity(0.2)))
             ForEach(group.badges, id: \.symbol) { badge in
                 HStack(spacing: 3) {
-                    Image(systemName: badge.symbol).font(.system(size: 8.5))
-                    Text("\(badge.count)").font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    Image(systemName: badge.symbol).font(.system(size: Tokens.CompactSize.tiny))
+                    Text("\(badge.count)").font(.system(size: Tokens.CompactSize.badge, weight: .semibold, design: .monospaced))
                 }
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 5).padding(.vertical, 1.5)
@@ -1334,7 +1334,7 @@ struct PickerView: View {
     }
 
     private func sectionHeader(_ t: String) -> some View {
-        Text(t).font(.system(size: 10.5, weight: .semibold)).tracking(0.6)
+        Text(t).font(.system(size: Tokens.CompactSize.label, weight: .semibold)).tracking(0.6)
             .foregroundColor(.secondary).padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 2)
     }
 
@@ -1344,13 +1344,13 @@ struct PickerView: View {
     private func subHeader(_ source: String, _ section: PickerModel.Section) -> some View {
         HStack(spacing: 4) {
             Image(systemName: section.isCollapsed ? "chevron.right" : "chevron.down")
-                .font(.system(size: 6.5, weight: .semibold))
+                .font(.system(size: Tokens.CompactSize.mini, weight: .semibold))
                 .foregroundColor(.secondary.opacity(0.55))
                 .frame(width: 7)
-            Text(section.title.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(0.8)
+            Text(section.title.uppercased()).font(.system(size: Tokens.CompactSize.badge, weight: .semibold)).tracking(0.8)
                 .foregroundColor(.secondary.opacity(0.65))
             Text("\(section.count)")
-                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: Tokens.CompactSize.tiny, weight: .semibold, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.65))
                 .padding(.horizontal, 4.5).padding(.vertical, 1)
                 .background(Capsule().fill(Color.secondary.opacity(0.1)))
@@ -1367,7 +1367,7 @@ struct PickerView: View {
                               action: @escaping () -> Void) -> some View {
         Button(action: { withAnimation(Tokens.Motion.microCurve) { action() } }) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
                 .foregroundColor(active ? .white : .secondary)
                 .frame(width: 24, height: 18)
                 .background(RoundedRectangle(cornerRadius: Tokens.Radius.control)
@@ -1379,9 +1379,9 @@ struct PickerView: View {
 
     private func hint(_ k: String, _ t: String) -> some View {
         HStack(spacing: 3) {
-            Text(k).font(.system(size: 10, design: .monospaced)).lineLimit(1).padding(.horizontal, 4).padding(.vertical, 1)
+            Text(k).font(.system(size: Tokens.CompactSize.label, design: .monospaced)).lineLimit(1).padding(.horizontal, 4).padding(.vertical, 1)
                 .background(Color.secondary.opacity(0.15)).cornerRadius(3)
-            Text(t).font(.system(size: 10)).lineLimit(1).foregroundColor(.secondary)
+            Text(t).font(.system(size: Tokens.CompactSize.label)).lineLimit(1).foregroundColor(.secondary)
         }
         .fixedSize()
     }
@@ -1418,14 +1418,14 @@ private struct HistoryRow: View {
         HStack(spacing: 10) {
             thumb
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.label.isEmpty ? item.kindLabel : item.label).lineLimit(1).font(.system(size: 13))
+                Text(item.label.isEmpty ? item.kindLabel : item.label).lineLimit(1).font(.system(size: Tokens.CompactSize.rowTitle))
                 HStack(spacing: 6) {
-                    Text(item.source).font(.system(size: 10.5)).foregroundColor(.secondary)
+                    Text(item.source).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
                     Text("·").foregroundColor(.secondary)
-                    Text(age(item.timestamp)).font(.system(size: 10.5)).foregroundColor(.secondary)
+                    Text(age(item.timestamp)).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
                     Text("·").foregroundColor(.secondary)
                     Text(ByteCountFormatter.string(fromByteCount: Int64(item.snapshot.totalBytes), countStyle: .file))
-                        .font(.system(size: 10.5)).foregroundColor(.secondary)
+                        .font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
                 }
             }
             Spacer()
@@ -1438,7 +1438,7 @@ private struct HistoryRow: View {
                 if let onAirDrop {
                     Button(action: onAirDrop) {
                         Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 12))
+                            .font(.system(size: Tokens.CompactSize.rowText))
                             .foregroundColor(.secondary)
                             .offset(y: -1)
                             .frame(width: 17, height: 17)
@@ -1449,7 +1449,7 @@ private struct HistoryRow: View {
                 if let onCleanup {
                     Button(action: onCleanup) {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 12))
+                            .font(.system(size: Tokens.CompactSize.rowText))
                             .foregroundColor(.secondary)
                             .frame(width: 17, height: 17)
                     }
@@ -1459,7 +1459,7 @@ private struct HistoryRow: View {
                 if let onPin {
                     Button(action: onPin) {
                         Image(systemName: "pin")
-                            .font(.system(size: 11.5))
+                            .font(.system(size: Tokens.CompactSize.meta))
                             .foregroundColor(.secondary)
                             .offset(y: 0.5)
                             .frame(width: 17, height: 17)
@@ -1469,7 +1469,7 @@ private struct HistoryRow: View {
                 }
                 Button(action: onDelete) {
                     Image(systemName: deleteSymbol)
-                        .font(.system(size: 13))
+                        .font(.system(size: Tokens.CompactSize.rowTitle))
                         .foregroundColor(.secondary)
                         .offset(y: deleteOffset)
                         .frame(width: 17, height: 17)
@@ -1477,7 +1477,7 @@ private struct HistoryRow: View {
                 .buttonStyle(.plain)
                 .help(deleteHelp)
             } else if index >= 0 && index < 9 {
-                Text("⌘\(index + 1)").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary.opacity(0.7))
+                Text("⌘\(index + 1)").font(.system(size: Tokens.CompactSize.label, design: .monospaced)).foregroundColor(.secondary.opacity(0.7))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
@@ -1526,25 +1526,25 @@ private struct PreviewCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Image(systemName: icon(item.category)).font(.system(size: 10))
-                Text(item.kindLabel).font(.system(size: 10.5, weight: .semibold))
+                Image(systemName: icon(item.category)).font(.system(size: Tokens.CompactSize.label))
+                Text(item.kindLabel).font(.system(size: Tokens.CompactSize.label, weight: .semibold))
                 Text("·").foregroundColor(.secondary)
                 Text(ByteCountFormatter.string(fromByteCount: Int64(item.snapshot.totalBytes), countStyle: .file))
-                    .font(.system(size: 10.5))
+                    .font(.system(size: Tokens.CompactSize.label))
                 if let d = generated.duration {
                     Text("·").foregroundColor(.secondary)
-                    Text(PreviewThumbnailer.durationLabel(d)).font(.system(size: 10.5))
+                    Text(PreviewThumbnailer.durationLabel(d)).font(.system(size: Tokens.CompactSize.label))
                 }
                 Spacer(minLength: 0)
-                Text(exactTime(item.timestamp)).font(.system(size: 10)).foregroundColor(.secondary)
+                Text(exactTime(item.timestamp)).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
             }
             Divider()
             content
             if let summary = model.summaries[item.hash] {
                 Divider()
                 HStack(alignment: .top, spacing: 4) {
-                    Image(systemName: "sparkles").font(.system(size: 9)).padding(.top, 2)
-                    Text(summary).font(.system(size: 10.5)).lineLimit(6)
+                    Image(systemName: "sparkles").font(.system(size: Tokens.CompactSize.badge)).padding(.top, 2)
+                    Text(summary).font(.system(size: Tokens.CompactSize.label)).lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundColor(.secondary)
@@ -1552,8 +1552,8 @@ private struct PreviewCard: View {
             if let translation = model.translationLookup?(item.hash) {
                 Divider()
                 HStack(alignment: .top, spacing: 4) {
-                    Image(systemName: "globe").font(.system(size: 9)).padding(.top, 2)
-                    Text(translation).font(.system(size: 10.5)).lineLimit(8)
+                    Image(systemName: "globe").font(.system(size: Tokens.CompactSize.badge)).padding(.top, 2)
+                    Text(translation).font(.system(size: Tokens.CompactSize.label)).lineLimit(8)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
@@ -1600,8 +1600,8 @@ private struct PreviewCard: View {
     private func cardButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 9))
-                Text(title).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                Image(systemName: symbol).font(.system(size: Tokens.CompactSize.badge))
+                Text(title).font(.system(size: Tokens.CompactSize.label, weight: .medium)).lineLimit(1)
             }
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Capsule().fill(Color.secondary.opacity(0.12)))
@@ -1615,9 +1615,9 @@ private struct PreviewCard: View {
                 .frame(maxWidth: 230, maxHeight: 150)
                 .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.control))
             Text("\(Int(img.size.width)) × \(Int(img.size.height))")
-                .font(.system(size: 9.5)).foregroundColor(.secondary)
+                .font(.system(size: Tokens.CompactSize.badge)).foregroundColor(.secondary)
             if let ocr = ocrText {
-                Text(ocr).font(.system(size: 9.5, design: .monospaced))
+                Text(ocr).font(.system(size: Tokens.CompactSize.badge, design: .monospaced))
                     .lineLimit(3).foregroundColor(.secondary)
             }
         } else if !item.snapshot.files.isEmpty {
@@ -1630,26 +1630,26 @@ private struct PreviewCard: View {
             }
             ForEach(PickerModel.previewFiles(item).prefix(6), id: \.name) { f in
                 HStack(spacing: 5) {
-                    Image(systemName: "doc").font(.system(size: 9)).foregroundColor(.secondary)
-                    Text(f.name).font(.system(size: 10.5)).lineLimit(1)
+                    Image(systemName: "doc").font(.system(size: Tokens.CompactSize.badge)).foregroundColor(.secondary)
+                    Text(f.name).font(.system(size: Tokens.CompactSize.label)).lineLimit(1)
                     Spacer(minLength: 4)
                     Text(ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file))
-                        .font(.system(size: 9.5)).foregroundColor(.secondary)
+                        .font(.system(size: Tokens.CompactSize.badge)).foregroundColor(.secondary)
                 }
             }
             if item.snapshot.files.count > 6 {
-                Text("+\(item.snapshot.files.count - 6) more").font(.system(size: 9.5)).foregroundColor(.secondary)
+                Text("+\(item.snapshot.files.count - 6) more").font(.system(size: Tokens.CompactSize.badge)).foregroundColor(.secondary)
             }
             if let excerpt = PickerModel.previewText(item) {
                 Divider()
-                Text(excerpt).font(.system(size: 10, design: .monospaced))
+                Text(excerpt).font(.system(size: Tokens.CompactSize.label, design: .monospaced))
                     .lineLimit(8).foregroundColor(.secondary)
             }
         } else if let excerpt = PickerModel.previewText(item) {
-            Text(excerpt).font(.system(size: 11))
+            Text(excerpt).font(.system(size: Tokens.CompactSize.meta))
                 .lineLimit(10).fixedSize(horizontal: false, vertical: true)
         } else {
-            Text("No preview").font(.system(size: 10.5)).foregroundColor(.secondary)
+            Text("No preview").font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
         }
     }
 
@@ -1678,12 +1678,12 @@ private struct PeerRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(Color.green).frame(width: 7, height: 7)
-            Text(clip.name).font(.system(size: 13))
+            Text(clip.name).font(.system(size: Tokens.CompactSize.rowTitle))
             Spacer()
-            if let k = clip.kindLabel { Text(k).font(.system(size: 10.5)).foregroundColor(.secondary) }
+            if let k = clip.kindLabel { Text(k).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary) }
             if let s = clip.size { Text(ByteCountFormatter.string(fromByteCount: Int64(s), countStyle: .file))
-                .font(.system(size: 10.5)).foregroundColor(.secondary) }
-            Image(systemName: "arrow.down.circle").foregroundColor(.secondary).font(.system(size: 12))
+                .font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary) }
+            Image(systemName: "arrow.down.circle").foregroundColor(.secondary).font(.system(size: Tokens.CompactSize.rowText))
         }
         .padding(.horizontal, 14).padding(.vertical, 7).padding(.horizontal, 6)
     }

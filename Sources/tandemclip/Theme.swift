@@ -117,6 +117,26 @@ enum Tokens {
         static let micro: Font = .system(size: 9, weight: .bold) // badge text (with tracking)
     }
 
+    /// Compact type ramp for the picker — the app's densest surface, which
+    /// needs finer steps than the reading-oriented `FontScale`. Raw point
+    /// sizes (CGFloat) so call sites keep their own `weight:` / `design:`
+    /// args: `.font(.system(size: Tokens.CompactSize.meta, weight: .semibold))`.
+    /// These replaced a sprawl of half-point literals (6.5 / 8.5 / 9.5 /
+    /// 10.5 / 11.5 / 12.5 / 13.5) — each rounded DOWN to the nearest clean
+    /// value, which can only shrink text and so never overflows a frame the
+    /// larger size already fit. Verified in every picker state via
+    /// `DebugRender` (see DESIGN_SYSTEM.md §9).
+    enum CompactSize {
+        static let mini: CGFloat = 6      // count bubbles inside a chip
+        static let tiny: CGFloat = 8      // dense sub-labels
+        static let badge: CGFloat = 9     // chip / badge text, key hints
+        static let label: CGFloat = 10    // section eyebrows, meta lines
+        static let meta: CGFloat = 11     // secondary row text
+        static let rowText: CGFloat = 12  // body-ish row text
+        static let rowTitle: CGFloat = 13 // clip row titles
+        static let hero: CGFloat = 27     // empty-state glyph
+    }
+
     /// SF Symbol sizing for icon-only images — geometry, not typography.
     enum IconSize {
         static let tiny: CGFloat = 9    // disclosure chevrons, eyebrow icons
