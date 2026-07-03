@@ -302,6 +302,14 @@ final class Config {
     /// Cap on cleanup input so a giant clip can't become a giant bill.
     static let aiMaxInputChars = 20_000
 
+    /// Hold clips that look like secrets (API keys, private keys, card
+    /// numbers, lone high-entropy tokens) instead of broadcasting them.
+    /// On by default — releasing a held clip is one click in the menu.
+    var secretGuardEnabled: Bool {
+        get { defaults.object(forKey: "secretGuardEnabled") == nil ? true : defaults.bool(forKey: "secretGuardEnabled") }
+        set { set("secretGuardEnabled", newValue) }
+    }
+
     /// Privacy hold: while on, nothing of ours leaves this Mac — no clip
     /// broadcasts, no pull serving, no drop-shares, no metadata/previews in
     /// announces. Receiving still works. Toggled from the picker; persisted so
