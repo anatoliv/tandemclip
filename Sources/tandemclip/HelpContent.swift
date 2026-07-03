@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.5", date: "July 3, 2026",
+              highlight: "Smart titles that actually turn on.",
+              changes: [
+                .init(.fixed, "The automatic AI toggles — Smart titles, Translate incoming, Adapt tone — now stay disabled until “Enable AI text cleanup” is on. Before, you could switch them on while AI was off and they’d silently do nothing, so smart titles never appeared."),
+              ]),
         .init(version: "0.22.4", date: "July 3, 2026",
               highlight: "Drag a clip out again.",
               changes: [
