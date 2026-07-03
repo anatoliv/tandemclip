@@ -27,14 +27,75 @@ final class PickerGroupingTests: XCTestCase {
         let model = makeModel()
         load(model, [item("a", source: "Home"), item("b", source: "Home"),
                      item("styled", source: "Home", rich: true),
-                     item("f.txt", source: "Home", file: true), item("c", source: "HCL")])
+                     item("f.zip", source: "Home", file: true), item("c", source: "HCL")])
 
         let groups = model.grouped
         XCTAssertEqual(groups.map(\.source), ["Home", "HCL"])
         // Plain and rich text count separately.
         XCTAssertEqual(groups[0].badges.map { "\($0.symbol):\($0.count)" },
-                       ["text.alignleft:2", "textformat:1", "doc:1"])
+                       ["text.alignleft:2", "textformat:1", "shippingbox:1"])
         XCTAssertEqual(groups[1].badges.map { "\($0.symbol):\($0.count)" }, ["text.alignleft:1"])
+    }
+
+    func testAudioVideoFilesClassify() {
+        let song = ClipSnapshot(parts: [:], files: [ClipFile(name: "track.mp3", data: Data([1]))])
+        XCTAssertEqual(song.category, .audio)
+        XCTAssertEqual(song.contentLabel, "audio file")
+
+        let movie = ClipSnapshot(parts: [:], files: [ClipFile(name: "clip.mov", data: Data([1]))])
+        XCTAssertEqual(movie.category, .video)
+        XCTAssertEqual(movie.contentLabel, "video")
+
+        // Mixed media falls back to plain file.
+        let mixed = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.mp3", data: Data([1])),
+                                                     ClipFile(name: "b.mov", data: Data([2]))])
+        XCTAssertEqual(mixed.category, .file)
+
+        // The Audio & Video chip matches both.
+        let model = makeModel()
+        let songItem = HistoryItem(snapshot: song, hash: "s", timestamp: 0, label: "track.mp3", source: "Home")
+        let movieItem = HistoryItem(snapshot: movie, hash: "m", timestamp: 0, label: "clip.mov", source: "Home")
+        load(model, [songItem, movieItem, item("plain", source: "Home")])
+        model.kindFilter = .media
+        XCTAssertEqual(model.filtered.map(\.label), ["track.mp3", "clip.mov"])
+        XCTAssertEqual(model.grouped[0].sections.map(\.title), ["Audio", "Video"])
+    }
+
+    func testDocumentFilesClassifyAsDocuments() {
+        let pdf = ClipSnapshot(parts: [:], files: [ClipFile(name: "report.pdf", data: Data([1]))])
+        XCTAssertEqual(pdf.category, .document)
+        XCTAssertEqual(pdf.contentLabel, "document")
+
+        let docs = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.md", data: Data([1])),
+                                                    ClipFile(name: "b.xlsx", data: Data([2]))])
+        XCTAssertEqual(docs.category, .document)
+        XCTAssertEqual(docs.contentLabel, "2 documents")
+
+        let archive = ClipSnapshot(parts: [:], files: [ClipFile(name: "backup.zip", data: Data([1]))])
+        XCTAssertEqual(archive.category, .file)
+        XCTAssertEqual(archive.contentLabel, "file")
+
+        let mixed = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.pdf", data: Data([1])),
+                                                     ClipFile(name: "b.zip", data: Data([2]))])
+        XCTAssertEqual(mixed.category, .file)
+    }
+
+    func testPreviewHelpers() {
+        // Text clip → its own text.
+        let text = item("hello preview world", source: "Home")
+        XCTAssertEqual(PickerModel.previewText(text), "hello preview world")
+
+        // Single text-like document → decoded bytes.
+        let md = ClipSnapshot(parts: [:], files: [ClipFile(name: "notes.md", data: Data("# heading".utf8))])
+        let mdItem = HistoryItem(snapshot: md, hash: "h", timestamp: 0, label: "", source: "Home")
+        XCTAssertEqual(PickerModel.previewText(mdItem), "# heading")
+
+        // Binary file → no text preview, but a file list.
+        let zip = ClipSnapshot(parts: [:], files: [ClipFile(name: "backup.zip", data: Data([0x50, 0x4B]))])
+        let zipItem = HistoryItem(snapshot: zip, hash: "h2", timestamp: 0, label: "", source: "Home")
+        XCTAssertNil(PickerModel.previewText(zipItem))
+        XCTAssertEqual(PickerModel.previewFiles(zipItem).map(\.name), ["backup.zip"])
+        XCTAssertEqual(PickerModel.previewFiles(zipItem).map(\.size), [2])
     }
 
     func testImageFilesClassifyAsImages() {
@@ -62,7 +123,7 @@ final class PickerGroupingTests: XCTestCase {
     func testGroupsSubSectionByTypePreservingIndexOrder() {
         let model = makeModel()
         // Interleaved on purpose: file, text, image-file, text.
-        load(model, [item("f.pdf", source: "Home", file: true),
+        load(model, [item("f.zip", source: "Home", file: true),
                      item("hello", source: "Home"),
                      item("cat.jpg", source: "Home", file: true),
                      item("world", source: "Home")])
@@ -70,21 +131,24 @@ final class PickerGroupingTests: XCTestCase {
         let g = model.grouped[0]
         XCTAssertEqual(g.sections.map(\.title), ["Text", "Images", "Files"])
         XCTAssertEqual(g.sections.map { $0.entries.map(\.item.label) },
-                       [["hello", "world"], ["cat.jpg"], ["f.pdf"]])
+                       [["hello", "world"], ["cat.jpg"], ["f.zip"]])
         // Flat indices follow the sub-sectioned display order and match filtered.
         XCTAssertEqual(g.entries.map(\.index), [0, 1, 2, 3])
-        XCTAssertEqual(model.filtered.map(\.label), ["hello", "world", "cat.jpg", "f.pdf"])
+        XCTAssertEqual(model.filtered.map(\.label), ["hello", "world", "cat.jpg", "f.zip"])
     }
 
     func testImageFilterIncludesPictureFiles() {
         let model = makeModel()
         load(model, [item("hello", source: "Home"),
                      item("cat.jpg", source: "Home", file: true),
-                     item("f.pdf", source: "Home", file: true)])
+                     item("report.pdf", source: "Home", file: true),
+                     item("f.zip", source: "Home", file: true)])
         model.kindFilter = .image
         XCTAssertEqual(model.filtered.map(\.label), ["cat.jpg"])
+        model.kindFilter = .document
+        XCTAssertEqual(model.filtered.map(\.label), ["report.pdf"])
         model.kindFilter = .file
-        XCTAssertEqual(model.filtered.map(\.label), ["f.pdf"])
+        XCTAssertEqual(model.filtered.map(\.label), ["f.zip"])
     }
 
     /// RTF outranks image parts: a formatted-text copy that also carries a TIFF
@@ -173,14 +237,14 @@ final class PickerGroupingTests: XCTestCase {
         load(model, [item("a", source: "Home"), item("styled", source: "Home", rich: true),
                      item("f.pdf", source: "Home", file: true)])
         XCTAssertEqual(model.grouped[0].total, 3)
-        model.kindFilter = .file
+        model.kindFilter = .document
         XCTAssertEqual(model.grouped[0].total, 1)
     }
 
     func testBadgesRespectActiveKindFilter() {
         let model = makeModel()
-        load(model, [item("a", source: "Home"), item("f.txt", source: "Home", file: true)])
+        load(model, [item("a", source: "Home"), item("f.zip", source: "Home", file: true)])
         model.kindFilter = .file
-        XCTAssertEqual(model.grouped[0].badges.map { "\($0.symbol):\($0.count)" }, ["doc:1"])
+        XCTAssertEqual(model.grouped[0].badges.map { "\($0.symbol):\($0.count)" }, ["shippingbox:1"])
     }
 }
