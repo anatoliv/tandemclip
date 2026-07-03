@@ -7,6 +7,22 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Packag
 APPCAST="dist/appcast.xml"
 DMG="dist/TandemClip_${VERSION}_aarch64.dmg"
 
+# --- Design-drift lint --------------------------------------------------------
+# Views must draw from Tokens (docs/design/DESIGN_SYSTEM.md), not raw numbers.
+# Enforced: no raw `cornerRadius: <n>` in any view; no raw `.system(size: <n>`
+# outside Theme.swift. Documented exceptions: ClipboardPicker.swift's compact
+# type ramp (§9), and SF-Rounded faces (keycaps / brand titles).
+RADIUS_DRIFT="$(grep -rnE 'cornerRadius: [0-9]' Sources/tandemclip --include='*.swift' \
+    | grep -v 'Theme.swift' || true)"
+FONT_DRIFT="$(grep -rnE '\.system\(size: [0-9]' Sources/tandemclip --include='*.swift' \
+    | grep -vE 'ClipboardPicker\.swift|Theme\.swift|design: \.rounded' || true)"
+if [[ -n "$RADIUS_DRIFT" || -n "$FONT_DRIFT" ]]; then
+    echo "error: design-drift — raw style values in view code (use Tokens; see docs/design/DESIGN_SYSTEM.md §9):" >&2
+    [[ -n "$RADIUS_DRIFT" ]] && printf '%s\n' "$RADIUS_DRIFT" >&2
+    [[ -n "$FONT_DRIFT" ]] && printf '%s\n' "$FONT_DRIFT" >&2
+    exit 1
+fi
+
 if [[ ! -f "$DMG" ]]; then
     echo "error: missing release DMG: $DMG" >&2
     exit 1
