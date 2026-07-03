@@ -1021,7 +1021,8 @@ struct PickerView: View {
                                        onAirDrop: model.airDropAvailable
                                            ? { model.onAirDrop?(item) } : nil,
                                        deleteSymbol: "pin.slash",
-                                       deleteHelp: "Unpin on all Macs")
+                                       deleteHelp: "Unpin on all Macs",
+                                       deleteOffset: 0.5)
                                 .contentShape(Rectangle())
                                 .onTapGesture { model.onPickPinned?(item.hash) }
                                 .onDrag { DragOutStager.provider(for: item) }
@@ -1409,6 +1410,9 @@ private struct HistoryRow: View {
     /// unpin for pinned rows.
     var deleteSymbol = "xmark.circle.fill"
     var deleteHelp = "Delete from history on all Macs"
+    /// Optical nudge for the delete glyph — 0 for the centered ✕, small for
+    /// high-reading symbols like pin.slash.
+    var deleteOffset: CGFloat = 0
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
@@ -1426,15 +1430,17 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
-                // Equal frames keep the action icons on one optical center;
-                // the share glyph's up-arrow makes it read high, so it gets a
-                // 1pt nudge down to align with the ✕.
+                // Equal 17pt frames put the action icons on one optical center.
+                // The share glyph's up-arrow and the pin's thumbtack head both
+                // read high, so each gets a small nudge down to sit level with
+                // the geometrically-centered ✕ (offsets picked from a
+                // center-guide render).
                 if let onAirDrop {
                     Button(action: onAirDrop) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .offset(y: 1)
+                            .offset(y: 1.5)
                             .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
@@ -1455,6 +1461,7 @@ private struct HistoryRow: View {
                         Image(systemName: "pin")
                             .font(.system(size: 11.5))
                             .foregroundColor(.secondary)
+                            .offset(y: 0.5)
                             .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
@@ -1464,6 +1471,7 @@ private struct HistoryRow: View {
                     Image(systemName: deleteSymbol)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .offset(y: deleteOffset)
                         .frame(width: 17, height: 17)
                 }
                 .buttonStyle(.plain)
