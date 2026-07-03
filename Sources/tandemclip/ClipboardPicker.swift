@@ -1152,8 +1152,8 @@ struct PickerView: View {
                 .focused($composeFocused)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5))
+                .background(RoundedRectangle(cornerRadius: Tokens.Radius.card).fill(Color.secondary.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.card).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5))
                 .disabled(model.composeBusy)
             if let err = model.composeError {
                 Text(err).font(.system(size: 10.5)).foregroundColor(.red).lineLimit(2)
@@ -1181,7 +1181,7 @@ struct PickerView: View {
                     }
                 }
                 .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+                .background(RoundedRectangle(cornerRadius: Tokens.Radius.card).fill(Color.secondary.opacity(0.07)))
             }
             if let changes = model.composeChanges {
                 HStack(spacing: 4) {
@@ -1262,9 +1262,9 @@ struct PickerView: View {
     private var dropOverlay: some View {
         ZStack {
             Color.tandemAccent.opacity(0.08)
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: Tokens.Radius.sheet)
                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
-                .foregroundColor(.accentColor.opacity(0.6))
+                .foregroundColor(Tokens.accent.opacity(0.6))
                 .padding(6)
             VStack(spacing: 9) {
                 Image(systemName: "arrow.up.doc.on.clipboard").font(.system(size: 27))
@@ -1370,7 +1370,7 @@ struct PickerView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(active ? .white : .secondary)
                 .frame(width: 24, height: 18)
-                .background(RoundedRectangle(cornerRadius: 4)
+                .background(RoundedRectangle(cornerRadius: Tokens.Radius.control)
                     .fill(active ? Color.tandemAccent : Color.secondary.opacity(0.12)))
         }
         .buttonStyle(.plain)
@@ -1488,7 +1488,7 @@ private struct HistoryRow: View {
                     : hovering ? Color.secondary.opacity(0.07) : Color.clear)
         .overlay {
             if hovering && !selected {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: Tokens.Radius.card)
                     .strokeBorder(Color.tandemAccent.opacity(0.35), lineWidth: 1)
             }
         }
@@ -1498,7 +1498,7 @@ private struct HistoryRow: View {
     @ViewBuilder private var thumb: some View {
         if let d = item.imageData, let img = NSImage(data: d) {
             Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
-                .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 5))
+                .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.control))
         } else {
             Image(systemName: icon(item.category)).frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.12)).cornerRadius(5).foregroundColor(.secondary)
@@ -1585,8 +1585,8 @@ private struct PreviewCard: View {
         }
         .padding(10)
         .frame(width: 250, alignment: .leading)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Tokens.Radius.sheet))
+        .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.sheet).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         .padding(.trailing, 12).padding(.bottom, 44)
         .onHover { model.cardHover($0) }   // grace: entering the card keeps it up
@@ -1613,7 +1613,7 @@ private struct PreviewCard: View {
         if let data = item.imageData, let img = NSImage(data: data) {
             Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
                 .frame(maxWidth: 230, maxHeight: 150)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.control))
             Text("\(Int(img.size.width)) × \(Int(img.size.height))")
                 .font(.system(size: 9.5)).foregroundColor(.secondary)
             if let ocr = ocrText {
@@ -1626,7 +1626,7 @@ private struct PreviewCard: View {
             if let thumb = generated.image {
                 Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fit)
                     .frame(maxWidth: 230, maxHeight: 140)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.control))
             }
             ForEach(PickerModel.previewFiles(item).prefix(6), id: \.name) { f in
                 HStack(spacing: 5) {
