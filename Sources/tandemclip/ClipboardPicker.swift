@@ -1140,11 +1140,16 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
+                // Equal frames keep the action icons on one optical center;
+                // the share glyph's up-arrow makes it read high, so it gets a
+                // 1pt nudge down to align with the ✕.
                 if let onAirDrop {
                     Button(action: onAirDrop) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .offset(y: 1)
+                            .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
                     .help("AirDrop to a nearby device (iPhone, iPad, any Mac)")
@@ -1154,6 +1159,7 @@ private struct HistoryRow: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
                     .help("Clean up with AI (opens in compose)")
@@ -1162,6 +1168,7 @@ private struct HistoryRow: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .frame(width: 17, height: 17)
                 }
                 .buttonStyle(.plain)
                 .help("Delete from history on all Macs")
