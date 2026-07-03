@@ -128,6 +128,11 @@ final class AICleanupTests: XCTestCase {
         XCTAssertNil(model.composeError)
         model.undoCleanup()
         XCTAssertEqual(model.composeText, "teh original text")
+
+        // Closing/cancelling compose discards the draft.
+        model.endCompose()
+        XCTAssertEqual(model.composeText, "")
+        XCTAssertFalse(model.composing)
     }
 
     func testCleanupFailureRestoresOriginalAndSurfacesError() {
