@@ -1,5 +1,11 @@
 import AppKit
 
+#if DEBUG
+// Debug-only, env-gated offscreen picker renderer for design verification.
+// No-op unless TANDEMCLIP_RENDER_PICKER is set; compiled out of release builds.
+if DebugRender.runIfRequested() { exit(0) }
+#endif
+
 if CommandLine.arguments.contains("--no-menubar") {
     // Headless mode: no NSApplication / menu bar / WindowServer dependency.
     // The clipboard watcher and network transport run on the main RunLoop.
