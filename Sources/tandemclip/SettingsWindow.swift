@@ -24,6 +24,13 @@ final class SettingsModel: ObservableObject {
     /// Current on-disk size of the received-files cache (for the readout).
     @Published var cacheUsage: Int = 0
 
+    /// Wipe history + the received-files cache (was the menu's "Clear history";
+    /// the menu History submenu is gone — the picker owns browsing).
+    func clearHistory() {
+        engine.clearHistory()
+        cacheUsage = engine.watcher.receivedCacheUsage()
+    }
+
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
@@ -282,7 +289,7 @@ struct SettingsView: View {
             }
             Section {
                 Picker("Received-files limit", selection: $model.receivedCacheMB) {
-                    ForEach([100, 200, 500, 1000], id: \.self) { mb in
+                    ForEach([10, 25, 50, 100, 200, 500, 1000], id: \.self) { mb in
                         Text(mb >= 1000 ? "\(mb / 1000) GB" : "\(mb) MB").tag(mb)
                     }
                 }
@@ -300,6 +307,7 @@ struct SettingsView: View {
                     Picker("Show in picker", selection: $model.pickerShow) {
                         ForEach([5, 8, 10, 12, 15, 20, 30, 50], id: \.self) { Text("\($0) clips").tag($0) }
                     }
+                    Button("Clear History Now") { model.clearHistory() }
                 }
             } header: {
                 Text("History")
