@@ -365,16 +365,27 @@ final class SyncEngine {
                 transport.broadcast(msg)
             }
         } else {
-            // Manual: apply only a clip we explicitly requested, and only if the
-            // reply is recent. A pull whose reply was lost must NOT leave a latent
-            // permission that silently swallows the peer's next (e.g. Mirror-mode)
-            // broadcast as if it were the requested clip.
-            guard config.role.canReceive,
-                  let requestedAt = pendingPull[msg.deviceID],
-                  now() - requestedAt <= pullTimeout else { return }
-            pendingPull[msg.deviceID] = nil
-            let urls = apply(snap, hash: hash, from: msg.deviceName)
-            if pullOpen.remove(msg.deviceID) != nil { openFiles(urls) }
+            // Manual: apply a clip we explicitly requested (and only if the
+            // reply is recent — a pull whose reply was lost must NOT leave a
+            // latent permission that silently swallows the peer's next
+            // broadcast as if it were the requested clip)…
+            guard config.role.canReceive else { return }
+            if let requestedAt = pendingPull[msg.deviceID], now() - requestedAt <= pullTimeout {
+                pendingPull[msg.deviceID] = nil
+                let urls = apply(snap, hash: hash, from: msg.deviceName)
+                if pullOpen.remove(msg.deviceID) != nil { openFiles(urls) }
+                return
+            }
+            // …or, with "apply incoming automatically" on, any broadcast —
+            // same freshness/dedup guards as Mirror's receive path, but no
+            // relay: a Manual Mac never sends unasked.
+            guard config.autoApplyIncoming else { return }
+            if msg.identitySignature != nil, now() - msg.timestamp > replayWindow {
+                Log.trace("sync", "dropped stale signed clip (\(Int(now() - msg.timestamp))s old) from \(msg.deviceName)")
+                return
+            }
+            guard hash != lastHash else { return }
+            apply(snap, hash: hash, from: msg.deviceName)
         }
     }
 

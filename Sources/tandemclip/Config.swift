@@ -199,6 +199,14 @@ final class Config {
         }
     }
 
+    /// Apply incoming clips to this Mac's clipboard automatically even in
+    /// Manual mode (Mirror always does). Off by default — Manual means
+    /// pull-on-demand unless the user opts in.
+    var autoApplyIncoming: Bool {
+        get { defaults.bool(forKey: "autoApplyIncoming") }
+        set { set("autoApplyIncoming", newValue) }
+    }
+
     /// Transfer copied files by content. Off by default (opt-in; larger payloads).
     var syncFiles: Bool {
         get { defaults.bool(forKey: "syncFiles") }
