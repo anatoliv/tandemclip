@@ -49,7 +49,7 @@ struct AboutView: View {
         VStack(spacing: 11) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 88, height: 88)
-            Text("TandemClip").font(.system(size: 21, weight: .semibold))
+            Text("TandemClip").font(.system(size: 21, weight: .semibold, design: .rounded))
             Text("Version \(version) (\(build))").font(.callout).foregroundColor(.secondary)
             Text("Shares your clipboard between your Macs over your local network — copy on one, paste on another. End-to-end encrypted with a code only you hold. No cloud, no account.")
                 .font(.callout).foregroundColor(.secondary)
@@ -68,7 +68,7 @@ struct AboutView: View {
 // MARK: - Help
 
 struct HelpView: View {
-    private let accent = Color(NSColor(srgbRed: 224/255, green: 122/255, blue: 75/255, alpha: 1))
+    private let accent = Color.tandemAccent
     @StateObject private var search = HelpSearchModel()
     @State private var query = ""
 
@@ -160,7 +160,7 @@ struct HelpView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 52, height: 52)
             VStack(alignment: .leading, spacing: 2) {
-                Text("TandemClip Help").font(.system(size: 19, weight: .semibold))
+                Text("TandemClip Help").font(.system(size: 19, weight: .semibold, design: .rounded))
                 Text("Copy on one Mac, paste on another — here’s everything.")
                     .font(.system(size: 12.5)).foregroundColor(.secondary)
             }
