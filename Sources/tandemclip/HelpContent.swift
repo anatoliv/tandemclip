@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.2", date: "July 3, 2026",
+              highlight: "Help on the hover preview, too.",
+              changes: [
+                .init(.improved, "The hover preview card now has a ? that opens the “Hover previews & quick actions” article — help is a click away wherever you are in the picker."),
+              ]),
         .init(version: "0.22.1", date: "July 3, 2026",
               highlight: "Help, right where you are.",
               changes: [
