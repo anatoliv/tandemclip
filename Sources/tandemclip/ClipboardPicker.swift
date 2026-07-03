@@ -70,8 +70,8 @@ final class ClipboardPickerController {
             // Unpinned, the picker is a transient panel: clicking away (the
             // panel resigning key) dismisses it — which also guarantees Esc
             // works whenever the panel can hear keys at all. Pinned, it
-            // floats until unpinned or toggled away. Compose text survives a
-            // dismissal either way (the model keeps it).
+            // floats until unpinned or toggled away. A compose draft survives
+            // this hide (only Back/Cancel/Use clear it — see endCompose).
             NotificationCenter.default.addObserver(
                 forName: NSWindow.didResignKeyNotification, object: p, queue: .main
             ) { [weak self] _ in
@@ -297,10 +297,16 @@ final class PickerModel: ObservableObject {
 
     func startCompose() { composing = true; composeError = nil }
 
+    /// Leaving compose (Back / Cancel / Esc / after Use) discards the draft —
+    /// a fresh compose always starts empty. A click-away that merely hides the
+    /// panel does NOT come through here, so an accidental defocus keeps the
+    /// draft.
     func endCompose() {
         cleanupTask?.cancel()
         composeBusy = false
         composing = false
+        composeText = ""
+        composeOriginal = nil
         composeError = nil
         composeChanges = nil
     }
