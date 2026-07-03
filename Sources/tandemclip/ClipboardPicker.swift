@@ -44,6 +44,7 @@ final class ClipboardPickerController {
         model.selectedPresetID = config.aiSelectedPresetID
         model.aiConfigured = AIClient.fromConfig(config) != nil
         model.airDropAvailable = AirDropper.isAvailable
+        model.pinnedItems = engine.pins.compactMap(\.historyItem)
         ClipIndex.shared.index(engine.history)
 
         if panel == nil {
@@ -94,6 +95,7 @@ final class ClipboardPickerController {
         guard let panel, panel.isVisible, let model else { return }
         model.refresh(history: engine.history, peers: engine.syncablePeers(),
                       showCount: config.pickerShowCount, clipUsage: usageString())
+        model.pinnedItems = engine.pins.compactMap(\.historyItem)
         ClipIndex.shared.index(engine.history)
     }
 
@@ -149,6 +151,23 @@ final class ClipboardPickerController {
             self?.engine.onStatusChange?()   // menu state line + icon update
         }
         m.onPinnedChange = { [weak self] on in self?.config.pickerPinned = on }
+        m.onPin = { [weak self] item in
+            guard let self else { return }
+            if self.engine.pin(item) {
+                self.model?.flashDrop("Pinned — synced to your Macs and kept past restarts")
+            } else {
+                self.model?.flashDrop("Too large to pin (over the clip size limit)", isError: true)
+            }
+            self.refreshIfVisible()
+        }
+        m.onUnpin = { [weak self] hash in
+            self?.engine.unpin(hash: hash)
+            self?.refreshIfVisible()
+        }
+        m.onPickPinned = { [weak self] hash in
+            self?.engine.applyPinned(hash: hash)
+            self?.hideUnlessPinned()
+        }
         // AirDrop: hand the clip to the system sheet, then step aside (the
         // sheet is its own window; the picker closes unless pinned).
         m.onAirDrop = { [weak self] item in
@@ -344,6 +363,13 @@ final class PickerModel: ObservableObject {
     /// AirDrop availability — gates the share row action.
     @Published var airDropAvailable = false
     var onAirDrop: ((HistoryItem) -> Void)?
+
+    /// Pinned clips (persist + sync); displayed above RECENT.
+    @Published var pinnedItems: [HistoryItem] = []
+    var pinnedHashes: Set<String> { Set(pinnedItems.map(\.hash)) }
+    var onPin: ((HistoryItem) -> Void)?
+    var onUnpin: ((String) -> Void)?
+    var onPickPinned: ((String) -> Void)?
 
     var selectedPreset: AIPreset {
         presets.first { $0.id == selectedPresetID } ?? presets.first ?? AIPreset.bundled[0]
@@ -904,6 +930,26 @@ struct PickerView: View {
                         }
                         Spacer().frame(height: 8)
                     }
+                    if !model.pinnedItems.isEmpty, model.query.isEmpty {
+                        sectionHeader("PINNED")
+                        ForEach(model.pinnedItems) { item in
+                            HistoryRow(item: item, index: -1, selected: false,
+                                       onDelete: { model.onUnpin?(item.hash) },
+                                       onCleanup: nil,
+                                       onAirDrop: model.airDropAvailable
+                                           ? { model.onAirDrop?(item) } : nil,
+                                       deleteSymbol: "pin.slash",
+                                       deleteHelp: "Unpin on all Macs")
+                                .contentShape(Rectangle())
+                                .onTapGesture { model.onPickPinned?(item.hash) }
+                                .onDrag { DragOutStager.provider(for: item) }
+                                .onHover { inside in
+                                    if inside { model.beginHover(item) } else { model.endHover(item) }
+                                }
+                                .handCursorOnHover()
+                        }
+                        Spacer().frame(height: 6)
+                    }
                     sectionHeader("RECENT")
                     if model.grouped.isEmpty {
                         Text(model.query.isEmpty ? "No clips yet — copy something, or drop files here to share." : "No matches.")
@@ -925,7 +971,9 @@ struct PickerView: View {
                                                    && (e.item.category == .text || e.item.category == .richText)
                                                    ? { model.cleanUpItem(e.item) } : nil,
                                                onAirDrop: model.airDropAvailable
-                                                   ? { model.onAirDrop?(e.item) } : nil)
+                                                   ? { model.onAirDrop?(e.item) } : nil,
+                                               onPin: model.pinnedHashes.contains(e.item.hash)
+                                                   ? nil : { model.onPin?(e.item) })
                                         .contentShape(Rectangle())
                                         .onTapGesture { model.onPickHistory(e.item.hash) }
                                         // Drag a clip out to Finder or any app.
@@ -1240,6 +1288,12 @@ private struct HistoryRow: View {
     var onCleanup: (() -> Void)?
     /// AirDrop action — nil hides the share button (AirDrop unavailable).
     var onAirDrop: (() -> Void)?
+    /// Pin action — nil when already pinned (or for pinned rows themselves).
+    var onPin: (() -> Void)?
+    /// The trailing destructive-ish button is delete for history rows and
+    /// unpin for pinned rows.
+    var deleteSymbol = "xmark.circle.fill"
+    var deleteHelp = "Delete from history on all Macs"
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
@@ -1281,15 +1335,25 @@ private struct HistoryRow: View {
                     .buttonStyle(.plain)
                     .help("Clean up with AI (opens in compose)")
                 }
+                if let onPin {
+                    Button(action: onPin) {
+                        Image(systemName: "pin")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(.secondary)
+                            .frame(width: 17, height: 17)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Pin — keep past restarts, on every Mac")
+                }
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: deleteSymbol)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                         .frame(width: 17, height: 17)
                 }
                 .buttonStyle(.plain)
-                .help("Delete from history on all Macs")
-            } else if index < 9 {
+                .help(deleteHelp)
+            } else if index >= 0 && index < 9 {
                 Text("⌘\(index + 1)").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary.opacity(0.7))
             }
         }

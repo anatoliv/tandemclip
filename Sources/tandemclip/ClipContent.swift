@@ -27,7 +27,7 @@ enum ClipKind: String, Codable, CaseIterable {
 }
 
 /// One representation on the wire: raw bytes base64-encoded.
-struct ClipPart: Codable {
+struct ClipPart: Codable, Equatable {
     let kind: ClipKind
     let b64: String
 }
@@ -37,7 +37,7 @@ struct ClipFile {
     let name: String
     let data: Data
 }
-struct ClipFileWire: Codable {
+struct ClipFileWire: Codable, Equatable {
     let name: String
     let b64: String
 }
