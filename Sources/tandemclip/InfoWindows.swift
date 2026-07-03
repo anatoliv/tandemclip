@@ -102,6 +102,8 @@ struct HelpView: View {
                     row("Files", "Picking a file copies it to the clipboard and opens it in its default app.")
                     row("Drop to share", "Drag files from Finder onto the picker to send them to your other Macs right away — no need to copy them first.")
                     row("Delete everywhere", "Hover a clip and click ✕ (or press ⌘⌫) to remove it from history on every Mac — including any clipboard or received file still holding it.")
+                    row("Privacy hold", "The ✋ button in the picker footer stops anything you copy from leaving this Mac — no broadcasts, no pull serving, no previews — until you switch it off. Receiving keeps working, and the menu-bar icon shows a raised hand while it's on.")
+                    row("Pin", "The 📌 button keeps the picker open after picking a clip — handy when pasting several things in a row. Esc still closes it.")
                 }
 
                 card("Private by design", "lock.shield") {
