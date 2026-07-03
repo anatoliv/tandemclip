@@ -182,11 +182,11 @@ final class ClipboardPickerController {
     private func handleDrop(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         guard !config.privacyHold else {
-            model?.flashDrop("Privacy hold is on — nothing is shared.")
+            model?.flashDrop("Privacy hold is on — nothing is shared.", isError: true)
             return
         }
         guard config.role.canSend else {
-            model?.flashDrop("This Mac is receive-only — can’t share.")
+            model?.flashDrop("This Mac is receive-only — can’t share.", isError: true)
             return
         }
         // Honest reporting: say what was actually sent, to how many Macs, and
@@ -196,7 +196,7 @@ final class ClipboardPickerController {
         if outcome.sent == 0 {
             model?.flashDrop(outcome.skipped > 0
                 ? "Nothing sent — items were over the size limit or unreadable"
-                : "No connected Macs to share with")
+                : "No connected Macs to share with", isError: true)
         } else {
             var msg = "Shared \(outcome.sent) file\(outcome.sent == 1 ? "" : "s")"
             msg += outcome.peers > 0 ? " to \(outcome.peers) Mac\(outcome.peers == 1 ? "" : "s")" : " — no Macs connected right now"
@@ -461,14 +461,17 @@ final class PickerModel: ObservableObject {
         self.onClose = onClose
     }
 
-    /// Briefly show a status line after a drop, then clear it.
-    func flashDrop(_ message: String) {
+    /// Briefly show a status line after a drop/use, then clear it. Failures
+    /// render neutral, never accent-colored — accent means success here.
+    func flashDrop(_ message: String, isError: Bool = false) {
         dropMessage = message
+        dropIsError = isError
         dropClear?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.dropMessage = nil }
         dropClear = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
+    @Published private(set) var dropIsError = false
 
     /// Full reset (on open).
     func reload(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int, clipUsage: String) {
@@ -742,6 +745,14 @@ struct PickerView: View {
                     SearchCaret()
                 }
                 Spacer(minLength: 8)
+                if !model.query.isEmpty {
+                    Button { model.query = ""; model.selection = 0 } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .imageScale(.small).foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                }
                 ForEach(PickerModel.ContentFilter.allCases) { f in filterChip(f) }
             }
             // 14pt horizontal aligns the search icon with row content below.
@@ -801,7 +812,7 @@ struct PickerView: View {
              .onChange(of: model.selection) { sel in
                  let f = model.filtered
                  guard f.indices.contains(sel) else { return }
-                 withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(f[sel].id, anchor: .center) }
+                 withAnimation(Tokens.Motion.microCurve) { proxy.scrollTo(f[sel].id, anchor: .center) }
              }
             }
             }
@@ -848,9 +859,9 @@ struct PickerView: View {
         .overlay(alignment: .bottomTrailing) {
             if let item = model.hoverItem { PreviewCard(item: item) }
         }
-        .animation(.easeOut(duration: 0.15), value: dropTargeted)
-        .animation(.easeOut(duration: 0.15), value: model.dropMessage)
-        .animation(.easeOut(duration: 0.12), value: model.hoverItem?.id)
+        .animation(Tokens.Motion.paneCurve, value: dropTargeted)
+        .animation(Tokens.Motion.paneCurve, value: model.dropMessage)
+        .animation(Tokens.Motion.microCurve, value: model.hoverItem?.id)
     }
 
     /// Compose mode: write/paste text, optionally AI-clean it, copy the result.
@@ -950,7 +961,7 @@ struct PickerView: View {
     /// Full-panel affordance shown while files are dragged over the picker.
     private var dropOverlay: some View {
         ZStack {
-            Color.accentColor.opacity(0.08)
+            Color.tandemAccent.opacity(0.08)
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
                 .foregroundColor(.accentColor.opacity(0.6))
@@ -959,7 +970,7 @@ struct PickerView: View {
                 Image(systemName: "arrow.up.doc.on.clipboard").font(.system(size: 27))
                 Text("Drop to share with your Macs").font(.system(size: 13.5, weight: .medium))
             }
-            .foregroundColor(.accentColor)
+            .foregroundColor(.tandemAccent)
         }
         .allowsHitTesting(false)
     }
@@ -970,7 +981,9 @@ struct PickerView: View {
             .font(.system(size: 11.5, weight: .medium))
             .foregroundColor(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(Capsule().fill(Color.accentColor.opacity(0.92)))
+            .background(Capsule().fill(model.dropIsError
+                ? Color(white: 0.25).opacity(0.94)          // neutral notice — never accent
+                : Color.tandemAccent.opacity(0.92)))
             .padding(.bottom, 44)
             .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -999,7 +1012,7 @@ struct PickerView: View {
                 .font(.system(size: 10, weight: active ? .semibold : .regular))
                 .foregroundColor(active ? .white : .secondary)
                 .frame(width: 22, height: 17)
-                .background(active ? Color.accentColor : Color.secondary.opacity(0.12))
+                .background(active ? Color.tandemAccent : Color.secondary.opacity(0.12))
                 .cornerRadius(4)
         }
         .buttonStyle(.plain)
@@ -1033,7 +1046,7 @@ struct PickerView: View {
         }
         .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 1)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.toggleGroup(group.source) } }
+        .onTapGesture { withAnimation(Tokens.Motion.microCurve) { model.toggleGroup(group.source) } }
         .handCursorOnHover()
     }
 
@@ -1062,20 +1075,20 @@ struct PickerView: View {
         }
         .padding(.leading, 29).padding(.top, 4).padding(.bottom, 1)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.toggleSub(source, section.title) } }
+        .onTapGesture { withAnimation(Tokens.Motion.microCurve) { model.toggleSub(source, section.title) } }
         .handCursorOnHover()
     }
     /// Small stateful icon button for the footer (privacy hold, pin). Accent
     /// tint + filled symbol when active so the state reads at a glance.
     private func footerToggle(_ symbol: String, active: Bool, help: String,
                               action: @escaping () -> Void) -> some View {
-        Button(action: { withAnimation(.easeOut(duration: 0.12)) { action() } }) {
+        Button(action: { withAnimation(Tokens.Motion.microCurve) { action() } }) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(active ? .white : .secondary)
                 .frame(width: 24, height: 18)
                 .background(RoundedRectangle(cornerRadius: 4)
-                    .fill(active ? Color.accentColor : Color.secondary.opacity(0.12)))
+                    .fill(active ? Color.tandemAccent : Color.secondary.opacity(0.12)))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -1095,7 +1108,7 @@ struct PickerView: View {
 /// re-rendered the picker and made the list flicker; a steady bar avoids that.
 private struct SearchCaret: View {
     var body: some View {
-        Rectangle().fill(Color.accentColor.opacity(0.8)).frame(width: 1.5, height: 14)
+        Rectangle().fill(Color.tandemAccent.opacity(0.8)).frame(width: 1.5, height: 14)
     }
 }
 
@@ -1147,12 +1160,12 @@ private struct HistoryRow: View {
         // Selection (keyboard/⌘n target) is the solid accent fill and stays put
         // until the user picks elsewhere; hover is its own lighter state — a
         // faint wash + hairline accent outline — so the two never fight.
-        .background(selected ? Color.accentColor.opacity(0.22)
+        .background(selected ? Color.tandemAccent.opacity(0.22)
                     : hovering ? Color.secondary.opacity(0.07) : Color.clear)
         .overlay {
             if hovering && !selected {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                    .strokeBorder(Color.tandemAccent.opacity(0.35), lineWidth: 1)
             }
         }
         .cornerRadius(6).padding(.horizontal, 6)
