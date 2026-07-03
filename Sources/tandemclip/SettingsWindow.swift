@@ -237,6 +237,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             // user can size it to taste and the frame is remembered.
             w.styleMask = [.titled, .closable, .resizable]
             w.minSize = NSSize(width: 680, height: 480)
+            // Default 20% roomier than the minimum; the autosaved frame wins
+            // on later opens once the user resizes.
+            w.setContentSize(NSSize(width: 816, height: 576))
             w.setFrameAutosaveName("TandemClipSettings")
             w.isReleasedWhenClosed = false
             w.delegate = self
@@ -354,9 +357,13 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
-            Section("Startup") {
+            Section {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Toggle("Start paused", isOn: $model.startPaused)
+            } header: {
+                Text("Startup")
+            } footer: {
+                Text("Open TandemClip automatically when you log in. \"Start paused\" launches it with syncing off until you hit Resume in the menu — useful if you don't want anything shared right after boot.")
             }
             Section {
                 TextField("Display name", text: $model.deviceDisplayName,
@@ -381,7 +388,7 @@ struct SettingsView: View {
 
     private var syncTab: some View {
         Form {
-            Section("Behavior") {
+            Section {
                 SettingsDropdown(title: "Mode", options: [
                     (SyncMode.mirror, "Mirror — auto-sync"),
                     (SyncMode.manual, "Manual — pull on demand"),
@@ -396,6 +403,10 @@ struct SettingsView: View {
                     (PreviewLevel.preview, "Live text preview"),
                     (PreviewLevel.names, "Names only"),
                 ], selection: $model.previewLevel)
+            } header: {
+                Text("Behavior")
+            } footer: {
+                Text("Mirror sends every copy to your other Macs the moment you copy it; Manual shares only when a Mac explicitly pulls. The role limits direction — a receive-only Mac never sends anything. Peer preview controls how much other Macs can see about your current clip before pulling it: its age and size, a snippet of the text, or nothing but your Mac's name.")
             }
             Section {
                 SettingsDropdown(title: "Max clipboard size",
