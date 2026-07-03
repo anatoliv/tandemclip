@@ -79,6 +79,10 @@ final class MenuBarController: NSObject {
         if config.networkAllowlistEnabled, !NetworkGuard.syncAllowed(config) {
             menu.addItem(disabled: "⚠︎ Paused — Wi-Fi not allowed/verified")
         }
+        if let held = engine.heldSecret {
+            menu.addItem(disabled: "⚠︎ Copy held — looks like a \(held.reason)")
+            menu.addItem(action: "Send Held Clip Anyway", selector: #selector(releaseHeldSecret), target: self)
+        }
 
         // Manual mode: pull a specific peer's clipboard.
         if config.mode == .manual {
@@ -176,6 +180,8 @@ final class MenuBarController: NSObject {
 
     @objc private func setMirror() { config.mode = .mirror; refresh() }
     @objc private func setManual() { config.mode = .manual; refresh() }
+
+    @objc private func releaseHeldSecret() { engine.releaseHeldSecret() }
 
     @objc private func togglePause() {
         config.setPaused(!config.paused)

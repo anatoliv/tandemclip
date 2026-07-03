@@ -233,12 +233,47 @@ final class SyncEngine {
 
     // MARK: - Local clipboard changed
 
+    /// A local copy the secret guard held back from syncing (cleared by the
+    /// next copy or by releaseHeldSecret). Pull serving skips it too.
+    private(set) var heldSecret: (hash: String, reason: String)?
+
+    /// "Send anyway": lift the hold and, in Mirror mode, broadcast the clip
+    /// that was held (Manual peers can now pull it).
+    func releaseHeldSecret() {
+        guard let held = heldSecret, held.hash == localHash else { heldSecret = nil; return }
+        heldSecret = nil
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
+            onStatusChange?(); return
+        }
+        if config.mode == .mirror, let msg = clipMessage(type: .clip) {
+            lastHash = held.hash
+            Log.trace("sync", "secret hold released — broadcasting")
+            transport.broadcast(msg)
+            lastSyncSource = "\(config.deviceName) (local)"
+        } else {
+            transport.broadcast(makeAnnounce())
+        }
+        onStatusChange?()
+    }
+
     private func handleLocal(_ snap: ClipSnapshot, _ hash: String) {
         localSnapshot = snap
         localHash = hash
         localTimestamp = now()
         clipOrigin = nil   // copied here
+        heldSecret = nil   // every new copy is re-assessed
         recordHistory(snap, hash, source: config.deviceName)
+
+        // Secret guard: a text clip that looks like a credential is captured
+        // (history, snapshot) but held from ALL sending until released — the
+        // backstop for apps that don't set the concealed-type marker.
+        if config.secretGuardEnabled, snap.files.isEmpty,
+           let text = snap.plainText, let finding = SecretGuard.assess(text) {
+            heldSecret = (hash, finding.reason)
+            Log.trace("sync", "secret guard held clip (\(finding.reason))")
+            onStatusChange?()
+            return
+        }
 
         guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
             onStatusChange?()
@@ -336,6 +371,11 @@ final class SyncEngine {
             lastRequestServed = lastRequestServed.filter { t - $0.value < 60 }
             guard t - (lastRequestServed[msg.deviceID] ?? 0) >= 1 else { return }
             lastRequestServed[msg.deviceID] = t
+            // Never serve a clip the secret guard is holding.
+            guard heldSecret?.hash != localHash else {
+                Log.trace("sync", "pull refused — clip held by secret guard")
+                return
+            }
             guard let reply = clipMessage(type: .clip) else { return }
             Log.trace("sync", "serving pull -> \(msg.deviceName)")
             transport.send(reply, to: msg.deviceID)
@@ -529,6 +569,7 @@ final class SyncEngine {
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
         guard config.role.canSend, !config.privacyHold, config.previewLevel != .names,
+              heldSecret?.hash != localHash,
               let h = localHash, let snap = localSnapshot else {
             config.identity.sign(&m)
             return m
