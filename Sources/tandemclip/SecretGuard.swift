@@ -17,6 +17,7 @@ enum SecretGuard {
         if let f = knownKeyShape(trimmed) { return f }
         if let f = privateKeyBlock(trimmed) { return f }
         if let f = jwt(trimmed) { return f }
+        if let f = credentialAssignment(trimmed) { return f }
         if let f = paymentCard(trimmed) { return f }
         if let f = iban(trimmed) { return f }
         if let f = highEntropyToken(trimmed) { return f }
@@ -27,19 +28,39 @@ enum SecretGuard {
     private static func knownKeyShape(_ text: String) -> Finding? {
         let patterns: [(String, String)] = [
             (#"\bsk-[A-Za-z0-9_-]{20,}"#, "API key"),
+            (#"\b(sk|rk)_live_[A-Za-z0-9]{20,}"#, "Stripe live key"),
             (#"\bghp_[A-Za-z0-9]{20,}"#, "GitHub token"),
             (#"\bgithub_pat_[A-Za-z0-9_]{20,}"#, "GitHub token"),
             (#"\bglpat-[A-Za-z0-9_-]{20,}"#, "GitLab token"),
             (#"\bxox[bpars]-[A-Za-z0-9-]{10,}"#, "Slack token"),
             (#"\bAKIA[0-9A-Z]{16}\b"#, "AWS access key"),
             (#"\bAIza[A-Za-z0-9_-]{30,}"#, "Google API key"),
+            (#"\bya29\.[A-Za-z0-9_-]{20,}"#, "Google OAuth token"),
             (#"\bnpm_[A-Za-z0-9]{30,}"#, "npm token"),
             (#"\bshpat_[a-f0-9]{32,}"#, "Shopify token"),
+            (#"\bhf_[A-Za-z0-9]{30,}"#, "Hugging Face token"),
+            (#"\bdop_v1_[a-f0-9]{60,}"#, "DigitalOcean token"),
         ]
         for (pattern, label) in patterns where text.range(of: pattern, options: .regularExpression) != nil {
             return Finding(reason: label)
         }
         return nil
+    }
+
+    /// `PASSWORD = "value"` / `api_key: value` / `secret=value` — the common
+    /// way a credential leaks inside otherwise-ordinary text (env files,
+    /// config snippets). Needs a secret-y key name AND a non-trivial value.
+    private static func credentialAssignment(_ text: String) -> Finding? {
+        // Lookbehind for a non-alphanumeric so env-var style (DB_PASSWORD)
+        // matches while a real word (mypassword) does not.
+        let pattern = #"(?i)(?<![A-Za-z0-9])(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\s*[:=]\s*["']?[^\s"']{8,}"#
+        guard text.range(of: pattern, options: .regularExpression) != nil else { return nil }
+        // Don't trip on obvious placeholders.
+        let lower = text.lowercased()
+        for placeholder in ["your_", "xxxx", "<your", "example", "changeme", "placeholder", "•••", "****"] {
+            if lower.contains(placeholder) { return nil }
+        }
+        return Finding(reason: "credential in text")
     }
 
     private static func privateKeyBlock(_ text: String) -> Finding? {

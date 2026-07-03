@@ -64,3 +64,21 @@ final class SecretGuardTests: XCTestCase {
         engine.config.secretGuardEnabled = true
     }
 }
+
+extension SecretGuardTests {
+    func testExpandedProviderKeysAndAssignments() {
+        XCTAssertEqual(SecretGuard.assess("sk_live_abcdefghijklmnopqrstuvwx")?.reason, "Stripe live key")
+        XCTAssertEqual(SecretGuard.assess("hf_abcdefghijklmnopqrstuvwxyz012345")?.reason, "Hugging Face token")
+
+        // Credential-in-text (env/config leak) — the prose-secret case.
+        XCTAssertEqual(SecretGuard.assess("DB_PASSWORD=hunter2SuperLong")?.reason, "credential in text")
+        XCTAssertEqual(SecretGuard.assess("api_key: aBcDeF123456ghijk")?.reason, "credential in text")
+        XCTAssertEqual(SecretGuard.assess("client_secret = \"s3cr3t-value-here\"")?.reason, "credential in text")
+
+        // Placeholders and short values must NOT trip.
+        XCTAssertNil(SecretGuard.assess("password: your_password_here"))
+        XCTAssertNil(SecretGuard.assess("api_key = <YOUR_KEY>"))
+        XCTAssertNil(SecretGuard.assess("password: 1234"), "too short to be a real one")
+        XCTAssertNil(SecretGuard.assess("the password is on the whiteboard"))
+    }
+}
