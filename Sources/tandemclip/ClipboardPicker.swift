@@ -1430,17 +1430,17 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
-                // Equal 17pt frames put the action icons on one optical center.
-                // The share glyph's up-arrow and the pin's thumbtack head both
-                // read high, so each gets a small nudge down to sit level with
-                // the geometrically-centered ✕ (offsets picked from a
-                // center-guide render).
+                // Equal 17pt frames put the action icons on one row. The share
+                // glyph's weight is in its box (the arrow above is thin), so
+                // bounding-box centering makes the box sit LOW — it's raised to
+                // put the box on the ✕'s center. Offsets picked from a
+                // full-row center-guide render.
                 if let onAirDrop {
                     Button(action: onAirDrop) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
-                            .offset(y: 1.5)
+                            .offset(y: -1)
                             .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
