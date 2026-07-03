@@ -77,11 +77,19 @@ struct HelpView: View {
     static let welcomeID = "welcome"
     /// Sidebar-selection id for the keyboard-shortcuts reference.
     static let shortcutsID = "shortcuts"
+    /// Sidebar-selection id for the What's New release history.
+    static let whatsNewID = "whatsnew"
 
     private let accent = Color.tandemAccent
     @StateObject private var search = HelpSearchModel()
     @State private var query = ""
-    @State private var selection: String? = HelpView.welcomeID
+    @State private var selection: String?
+
+    /// Opens the Help window to a specific sidebar item (a topic id or one of
+    /// the special ids). Defaults to the Welcome landing.
+    init(initialSelection: String = HelpView.welcomeID) {
+        _selection = State(initialValue: initialSelection)
+    }
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -114,6 +122,7 @@ struct HelpView: View {
                     Section("Start here") {
                         navRow(Self.welcomeID, "Welcome to TandemClip", "hand.wave")
                         navRow(Self.shortcutsID, "Keyboard shortcuts", "command.square")
+                        navRow(Self.whatsNewID, "What's New", "sparkles")
                     }
                     ForEach(HelpCatalog.categories, id: \.name) { cat in
                         Section(cat.name) {
@@ -186,6 +195,8 @@ struct HelpView: View {
             welcomeDetail
         } else if selection == Self.shortcutsID {
             shortcutsDetail
+        } else if selection == Self.whatsNewID {
+            whatsNewDetail
         } else if let topic = HelpCatalog.topics.first(where: { $0.id == selection }) {
             topicDetail(topic)
         } else {
@@ -258,6 +269,73 @@ struct HelpView: View {
                     .font(.system(size: 12)).foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private var whatsNewDetail: some View {
+        detailScaffold(
+            title: "What's New",
+            symbol: "sparkles",
+            badge: "Release notes"
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Every version of TandemClip, newest first.")
+                    .font(.system(size: 12.5)).foregroundColor(.secondary)
+                ForEach(Array(HelpCatalog.releases.enumerated()), id: \.element.id) { index, release in
+                    releaseCard(release, isLatest: index == 0)
+                }
+            }
+            .frame(maxWidth: 620, alignment: .leading)
+        }
+    }
+
+    private func releaseCard(_ release: HelpRelease, isLatest: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Text("Version \(release.version)").font(.system(size: 15, weight: .bold))
+                if isLatest {
+                    Text("LATEST")
+                        .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Tokens.positive, in: Capsule())
+                }
+                Spacer()
+                Text(release.date).font(.system(size: 12)).foregroundColor(.secondary)
+            }
+            Text(release.highlight)
+                .font(.system(size: 12.5)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(release.changes) { change in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text(change.kind.label.uppercased())
+                            .font(.system(size: 9, weight: .bold)).tracking(0.4)
+                            .foregroundColor(tint(for: change.kind))
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(tint(for: change.kind).opacity(0.14), in: Capsule())
+                            .frame(width: 68, alignment: .leading)
+                            .padding(.top, 1)
+                        Text(change.text)
+                            .font(.system(size: 12.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.secondary.opacity(0.12)))
+    }
+
+    private func tint(for kind: ReleaseChangeKind) -> Color {
+        switch kind {
+        case .added:    return Tokens.positive
+        case .improved: return accent
+        case .fixed:    return .orange
         }
     }
 
