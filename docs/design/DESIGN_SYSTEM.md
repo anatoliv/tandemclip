@@ -108,10 +108,24 @@ No hover elevation (flat language). Respect Reduce Motion where practical.
 |---------|-------|
 | `Theme.swift` tokens | ✅ full scale (colors, radius, space, type, icons, motion) |
 | Help / About (`InfoWindows.swift`) | ✅ tokenized — the reference implementation |
-| `SettingsWindow.swift` | ⏳ still uses raw sizes/radii — migrate to `Tokens` |
-| `ClipboardPicker.swift` | ⏳ still uses raw sizes/radii — migrate to `Tokens` |
+| `SettingsWindow.swift` | ✅ tokenized; controls accent-tinted |
+| `ClipboardPicker.swift` | ◐ radii + accent tokenized; compact type is a tracked exception (below) |
+
+### The picker's compact type — a deliberate, tracked exception
+
+`ClipboardPicker.swift` is the densest surface in the app and uses a finer type
+ramp than `FontScale` (many `10.5` / `9.5` / `11.5` sizes), hand-tuned so clip
+rows, chips, and hover previews stay legible without truncating in their
+fixed-width frames. Snapping these to the coarse scale risks reflowing that
+dense layout, and the picker **cannot be render-verified offline** (its models
+pull in the whole sync/crypto stack) — nor should it be live-driven on a
+primary Mac. So its **radii and accent are tokenized; its font sizes are left
+as-is pending a dedicated pass** that adds an in-app debug render hook and
+verifies each picker state (row, group header, hover preview, compose) before
+snapping. Until then, treat the picker's `.system(size:)` values as intentional.
 
 **Migration rule:** when you next touch a view, replace its raw `cornerRadius`,
 `.system(size:)`, and `.padding()` numbers with the nearest `Tokens` value.
 Don't introduce a new raw number — if the scale lacks it, add a named token
-here and in `Theme.swift` first.
+here and in `Theme.swift` first. (The picker's compact type is the one
+documented exception.)
