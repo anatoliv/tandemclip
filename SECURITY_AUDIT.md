@@ -2,7 +2,7 @@
 
 **Scope:** Swift source in `Sources/tandemclip`, packaging, appcast, web serving.
 **Threat model:** attacker on the same LAN; a rogue/revoked device that once knew the pairing code; a network MITM against the update channel; another local user on the same Mac.
-**Latest review:** 2026-07-03, against v0.14.0 (build 31).
+**Latest review:** 2026-07-03, against v0.17.0 (build 35).
 
 ## Summary
 
@@ -112,6 +112,58 @@ the clip whose URLs are currently on the pasteboard.
 **Help search (v0.14.0).** Semantic matching runs entirely on-device
 (NaturalLanguage embeddings) — help queries generate no network traffic.
 
+## v0.17.0 review pass (build 35) — intelligence bundle
+
+Twelve features landed at once; each new mechanism was reviewed as built.
+No open Critical/High.
+
+**Secret guard.** Local-only heuristics (known credential prefixes,
+private-key blocks, JWTs, Luhn-valid card numbers, mod-97-valid IBANs, lone
+high-entropy tokens) hold a text copy from broadcast, pull serving, AND
+announce metadata until explicitly released from the menu; the next copy
+clears the hold. Secret-held clips also never feed AI features or pin
+broadcasts. Default on; heuristics are documented as best-effort.
+
+**Pinned clips (`pin`/`unpin` messages).** Same guard stack as delete:
+valid signature required, 10-min freshness, seen-signature replay cache
+(doubles as relay-loop stop). `pin` is content delivery → gated on
+receiveAllowed with a size cap (2× local clip limit) and a 20-pin cap;
+`unpin` is data-minimizing → honored from any trusted peer. Pins persist in
+a 0600 `pins.json`. Delete-everywhere unpins.
+
+**Chunked transfers (`chunk` messages).** Slices are individually signed —
+`chunkIndex`/`chunkTotal`/`chunkData` are inside the signed payload, so a
+relay can't reorder or substitute bytes undetected (tested). Reassembly is
+bounded: ≤256 slices, per-transfer byte cap of 3× the local clip limit,
+120-second staleness sweep, replay-guarded slices. The reassembled inner
+message then faces the ENTIRE normal receive path — its own signature,
+trust, freshness, and dedup — so chunking adds transport capacity without
+adding a trust shortcut.
+
+**Services entry.** "Send to TandemClip" hands selected text/files to the
+same explicit-share paths as drop-to-share (role/pause/privacy-hold/network
+gates, size caps). Input arrives via the system Services pasteboard only on
+user invocation; nothing is registered for automatic invocation.
+
+**On-device intelligence (ClipIndex).** Embeddings (NaturalLanguage) and
+OCR (Vision, in-process image decode of clips we already hold) never leave
+the Mac. OCR output is treated as clip-derived text: searchable locally,
+offered to quick actions, and included in Ask context only when the user
+invokes AI.
+
+**AI-on-receive (opt-in).** Smart titles and incoming-clip translation send
+clip text to the user-configured endpoint automatically — both default OFF,
+labeled as such in Settings, blocked during privacy hold, and never run on
+secret-held clips. Ask/Summarize remain user-invoked. Model output is
+sandboxed to display surfaces (labels are sanitized + length-capped so a
+runaway response can't flood the picker; translations/answers render in the
+preview/compose only).
+
+**Drag-out / quick actions.** Save-to-Downloads reuses the received-file
+basename defusing; staged drag-out files live in per-user temp with hourly
+sweeps. "Open link" launches URLs from clip content on explicit click —
+same trust as the user pasting the link themselves.
+
 ## Residual notes (accepted / low)
 
 - **Concealed-type filtering (9)** still depends on source apps setting the nspasteboard markers; apps that don't will have secrets synced. Inherent to the convention. Now stated plainly in the Help window and README.
@@ -119,6 +171,8 @@ the clip whose URLs are currently on the pasteboard.
 - **Origin HTTP (8)** relies on the external proxy for TLS termination; the fronting proxy MUST enforce HTTPS + HTTP→HTTPS redirect for `SUFeedURL`. Update integrity is EdDSA-gated regardless, but plain HTTP would let a MITM withhold/stall security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`.
 - **Trusted-peer DoS.** A peer holding the PSK can still open up to 16 connections and push frames at the per-connection rate cap; bounded, and outside the "unpaired attacker" threat model.
 - **AI endpoint trust.** With AI cleanup enabled, composed/cleaned text is disclosed to whatever endpoint the user configures — that third party is chosen and trusted by the user (local Ollama/LM Studio keeps it on-machine). TLS is enforced off-LAN; content policy at the provider is out of scope.
+- **Secret-guard heuristics are best-effort.** Pattern/entropy detection misses secrets that look like prose and can false-positive on random-looking IDs (one click to release). It narrows, not closes, the unmarked-secret gap.
+- **Pins/chunks require current builds mesh-wide.** Older peers ignore the new message types safely but won't receive pins or >25 MB clips until updated.
 - **QuickLook parser surface.** Preview generation feeds attacker-controllable bytes to Apple's QL extensions. They are sandboxed and out-of-process, and patched by macOS updates, but the parser surface itself is Apple's, not ours.
 
 ## What's done well (keep)

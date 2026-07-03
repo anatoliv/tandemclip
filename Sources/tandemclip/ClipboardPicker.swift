@@ -44,6 +44,8 @@ final class ClipboardPickerController {
         model.selectedPresetID = config.aiSelectedPresetID
         model.aiConfigured = AIClient.fromConfig(config) != nil
         model.airDropAvailable = AirDropper.isAvailable
+        model.pinnedItems = engine.pins.compactMap(\.historyItem)
+        ClipIndex.shared.index(engine.history)
 
         if panel == nil {
             let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
@@ -93,6 +95,8 @@ final class ClipboardPickerController {
         guard let panel, panel.isVisible, let model else { return }
         model.refresh(history: engine.history, peers: engine.syncablePeers(),
                       showCount: config.pickerShowCount, clipUsage: usageString())
+        model.pinnedItems = engine.pins.compactMap(\.historyItem)
+        ClipIndex.shared.index(engine.history)
     }
 
     func hide() { panel?.orderOut(nil) }
@@ -134,6 +138,11 @@ final class ClipboardPickerController {
             self?.config.collapsedGroups = groups.sorted()
             self?.config.collapsedSubgroups = subs.sorted()
         }
+        wireClipIndex(m)
+        m.translationLookup = { [weak self] hash in
+            let t = self?.engine.translations[hash]
+            return (t?.isEmpty ?? true) ? nil : t
+        }
         // Privacy hold + pin: seeded from config, persisted on toggle.
         m.privacyHold = config.privacyHold
         m.pinned = config.pickerPinned
@@ -142,6 +151,23 @@ final class ClipboardPickerController {
             self?.engine.onStatusChange?()   // menu state line + icon update
         }
         m.onPinnedChange = { [weak self] on in self?.config.pickerPinned = on }
+        m.onPin = { [weak self] item in
+            guard let self else { return }
+            if self.engine.pin(item) {
+                self.model?.flashDrop("Pinned — synced to your Macs and kept past restarts")
+            } else {
+                self.model?.flashDrop("Too large to pin (over the clip size limit)", isError: true)
+            }
+            self.refreshIfVisible()
+        }
+        m.onUnpin = { [weak self] hash in
+            self?.engine.unpin(hash: hash)
+            self?.refreshIfVisible()
+        }
+        m.onPickPinned = { [weak self] hash in
+            self?.engine.applyPinned(hash: hash)
+            self?.hideUnlessPinned()
+        }
         // AirDrop: hand the clip to the system sheet, then step aside (the
         // sheet is its own window; the picker closes unless pinned).
         m.onAirDrop = { [weak self] item in
@@ -170,6 +196,47 @@ final class ClipboardPickerController {
                            .init(role: .user, content: capped)])
         }
         m.onPresetSelect = { [weak self] id in self?.config.aiSelectedPresetID = id }
+        // Ask: retrieve the top semantic matches (plus recency fallback) and
+        // answer ONLY from them — a miniature of tonebox's Ask pane.
+        m.makeAskStream = { [weak self] question in
+            guard let self, let client = AIClient.fromConfig(self.config) else { return nil }
+            var items = ClipIndex.shared.topMatches(for: question, limit: 5)
+                .compactMap { match in self.engine.history.first { $0.hash == match.hash } }
+            if items.count < 3 {
+                for it in self.engine.history.prefix(6)
+                where !items.contains(where: { $0.hash == it.hash }) { items.append(it) }
+                items = Array(items.prefix(6))
+            }
+            guard !items.isEmpty else { return nil }
+            let context = items.enumerated().map { i, it -> String in
+                let body = it.snapshot.plainText ?? ClipIndex.shared.ocrText(for: it.hash) ?? it.label
+                return "[\(i + 1)] from \(it.source): \(String(body.prefix(1500)))"
+            }.joined(separator: "\n\n")
+            let system = """
+                You answer questions using ONLY the user's clipboard clips \
+                provided below. If the answer is not in the clips, say so \
+                plainly. Be brief and direct; cite clip numbers like [2] when \
+                helpful. No preamble.
+                """
+            let stream = AIClient.streamWithFallback(
+                primary: client, fallback: AIClient.fallbackFromConfig(self.config),
+                messages: [.init(role: .system, content: system),
+                           .init(role: .user, content: "QUESTION: \(question)\n\nCLIPS:\n\(context)")])
+            return (stream, items.map { String($0.label.prefix(28)) })
+        }
+
+        // Preview-card summaries ride the Summarize preset (no auto-tone or
+        // changelog — a summary is an annotation, not a rewrite).
+        m.makeSummaryStream = { [weak self] text in
+            guard let self, let client = AIClient.fromConfig(self.config) else { return nil }
+            let prompt = self.config.aiPresets.first { $0.id == "summarize" }?.prompt
+                ?? AIPreset.bundled[4].prompt
+            let capped = String(text.prefix(Config.aiMaxInputChars))
+            return AIClient.streamWithFallback(
+                primary: client, fallback: AIClient.fallbackFromConfig(self.config),
+                messages: [.init(role: .system, content: prompt),
+                           .init(role: .user, content: capped)])
+        }
         m.onComposeCopy = { text in
             // A plain local copy: the watcher captures it on the next poll and
             // it syncs (or not) exactly per the current mode/privacy settings.
@@ -181,6 +248,18 @@ final class ClipboardPickerController {
         // closes unless pinned.
         m.onComposeDone = { [weak self] in self?.hideUnlessPinned() }
         return m
+    }
+
+    /// Live re-render + fresh semantic results when the background index
+    /// finishes a clip (embeddings or OCR).
+    private func wireClipIndex(_ m: PickerModel) {
+        m.semanticLookup = { ClipIndex.shared.semanticHashes(for: $0) }
+        m.ocrLookup = { ClipIndex.shared.ocrText(for: $0) }
+        ClipIndex.shared.onUpdate = { [weak self] in
+            guard let self, let model = self.model else { return }
+            model.recomputeSemantic()
+            model.indexRevision += 1
+        }
     }
 
     private func hideUnlessPinned() {
@@ -253,8 +332,20 @@ final class PickerModel: ObservableObject {
         }
     }
 
-    @Published var query = ""
+    @Published var query = "" { didSet { if query != oldValue { recomputeSemantic() } } }
     @Published var selection = 0
+    /// Bumped when the on-device index (embeddings/OCR) learns something new,
+    /// so computed search results re-render live.
+    @Published var indexRevision = 0
+
+    /// Injected by the controller (ClipIndex-backed). Nil in tests → keyword only.
+    var semanticLookup: ((String) -> Set<String>)?
+    var ocrLookup: ((String) -> String?)?
+    private var semanticHashes: Set<String> = []
+
+    func recomputeSemantic() {
+        semanticHashes = query.count >= 3 ? (semanticLookup?(query) ?? []) : []
+    }
     @Published var kindFilter: ContentFilter = .all { didSet { selection = 0 } }
     /// Source Macs whose group is folded up. Survives reopen (reload() leaves it
     /// alone) and relaunch: the controller seeds it from config and persists
@@ -302,6 +393,13 @@ final class PickerModel: ObservableObject {
     @Published var airDropAvailable = false
     var onAirDrop: ((HistoryItem) -> Void)?
 
+    /// Pinned clips (persist + sync); displayed above RECENT.
+    @Published var pinnedItems: [HistoryItem] = []
+    var pinnedHashes: Set<String> { Set(pinnedItems.map(\.hash)) }
+    var onPin: ((HistoryItem) -> Void)?
+    var onUnpin: ((String) -> Void)?
+    var onPickPinned: ((String) -> Void)?
+
     var selectedPreset: AIPreset {
         presets.first { $0.id == selectedPresetID } ?? presets.first ?? AIPreset.bundled[0]
     }
@@ -323,6 +421,7 @@ final class PickerModel: ObservableObject {
     /// panel does NOT come through here, so an accidental defocus keeps the
     /// draft.
     func endCompose() {
+        clearAsk()
         cleanupTask?.cancel()
         composeBusy = false
         composing = false
@@ -414,10 +513,16 @@ final class PickerModel: ObservableObject {
     /// where it is until the user picks something else.
     @Published private(set) var hoverItem: HistoryItem?
     private var hoverWork: DispatchWorkItem?
+    private var hoverClear: DispatchWorkItem?
+    /// True while the pointer is inside the preview card itself — the card is
+    /// interactive (quick actions, copy-text, summarize), so leaving the row
+    /// toward the card must not dismiss it.
+    private var cardHovering = false
 
     /// Show the preview after a short dwell so it doesn't flash while the
     /// pointer travels across the list.
     func beginHover(_ item: HistoryItem) {
+        hoverClear?.cancel()
         hoverWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.hoverItem = item }
         hoverWork = work
@@ -426,7 +531,119 @@ final class PickerModel: ObservableObject {
 
     func endHover(_ item: HistoryItem) {
         hoverWork?.cancel()
-        if hoverItem?.id == item.id { hoverItem = nil }
+        scheduleHoverClear(matching: item.id)
+    }
+
+    func cardHover(_ inside: Bool) {
+        cardHovering = inside
+        if inside { hoverClear?.cancel() } else { scheduleHoverClear(matching: nil) }
+    }
+
+    /// Grace period before the card hides, so the pointer can travel from the
+    /// row into the card without the card vanishing underneath it.
+    private func scheduleHoverClear(matching id: String?) {
+        hoverClear?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.cardHovering else { return }
+            if id == nil || self.hoverItem?.id == id { self.hoverItem = nil }
+        }
+        hoverClear = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
+    }
+
+    // MARK: Preview-card intelligence (OCR copy, quick actions, summaries)
+
+    /// AI summaries by content hash (cached for the session).
+    @Published private(set) var summaries: [String: String] = [:]
+    @Published private(set) var summarizingHash: String?
+    /// Controller-provided; nil when AI isn't configured.
+    var makeSummaryStream: ((String) -> AsyncThrowingStream<String, Error>?)?
+    /// Engine-owned auto-translations of incoming clips, by hash.
+    var translationLookup: ((String) -> String?)?
+
+    // MARK: Ask your clipboard (retrieval-grounded answers)
+
+    @Published private(set) var askAnswer: String?
+    @Published private(set) var askSources: [String] = []
+    @Published private(set) var askBusy = false
+    /// Controller-provided: builds the retrieval context + stream. Nil when AI
+    /// isn't configured.
+    var makeAskStream: ((String) -> (stream: AsyncThrowingStream<String, Error>, sources: [String])?)?
+    private var askTask: Task<Void, Never>?
+
+    /// Answer the composed question from clipboard history (+ pins), grounded
+    /// in the top semantic matches.
+    func askClipboard() {
+        guard !askBusy, !composeBusy else { return }
+        let question = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        guard !privacyHold else {
+            composeError = "Privacy hold is on (✋) — AI calls are paused."
+            return
+        }
+        guard let made = makeAskStream?(question) else {
+            composeError = "Set up AI in Settings → AI first."
+            return
+        }
+        askBusy = true
+        composeError = nil
+        askAnswer = ""
+        askSources = made.sources
+        askTask = Task { @MainActor [weak self] in
+            var acc = ""
+            do {
+                for try await delta in made.stream {
+                    guard let self, self.composing else { return }
+                    acc += delta
+                    self.askAnswer = acc
+                }
+            } catch {
+                self?.composeError = AIClient.friendlyMessage(for: error)
+                self?.askAnswer = nil
+                self?.askSources = []
+            }
+            self?.askBusy = false
+        }
+    }
+
+    func clearAsk() {
+        askTask?.cancel()
+        askAnswer = nil
+        askSources = []
+        askBusy = false
+    }
+
+    func summarize(_ item: HistoryItem) {
+        guard summarizingHash == nil, summaries[item.hash] == nil,
+              let text = item.snapshot.plainText else { return }
+        guard !privacyHold else {
+            flashDrop("Privacy hold is on (✋) — AI calls are paused.", isError: true)
+            return
+        }
+        guard let stream = makeSummaryStream?(text) else {
+            flashDrop("Set up AI in Settings → AI first.", isError: true)
+            return
+        }
+        summarizingHash = item.hash
+        Task { @MainActor [weak self] in
+            var acc = ""
+            do {
+                for try await delta in stream { acc += delta }
+                self?.summaries[item.hash] = acc.trimmingCharacters(in: .whitespacesAndNewlines)
+            } catch {
+                self?.flashDrop(AIClient.friendlyMessage(for: error), isError: true)
+            }
+            self?.summarizingHash = nil
+        }
+    }
+
+    func copyText(_ text: String, toast: String) {
+        onComposeCopy?(text)
+        flashDrop(toast)
+    }
+
+    func runQuickAction(_ action: QuickAction, on item: HistoryItem) {
+        if let note = action.perform(on: item) { flashDrop(note) }
     }
 
     /// Text excerpt for the preview card: the clip's own text, or the bytes of
@@ -588,9 +805,15 @@ final class PickerModel: ObservableObject {
     }
 
     private func matchesQuery(_ it: HistoryItem) -> Bool {
-        query.isEmpty
-            || it.label.localizedCaseInsensitiveContains(query)
-            || it.source.localizedCaseInsensitiveContains(query)
+        if query.isEmpty { return true }
+        if it.label.localizedCaseInsensitiveContains(query) { return true }
+        if it.source.localizedCaseInsensitiveContains(query) { return true }
+        // Full text of text clips (label only carries the first 64 chars).
+        if let body = it.snapshot.plainText, body.localizedCaseInsensitiveContains(query) { return true }
+        // Text recognized inside image clips (on-device OCR).
+        if let ocr = ocrLookup?(it.hash), ocr.localizedCaseInsensitiveContains(query) { return true }
+        // Meaning, not just words (on-device embeddings).
+        return semanticHashes.contains(it.hash)
     }
 
     /// All per-Mac sections (collapsed ones included, for their header + badge),
@@ -789,6 +1012,26 @@ struct PickerView: View {
                         }
                         Spacer().frame(height: 8)
                     }
+                    if !model.pinnedItems.isEmpty, model.query.isEmpty {
+                        sectionHeader("PINNED")
+                        ForEach(model.pinnedItems) { item in
+                            HistoryRow(item: item, index: -1, selected: false,
+                                       onDelete: { model.onUnpin?(item.hash) },
+                                       onCleanup: nil,
+                                       onAirDrop: model.airDropAvailable
+                                           ? { model.onAirDrop?(item) } : nil,
+                                       deleteSymbol: "pin.slash",
+                                       deleteHelp: "Unpin on all Macs")
+                                .contentShape(Rectangle())
+                                .onTapGesture { model.onPickPinned?(item.hash) }
+                                .onDrag { DragOutStager.provider(for: item) }
+                                .onHover { inside in
+                                    if inside { model.beginHover(item) } else { model.endHover(item) }
+                                }
+                                .handCursorOnHover()
+                        }
+                        Spacer().frame(height: 6)
+                    }
                     sectionHeader("RECENT")
                     if model.grouped.isEmpty {
                         Text(model.query.isEmpty ? "No clips yet — copy something, or drop files here to share." : "No matches.")
@@ -810,9 +1053,13 @@ struct PickerView: View {
                                                    && (e.item.category == .text || e.item.category == .richText)
                                                    ? { model.cleanUpItem(e.item) } : nil,
                                                onAirDrop: model.airDropAvailable
-                                                   ? { model.onAirDrop?(e.item) } : nil)
+                                                   ? { model.onAirDrop?(e.item) } : nil,
+                                               onPin: model.pinnedHashes.contains(e.item.hash)
+                                                   ? nil : { model.onPin?(e.item) })
                                         .contentShape(Rectangle())
                                         .onTapGesture { model.onPickHistory(e.item.hash) }
+                                        // Drag a clip out to Finder or any app.
+                                        .onDrag { DragOutStager.provider(for: e.item) }
                                         .onHover { inside in
                                             if inside { model.beginHover(e.item) } else { model.endHover(e.item) }
                                         }
@@ -876,7 +1123,7 @@ struct PickerView: View {
         .overlay { if dropTargeted { dropOverlay } }
         .overlay(alignment: .bottom) { if let msg = model.dropMessage { dropToast(msg) } }
         .overlay(alignment: .bottomTrailing) {
-            if let item = model.hoverItem { PreviewCard(item: item) }
+            if let item = model.hoverItem { PreviewCard(item: item, model: model) }
         }
         .animation(Tokens.Motion.paneCurve, value: dropTargeted)
         .animation(Tokens.Motion.paneCurve, value: model.dropMessage)
@@ -909,6 +1156,31 @@ struct PickerView: View {
                 .disabled(model.composeBusy)
             if let err = model.composeError {
                 Text(err).font(.system(size: 10.5)).foregroundColor(.red).lineLimit(2)
+            }
+            if let answer = model.askAnswer {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "questionmark.bubble").font(.system(size: 9))
+                        Text("From your clipboard").font(.system(size: 10, weight: .semibold))
+                        if model.askBusy { ProgressView().controlSize(.mini) }
+                        Spacer()
+                        Button { model.clearAsk() } label: {
+                            Image(systemName: "xmark.circle.fill").imageScale(.small)
+                                .foregroundStyle(.tertiary)
+                        }.buttonStyle(.plain)
+                    }
+                    ScrollView {
+                        Text(answer).font(.system(size: 11.5)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    if !model.askSources.isEmpty {
+                        Text("Clips used: " + model.askSources.joined(separator: " · "))
+                            .font(.system(size: 9.5)).foregroundColor(.secondary).lineLimit(2)
+                    }
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
             }
             if let changes = model.composeChanges {
                 HStack(spacing: 4) {
@@ -949,6 +1221,14 @@ struct PickerView: View {
                 if model.composeOriginal != nil, !model.composeBusy {
                     Button("Undo") { model.undoCleanup() }.font(.system(size: 11.5))
                 }
+                Button {
+                    model.askClipboard()
+                } label: {
+                    Label(model.askBusy ? "Asking…" : "Ask Clipboard", systemImage: "questionmark.bubble")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .disabled(model.askBusy || model.composeBusy || model.composeText.isEmpty)
+                .help("Answer this question from your clip history (retrieval + AI)")
                 Spacer()
                 Button("Cancel") { model.endCompose() }
                     .font(.system(size: 11.5))
@@ -1123,6 +1403,12 @@ private struct HistoryRow: View {
     var onCleanup: (() -> Void)?
     /// AirDrop action — nil hides the share button (AirDrop unavailable).
     var onAirDrop: (() -> Void)?
+    /// Pin action — nil when already pinned (or for pinned rows themselves).
+    var onPin: (() -> Void)?
+    /// The trailing destructive-ish button is delete for history rows and
+    /// unpin for pinned rows.
+    var deleteSymbol = "xmark.circle.fill"
+    var deleteHelp = "Delete from history on all Macs"
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
@@ -1140,11 +1426,16 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
+                // Equal frames keep the action icons on one optical center;
+                // the share glyph's up-arrow makes it read high, so it gets a
+                // 1pt nudge down to align with the ✕.
                 if let onAirDrop {
                     Button(action: onAirDrop) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .offset(y: 1)
+                            .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
                     .help("AirDrop to a nearby device (iPhone, iPad, any Mac)")
@@ -1154,18 +1445,30 @@ private struct HistoryRow: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                            .frame(width: 17, height: 17)
                     }
                     .buttonStyle(.plain)
                     .help("Clean up with AI (opens in compose)")
                 }
+                if let onPin {
+                    Button(action: onPin) {
+                        Image(systemName: "pin")
+                            .font(.system(size: 11.5))
+                            .foregroundColor(.secondary)
+                            .frame(width: 17, height: 17)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Pin — keep past restarts, on every Mac")
+                }
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: deleteSymbol)
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .frame(width: 17, height: 17)
                 }
                 .buttonStyle(.plain)
-                .help("Delete from history on all Macs")
-            } else if index < 9 {
+                .help(deleteHelp)
+            } else if index >= 0 && index < 9 {
                 Text("⌘\(index + 1)").font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary.opacity(0.7))
             }
         }
@@ -1202,8 +1505,15 @@ private struct HistoryRow: View {
 /// or a first-page render for a PDF.
 private struct PreviewCard: View {
     let item: HistoryItem
+    @ObservedObject var model: PickerModel
     /// QuickLook thumbnail + media duration, loaded async per hovered item.
     @State private var generated = PreviewThumbnailer.Result()
+
+    private var ocrText: String? { model.ocrLookup?(item.hash) }
+    private var actions: [QuickAction] { QuickAction.detect(for: item, ocrText: ocrText) }
+    private var summarizable: Bool {
+        model.aiConfigured && (item.snapshot.plainText?.count ?? 0) > 600
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -1222,6 +1532,48 @@ private struct PreviewCard: View {
             }
             Divider()
             content
+            if let summary = model.summaries[item.hash] {
+                Divider()
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "sparkles").font(.system(size: 9)).padding(.top, 2)
+                    Text(summary).font(.system(size: 10.5)).lineLimit(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundColor(.secondary)
+            }
+            if let translation = model.translationLookup?(item.hash) {
+                Divider()
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "globe").font(.system(size: 9)).padding(.top, 2)
+                    Text(translation).font(.system(size: 10.5)).lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                .foregroundColor(.secondary)
+            }
+            if !actions.isEmpty || summarizable || ocrText != nil {
+                Divider()
+                // Quick actions: detected links/emails/phones, file save, OCR
+                // copy, AI summarize — the "do something with it" row.
+                FlowishActionRow {
+                    ForEach(actions) { action in
+                        cardButton(action.title, action.symbol) {
+                            model.runQuickAction(action, on: item)
+                        }
+                    }
+                    if let ocr = ocrText {
+                        cardButton("Copy Text", "text.viewfinder") {
+                            model.copyText(ocr, toast: "Image text copied — syncs like any copy")
+                        }
+                    }
+                    if summarizable && model.summaries[item.hash] == nil {
+                        cardButton(model.summarizingHash == item.hash ? "Summarizing…" : "Summarize",
+                                   "sparkles") {
+                            model.summarize(item)
+                        }
+                    }
+                }
+            }
         }
         .padding(10)
         .frame(width: 250, alignment: .leading)
@@ -1229,12 +1581,24 @@ private struct PreviewCard: View {
         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         .padding(.trailing, 12).padding(.bottom, 44)
-        .allowsHitTesting(false)   // never steal the pointer from the list
+        .onHover { model.cardHover($0) }   // grace: entering the card keeps it up
         .task(id: item.id) {
             generated = PreviewThumbnailer.Result()
             guard !item.snapshot.files.isEmpty, item.imageData == nil else { return }
             generated = await PreviewThumbnailer.shared.preview(for: item)
         }
+    }
+
+    private func cardButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 9))
+                Text(title).font(.system(size: 10, weight: .medium)).lineLimit(1)
+            }
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(Color.secondary.opacity(0.12)))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private var content: some View {
@@ -1244,6 +1608,10 @@ private struct PreviewCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 5))
             Text("\(Int(img.size.width)) × \(Int(img.size.height))")
                 .font(.system(size: 9.5)).foregroundColor(.secondary)
+            if let ocr = ocrText {
+                Text(ocr).font(.system(size: 9.5, design: .monospaced))
+                    .lineLimit(3).foregroundColor(.secondary)
+            }
         } else if !item.snapshot.files.isEmpty {
             // QuickLook render of the first file — PDF first page, Office
             // document, video frame, … — when the system can produce one.
@@ -1281,6 +1649,19 @@ private struct PreviewCard: View {
         let f = DateFormatter()
         f.dateStyle = .none; f.timeStyle = .short
         return f.string(from: Date(timeIntervalSince1970: ts))
+    }
+}
+
+/// Wrapping-ish action row: a simple two-line layout for up to ~5 chips.
+private struct FlowishActionRow<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        // LazyVGrid with adaptive columns handles wrapping without a custom
+        // layout; chips size to content within the card's fixed width.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), alignment: .leading)],
+                  alignment: .leading, spacing: 5) {
+            content
+        }
     }
 }
 

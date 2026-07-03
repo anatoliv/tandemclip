@@ -10,6 +10,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let infoWindows = InfoWindowController()
     private var hotKey: GlobalHotKey?
     private let updater = Updater()
+    private lazy var servicesProvider = ServicesProvider(engine: engine)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CrashReporting.start()   // gated on Info.plist SentryDSN; off if absent
@@ -24,6 +25,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         // Global hotkey (⇧⌘V) to summon the clipboard picker.
         hotKey = GlobalHotKey { [weak self] in self?.picker.toggle() }
+
+        // Services menu: "Send to TandemClip" for selected text/files anywhere.
+        NSApp.servicesProvider = servicesProvider
+        NSUpdateDynamicServices()
 
         // Test hook: auto-open the picker after launch (env-gated, inert in prod).
         if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_PICKER"] != nil {

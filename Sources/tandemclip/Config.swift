@@ -299,8 +299,27 @@ final class Config {
         }
     }
 
+    /// AI-on-receive features — each sends clip content to the configured
+    /// endpoint automatically, so they are separate opt-ins (default off).
+    var aiSmartLabels: Bool {
+        get { defaults.bool(forKey: "aiSmartLabels") }
+        set { set("aiSmartLabels", newValue) }
+    }
+    var aiTranslateIncoming: Bool {
+        get { defaults.bool(forKey: "aiTranslateIncoming") }
+        set { set("aiTranslateIncoming", newValue) }
+    }
+
     /// Cap on cleanup input so a giant clip can't become a giant bill.
     static let aiMaxInputChars = 20_000
+
+    /// Hold clips that look like secrets (API keys, private keys, card
+    /// numbers, lone high-entropy tokens) instead of broadcasting them.
+    /// On by default — releasing a held clip is one click in the menu.
+    var secretGuardEnabled: Bool {
+        get { defaults.object(forKey: "secretGuardEnabled") == nil ? true : defaults.bool(forKey: "secretGuardEnabled") }
+        set { set("secretGuardEnabled", newValue) }
+    }
 
     /// Privacy hold: while on, nothing of ours leaves this Mac — no clip
     /// broadcasts, no pull serving, no drop-shares, no metadata/previews in

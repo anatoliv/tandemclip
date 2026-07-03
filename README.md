@@ -235,7 +235,14 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Settings — sidebar navigation, plain-English bullet descriptions on every section
 - [x] Help — every settings tab documented with worked examples; on-device semantic search
 - [x] AirDrop a clip — hover action sends any clip to nearby Apple devices outside the mesh (iPhone/iPad/unpaired Macs) via the system sheet
-- [ ] Share extension — "Share → TandemClip" from any app's share sheet
-- [ ] Drag-out — drag a received file from the picker to Finder/an app (single-file first)
+- [x] Send from any app — "Send to TandemClip" in every app's Services menu (text + files)
+- [x] Drag-out — drag any clip from the picker to Finder or another app
+- [x] Pinned clips — up to 20 permanent clips, synced and restart-proof (signed pin/unpin, delete-everywhere unpins)
+- [x] Search by meaning — on-device semantic search over history, full clip text, and OCR'd screenshot text
+- [x] Quick actions — open link / email / copy phone / save to Downloads from the hover preview (local detection)
+- [x] Secret guard — likely credentials (keys, cards, tokens) are held until released (Settings → Security)
+- [x] AI on clips — on-demand Summarize, opt-in smart titles + incoming-clip translation, and "Ask your clipboard" (retrieval-grounded answers)
+- [x] Chunked transfers — clips up to 100 MB travel as signed 1 MB slices
+- [ ] Share-sheet extension (NSExtension appex — needs an Xcode target; Services covers the use case today)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 ```
