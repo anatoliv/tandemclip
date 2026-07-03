@@ -725,14 +725,21 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Adapt tone to the destination app", isOn: $model.aiAutoTone)
+                    .disabled(!model.aiEnabled)
             } footer: {
                 SettingsBullets(items: [
                     ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over — professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.", "ai-autotone"),
                 ])
             }
             Section {
+                // Gated on the master switch above: every AI path runs through
+                // AIClient.fromConfig, which no-ops when "Enable AI text cleanup"
+                // is off. Without this, these toggles flip on but do nothing —
+                // which reads as "smart titles are broken."
                 Toggle("Smart titles for long clips", isOn: $model.aiSmartLabels)
+                    .disabled(!model.aiEnabled)
                 Toggle("Translate incoming foreign-language clips", isOn: $model.aiTranslateIncoming)
+                    .disabled(!model.aiEnabled)
             } header: {
                 Text("AI on your clips (automatic)")
             } footer: {
