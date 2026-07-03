@@ -54,4 +54,13 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         engine.start()
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Purge transient staging (drag-out, AirDrop, previews, promise drops)
+        // on quit — belt-and-suspenders alongside their hourly sweeps.
+        let fm = FileManager.default
+        for name in ["tandemclip-dragout", "tandemclip-airdrop", "tandemclip-previews", "tandemclip-drops"] {
+            try? fm.removeItem(at: fm.temporaryDirectory.appendingPathComponent(name, isDirectory: true))
+        }
+    }
 }
