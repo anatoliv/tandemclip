@@ -137,6 +137,10 @@ final class ClipboardPickerController {
             self?.config.collapsedSubgroups = subs.sorted()
         }
         wireClipIndex(m)
+        m.translationLookup = { [weak self] hash in
+            let t = self?.engine.translations[hash]
+            return (t?.isEmpty ?? true) ? nil : t
+        }
         // Privacy hold + pin: seeded from config, persisted on toggle.
         m.privacyHold = config.privacyHold
         m.pinned = config.pickerPinned
@@ -498,6 +502,8 @@ final class PickerModel: ObservableObject {
     @Published private(set) var summarizingHash: String?
     /// Controller-provided; nil when AI isn't configured.
     var makeSummaryStream: ((String) -> AsyncThrowingStream<String, Error>?)?
+    /// Engine-owned auto-translations of incoming clips, by hash.
+    var translationLookup: ((String) -> String?)?
 
     func summarize(_ item: HistoryItem) {
         guard summarizingHash == nil, summaries[item.hash] == nil,
@@ -1351,6 +1357,16 @@ private struct PreviewCard: View {
                     Image(systemName: "sparkles").font(.system(size: 9)).padding(.top, 2)
                     Text(summary).font(.system(size: 10.5)).lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundColor(.secondary)
+            }
+            if let translation = model.translationLookup?(item.hash) {
+                Divider()
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "globe").font(.system(size: 9)).padding(.top, 2)
+                    Text(translation).font(.system(size: 10.5)).lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
                 .foregroundColor(.secondary)
             }
