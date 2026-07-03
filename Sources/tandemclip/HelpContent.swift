@@ -10,6 +10,40 @@ struct HelpTopic: Identifiable, Equatable {
     let body: String
 }
 
+// MARK: - Release history (What's New)
+
+/// The kind of a single What's New line item — colors and labels the badge.
+enum ReleaseChangeKind {
+    case added, improved, fixed
+
+    var label: String {
+        switch self {
+        case .added:    return "New"
+        case .improved: return "Improved"
+        case .fixed:    return "Fixed"
+        }
+    }
+}
+
+/// One line item within a release.
+struct ReleaseChange: Identifiable {
+    let id = UUID()
+    let kind: ReleaseChangeKind
+    let text: String
+    init(_ kind: ReleaseChangeKind, _ text: String) { self.kind = kind; self.text = text }
+}
+
+/// A single shipped version — a card in the What's New panel. Patch releases
+/// are folded into the meaningful version that carried the feature, so the
+/// list reads as a story rather than a raw tag dump.
+struct HelpRelease: Identifiable {
+    let version: String
+    let date: String
+    let highlight: String
+    let changes: [ReleaseChange]
+    var id: String { version }
+}
+
 /// Everything the Help window knows, grouped by category (rendering order).
 enum HelpCatalog {
     static let categories: [(name: String, symbol: String)] = [
@@ -153,6 +187,117 @@ enum HelpCatalog {
     static func topics(in category: String) -> [HelpTopic] {
         topics.filter { $0.category == category }
     }
+
+    /// Release history, newest first. Curated from the shipped versions so
+    /// each entry tells you what actually changed and when.
+    static let releases: [HelpRelease] = [
+        .init(version: "0.20.0", date: "July 3, 2026",
+              highlight: "A help center you can actually navigate — and a record of how we got here.",
+              changes: [
+                .init(.added, "Two-pane Help with left-hand navigation and search-by-meaning."),
+                .init(.added, "This What's New page — every version, newest first."),
+                .init(.improved, "Expanded and corrected articles: appearance, the menu-bar menu, the full AI provider list, ChatGPT sign-in, and secret guard."),
+              ]),
+        .init(version: "0.19.0", date: "July 3, 2026",
+              highlight: "Run AI cleanup off your ChatGPT subscription — no API key needed.",
+              changes: [
+                .init(.added, "Three ways to connect AI: API key / local server, Azure OpenAI, and Sign in with ChatGPT (OAuth)."),
+                .init(.added, "Twelve curated provider presets, from free (GitHub Models) to fully local (Ollama, LM Studio, llama.cpp)."),
+                .init(.improved, "If a ChatGPT sign-in token expires, cleanup quietly reroutes to your fallback endpoint instead of failing."),
+              ]),
+        .init(version: "0.18.0", date: "July 3, 2026",
+              highlight: "Light, dark, or follow the system.",
+              changes: [
+                .init(.added, "Appearance setting under Settings → General — System, Light, or Dark, applied live."),
+              ]),
+        .init(version: "0.17.0", date: "July 3, 2026",
+              highlight: "The intelligence bundle — a dozen features that make your history smarter and safer.",
+              changes: [
+                .init(.added, "Search by meaning, plus on-device text recognition (OCR) inside screenshots and images."),
+                .init(.added, "Secret guard holds credential-shaped copies on this Mac instead of syncing them."),
+                .init(.added, "Pinned clips, one-click quick actions, Ask your clipboard, and chunked transfer for large clips."),
+                .init(.improved, "Live AI connection tests and more robust “Send to TandemClip” Services."),
+              ]),
+        .init(version: "0.16.0", date: "July 3, 2026",
+              highlight: "AirDrop any clip to a nearby device.",
+              changes: [
+                .init(.added, "Share button in the picker AirDrops a clip to any nearby Apple device — even ones outside your pairing group."),
+              ]),
+        .init(version: "0.15.0", date: "July 3, 2026",
+              highlight: "A warmer look and richer drag-and-drop.",
+              changes: [
+                .init(.improved, "Adopted tonebox's design system — terracotta accent, tuned motion, honest toasts."),
+                .init(.added, "Drag emails from Outlook/Mail, photos from Photos, and images from a browser straight onto the picker."),
+              ]),
+        .init(version: "0.14.0", date: "July 3, 2026",
+              highlight: "Folder sync and a straighter story about what's happening.",
+              changes: [
+                .init(.added, "Folders travel between Macs as .zip archives, on copy or drop."),
+                .init(.improved, "Help overhaul, honest sync toasts, and a refreshed security audit."),
+              ]),
+        .init(version: "0.13.0", date: "July 3, 2026",
+              highlight: "Receive without lifting a finger.",
+              changes: [
+                .init(.added, "“Apply incoming clips automatically” lands peers' copies on this clipboard even in Manual mode."),
+                .init(.improved, "Bullet-list descriptions on every settings section; compose keeps focus."),
+              ]),
+        .init(version: "0.12.0", date: "July 2, 2026",
+              highlight: "Previews, and a calmer picker.",
+              changes: [
+                .init(.added, "QuickLook hover previews for images, PDFs, Office docs, and video."),
+                .init(.improved, "The picker is transient unless pinned, Esc always closes it, and an abandoned compose draft is discarded."),
+              ]),
+        .init(version: "0.11.0", date: "July 2, 2026",
+              highlight: "Settings, reorganized.",
+              changes: [
+                .init(.improved, "Sidebar navigation in Settings and unified dropdown controls."),
+              ]),
+        .init(version: "0.10.0", date: "July 2, 2026",
+              highlight: "AI text cleanup arrives.",
+              changes: [
+                .init(.added, "AI cleanup suite — tone presets, auto-tone by destination app, provenance, and a fallback endpoint."),
+                .init(.added, "Audio & Video groups in the picker."),
+              ]),
+        .init(version: "0.9.0", date: "July 2, 2026",
+              highlight: "Privacy hold and pins.",
+              changes: [
+                .init(.added, "Privacy hold (✋) stops copies from leaving this Mac; pin (📌) keeps the picker open."),
+                .init(.improved, "Reorganized menu-bar menu and smaller storage options."),
+              ]),
+        .init(version: "0.8.0", date: "July 2, 2026",
+              highlight: "Storage you control.",
+              changes: [
+                .init(.added, "Configurable received-files storage limit with per-item sizes."),
+              ]),
+        .init(version: "0.5.0", date: "July 2, 2026",
+              highlight: "A picker that organizes itself.",
+              changes: [
+                .init(.added, "Collapsible per-Mac groups with content-type badges, sub-sections, and group totals."),
+              ]),
+        .init(version: "0.4.0", date: "July 2, 2026",
+              highlight: "Delete everywhere.",
+              changes: [
+                .init(.added, "Remove a clip from history on every Mac at once, with signed, replay-proof deletes."),
+                .init(.fixed, "Relay-echo transport bug; activate the app before a user-initiated update check."),
+              ]),
+        .init(version: "0.3.0", date: "July 2, 2026",
+              highlight: "Drop to share.",
+              changes: [
+                .init(.added, "Drag files from Finder onto the picker to send them; file copies are always captured to history."),
+              ]),
+        .init(version: "0.1.4", date: "July 2, 2026",
+              highlight: "More than plain text.",
+              changes: [
+                .init(.added, "Rich text and image sync, file sync by content, and session clipboard history."),
+                .init(.improved, "Wired Sentry crash reporting (opt-in, PII-scrubbed)."),
+              ]),
+        .init(version: "0.1.1", date: "July 2, 2026",
+              highlight: "Secure by default, from the first build.",
+              changes: [
+                .init(.added, "In-app pairing-code entry with live re-keying."),
+                .init(.improved, "Pairing code stored in the Keychain; encryption key derived via HKDF-SHA256."),
+              ]),
+    ]
 }
 
 /// Help search: instant keyword match blended with on-device semantic
