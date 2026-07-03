@@ -233,15 +233,59 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let hosting = NSHostingController(rootView: SettingsView(model: model))
             let w = NSWindow(contentViewController: hosting)
             w.title = "TandemClip Settings"
-            w.styleMask = [.titled, .closable]
+            // Resizable, tonebox-style: sidebar + roomy detail pane; the
+            // user can size it to taste and the frame is remembered.
+            w.styleMask = [.titled, .closable, .resizable]
+            w.minSize = NSSize(width: 680, height: 480)
+            w.setFrameAutosaveName("TandemClipSettings")
             w.isReleasedWhenClosed = false
             w.delegate = self
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
-        window?.center()
+        if window?.frameAutosaveName.isEmpty ?? true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
+    }
+}
+
+/// The house dropdown for Settings rows: a compact menu button pinned to the
+/// row's trailing edge whose label always reads the current selection (with a
+/// checkmark on it inside the menu). Replaces Form's default Picker so every
+/// dropdown shares one look.
+struct SettingsDropdown<Value: Hashable>: View {
+    let title: String
+    let options: [(value: Value, label: String)]
+    @Binding var selection: Value
+    /// Shown when the selection matches no option (e.g. hand-edited fields).
+    var fallbackLabel = "Choose…"
+
+    private var currentLabel: String {
+        options.first { $0.value == selection }?.label ?? fallbackLabel
+    }
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Menu {
+                ForEach(options, id: \.value) { opt in
+                    Button {
+                        selection = opt.value
+                    } label: {
+                        if opt.value == selection {
+                            Label(opt.label, systemImage: "checkmark")
+                        } else {
+                            Text(opt.label)
+                        }
+                    }
+                }
+            } label: {
+                Text(currentLabel)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
     }
 }
 
@@ -254,11 +298,25 @@ struct SettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general = "General", sync = "Sync", content = "Content", ai = "AI", security = "Security"
         var id: String { rawValue }
+
+        var symbol: String {
+            switch self {
+            case .general:  return "gearshape"
+            case .sync:     return "arrow.triangle.2.circlepath"
+            case .content:  return "doc.on.clipboard"
+            case .ai:       return "sparkles"
+            case .security: return "lock.shield"
+            }
+        }
     }
 
+    /// Sidebar navigation (tonebox's Settings layout): categories on the left,
+    /// detail pane on the right, both growing with the resizable window. The
+    /// selected pane persists across closes.
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 180)
             Divider()
             Group {
                 switch tab {
@@ -269,28 +327,27 @@ struct SettingsView: View {
                 case .security: securityTab
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 520, height: 500)
+        .frame(minWidth: 680, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
+        .onAppear {
+            if let saved = UserDefaults.standard.string(forKey: "settingsSelectedTab"),
+               let t = Tab(rawValue: saved) { tab = t }
+        }
+        .onChange(of: tab) { t in
+            UserDefaults.standard.set(t.rawValue, forKey: "settingsSelectedTab")
+        }
     }
 
-    /// Custom segmented tab bar — avoids the full-width grey strip SwiftUI's
-    /// TabView draws behind its tabs.
-    private var tabBar: some View {
-        HStack(spacing: 3) {
+    private var sidebar: some View {
+        List(selection: $tab) {
             ForEach(Tab.allCases) { t in
-                Button { tab = t } label: {
-                    Text(t.rawValue)
-                        .font(.system(size: 12.5, weight: tab == t ? .semibold : .regular))
-                        .foregroundColor(tab == t ? .white : .primary)
-                        .padding(.horizontal, 13).padding(.vertical, 5)
-                        .background(tab == t ? Color.accentColor : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
+                Label(t.rawValue, systemImage: t.symbol)
+                    .tag(t)
             }
         }
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity)
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: General — startup, this Mac, diagnostics
@@ -325,29 +382,25 @@ struct SettingsView: View {
     private var syncTab: some View {
         Form {
             Section("Behavior") {
-                Picker("Mode", selection: $model.mode) {
-                    Text("Mirror — auto-sync").tag(SyncMode.mirror)
-                    Text("Manual — pull on demand").tag(SyncMode.manual)
-                }
-                Picker("This Mac's role", selection: $model.role) {
-                    Text("Send & receive").tag(Role.sendReceive)
-                    Text("Receive only").tag(Role.receiveOnly)
-                    Text("Send only").tag(Role.sendOnly)
-                }
-                Picker("Peer preview", selection: $model.previewLevel) {
-                    Text("Metadata — age + size").tag(PreviewLevel.metadata)
-                    Text("Live text preview").tag(PreviewLevel.preview)
-                    Text("Names only").tag(PreviewLevel.names)
-                }
+                SettingsDropdown(title: "Mode", options: [
+                    (SyncMode.mirror, "Mirror — auto-sync"),
+                    (SyncMode.manual, "Manual — pull on demand"),
+                ], selection: $model.mode)
+                SettingsDropdown(title: "This Mac's role", options: [
+                    (Role.sendReceive, "Send & receive"),
+                    (Role.receiveOnly, "Receive only"),
+                    (Role.sendOnly, "Send only"),
+                ], selection: $model.role)
+                SettingsDropdown(title: "Peer preview", options: [
+                    (PreviewLevel.metadata, "Metadata — age + size"),
+                    (PreviewLevel.preview, "Live text preview"),
+                    (PreviewLevel.names, "Names only"),
+                ], selection: $model.previewLevel)
             }
             Section {
-                Picker("Max clipboard size", selection: $model.maxMB) {
-                    Text("1 MB").tag(1.0)
-                    Text("2 MB").tag(2.0)
-                    Text("5 MB").tag(5.0)
-                    Text("10 MB").tag(10.0)
-                    Text("25 MB").tag(25.0)
-                }
+                SettingsDropdown(title: "Max clipboard size",
+                                 options: [1.0, 2.0, 5.0, 10.0, 25.0].map { ($0, "\(Int($0)) MB") },
+                                 selection: $model.maxMB)
             } header: {
                 Text("Limits")
             } footer: {
@@ -371,11 +424,11 @@ struct SettingsView: View {
                 Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity. Copied files always appear in your history and can be pulled or drop-shared either way — the Files toggle only controls whether their content is sent to your Macs automatically.")
             }
             Section {
-                Picker("Received-files limit", selection: $model.receivedCacheMB) {
-                    ForEach([10, 25, 50, 100, 200, 500, 1000], id: \.self) { mb in
-                        Text(mb >= 1000 ? "\(mb / 1000) GB" : "\(mb) MB").tag(mb)
-                    }
-                }
+                SettingsDropdown(title: "Received-files limit",
+                                 options: [10, 25, 50, 100, 200, 500, 1000].map {
+                                     ($0, $0 >= 1000 ? "\($0 / 1000) GB" : "\($0) MB")
+                                 },
+                                 selection: $model.receivedCacheMB)
             } header: {
                 Text("Storage")
             } footer: {
@@ -384,12 +437,12 @@ struct SettingsView: View {
             Section {
                 Toggle("Keep clipboard history", isOn: $model.historyEnabled)
                 if model.historyEnabled {
-                    Picker("Keep in history", selection: $model.historyKeep) {
-                        ForEach([10, 20, 50, 100, 150, 200], id: \.self) { Text("\($0) clips").tag($0) }
-                    }
-                    Picker("Show in picker", selection: $model.pickerShow) {
-                        ForEach([5, 8, 10, 12, 15, 20, 30, 50], id: \.self) { Text("\($0) clips").tag($0) }
-                    }
+                    SettingsDropdown(title: "Keep in history",
+                                     options: [10, 20, 50, 100, 150, 200].map { ($0, "\($0) clips") },
+                                     selection: $model.historyKeep)
+                    SettingsDropdown(title: "Show in picker",
+                                     options: [5, 8, 10, 12, 15, 20, 30, 50].map { ($0, "\($0) clips") },
+                                     selection: $model.pickerShow)
                     Button("Clear History Now") { model.clearHistory() }
                 }
             } header: {
@@ -411,18 +464,24 @@ struct SettingsView: View {
                 Text("Adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below — there is no middleman.")
             }
             Section {
-                // A menu that *applies* a preset (fills the fields below) —
-                // the fields are the state, not the menu selection.
-                HStack {
-                    Text("Provider preset")
-                    Spacer()
-                    Menu("Apply…") {
-                        ForEach(AIProviderPreset.all) { p in
-                            Button(p.name) { model.applyPreset(p) }
-                        }
-                    }
-                    .frame(width: 150)
-                }
+                // Applying a preset fills the fields below; the label reflects
+                // whichever provider the current fields match ("Custom" if
+                // they've been hand-edited).
+                SettingsDropdown(title: "Provider preset",
+                                 options: AIProviderPreset.all.map { ($0.id, $0.name) },
+                                 selection: Binding(
+                                     get: {
+                                         AIProviderPreset.all.first {
+                                             $0.endpoint == model.aiEndpoint
+                                                 && ($0.model.isEmpty || $0.model == model.aiModel)
+                                         }?.id ?? "custom"
+                                     },
+                                     set: { id in
+                                         if let p = AIProviderPreset.all.first(where: { $0.id == id }) {
+                                             model.applyPreset(p)
+                                         }
+                                     }),
+                                 fallbackLabel: model.aiEndpoint.isEmpty ? "Choose…" : "Custom")
                 TextField("Endpoint URL", text: $model.aiEndpoint,
                           prompt: Text("https://api…/v1/chat/completions"))
                     .autocorrectionDisabled()
@@ -446,9 +505,9 @@ struct SettingsView: View {
                 Text("Any OpenAI-compatible chat-completions server works: Anthropic, OpenAI, OpenRouter, Groq, or a local Ollama / LM Studio — the local options keep text entirely on your machine. The API key is stored in the Keychain, never in preferences.")
             }
             Section {
-                Picker("Preset", selection: $model.aiEditingID) {
-                    ForEach(model.aiPresets) { p in Text(p.name).tag(p.id) }
-                }
+                SettingsDropdown(title: "Preset",
+                                 options: model.aiPresets.map { ($0.id, $0.name) },
+                                 selection: $model.aiEditingID)
                 if let i = model.aiEditingIndex {
                     TextField("Name", text: Binding(
                         get: { model.aiPresets[i].name },
