@@ -45,10 +45,12 @@ struct ClipFileWire: Codable {
 /// Coarse user-facing category of a clip — drives the picker's filter chips,
 /// group badges, sub-sections, and row icons. Structured (not string-matched)
 /// so classification changes can't silently break filters. Note: a *file* whose
-/// content is a picture counts as `.image` — to the user it's an image either
-/// way; pasting still pastes the file.
+/// content is a picture counts as `.image`, and one that's a readable document
+/// (PDF, Office, text-like) counts as `.document` — to the user that's what
+/// they are; pasting still pastes the file. `.file` is everything else
+/// (archives, binaries, unknown).
 enum ClipCategory {
-    case text, richText, image, file
+    case text, richText, image, document, audio, video, file
 }
 
 /// The set of representations for one clipboard state.
@@ -69,11 +71,43 @@ struct ClipSnapshot {
     static let imageExtensions: Set<String> =
         ["png", "jpg", "jpeg", "gif", "heic", "heif", "tif", "tiff", "webp", "bmp", "ico"]
 
+    /// File extensions treated as readable documents (PDF, Office/iWork,
+    /// text-like formats). Everything not an image or document is a plain file.
+    static let documentExtensions: Set<String> =
+        ["pdf", "doc", "docx", "rtf", "txt", "md", "markdown", "pages", "numbers", "key",
+         "xls", "xlsx", "ppt", "pptx", "csv", "tsv", "odt", "ods", "odp", "epub",
+         "json", "xml", "yml", "yaml", "log"]
+
+    /// Text-like document extensions whose bytes can be shown as a preview.
+    static let textLikeExtensions: Set<String> =
+        ["txt", "md", "markdown", "csv", "tsv", "json", "xml", "yml", "yaml", "log"]
+
+    /// File extensions treated as audio / video for classification.
+    static let audioExtensions: Set<String> =
+        ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "opus", "wma", "caf"]
+    static let videoExtensions: Set<String> =
+        ["mp4", "mov", "m4v", "avi", "mkv", "webm", "mpg", "mpeg", "wmv", "flv"]
+
+    private static func ext(_ name: String) -> String {
+        (name as NSString).pathExtension.lowercased()
+    }
+
     /// True when this is a file clip and every file is a picture.
     var filesAreAllImages: Bool {
-        !files.isEmpty && files.allSatisfy {
-            Self.imageExtensions.contains(($0.name as NSString).pathExtension.lowercased())
-        }
+        !files.isEmpty && files.allSatisfy { Self.imageExtensions.contains(Self.ext($0.name)) }
+    }
+
+    /// True when this is a file clip and every file is a document.
+    var filesAreAllDocuments: Bool {
+        !files.isEmpty && files.allSatisfy { Self.documentExtensions.contains(Self.ext($0.name)) }
+    }
+
+    var filesAreAllAudio: Bool {
+        !files.isEmpty && files.allSatisfy { Self.audioExtensions.contains(Self.ext($0.name)) }
+    }
+
+    var filesAreAllVideo: Bool {
+        !files.isEmpty && files.allSatisfy { Self.videoExtensions.contains(Self.ext($0.name)) }
     }
 
     /// See ClipCategory. RTF outranks image parts: apps that copy formatted
@@ -81,7 +115,13 @@ struct ClipSnapshot {
     /// alongside, which is still a text copy to the user — while a genuine
     /// image copy never carries RTF.
     var category: ClipCategory {
-        if !files.isEmpty { return filesAreAllImages ? .image : .file }
+        if !files.isEmpty {
+            if filesAreAllImages { return .image }
+            if filesAreAllDocuments { return .document }
+            if filesAreAllAudio { return .audio }
+            if filesAreAllVideo { return .video }
+            return .file
+        }
         if parts[.rtf] != nil { return .richText }
         if parts[.png] != nil || parts[.tiff] != nil { return .image }
         return .text
@@ -91,7 +131,14 @@ struct ClipSnapshot {
     /// classification logic uses `category`).
     var contentLabel: String {
         if !files.isEmpty {
-            let noun = filesAreAllImages ? "image file" : "file"
+            let noun: String
+            switch category {
+            case .image:    noun = "image file"
+            case .document: noun = "document"
+            case .audio:    noun = "audio file"
+            case .video:    noun = "video"
+            default:        noun = "file"
+            }
             return files.count == 1 ? noun : "\(files.count) \(noun)s"
         }
         switch category {
