@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.3", date: "July 3, 2026",
+              highlight: "Clearer in dark mode.",
+              changes: [
+                .init(.fixed, "When a setting jumps you into Help, the highlighted spot is now clearly visible in dark mode too (it used to nearly vanish)."),
+              ]),
         .init(version: "0.22.2", date: "July 3, 2026",
               highlight: "Help on the hover preview, too.",
               changes: [
