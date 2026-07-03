@@ -33,13 +33,23 @@ IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 mkdir -p "$DIST"
 rm -f "$DMG"
 
-# 1b. Upload dSYMs to Sentry for symbolicated crash reports (gated: needs
-#     SENTRY_AUTH_TOKEN + sentry-cli; silently skipped otherwise).
+# 1b. Upload dSYMs to Sentry for symbolicated crash reports. Token comes from
+#     the environment or, failing that, the Keychain item "tandemclip-sentry"
+#     (create once with:
+#       security add-generic-password -s tandemclip-sentry -a sentry -w <token>
+#     token needs project:releases scope). Missing token WARNS — a release
+#     without dSYMs means unsymbolicated crash reports, which you want to know.
+if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+    SENTRY_AUTH_TOKEN="$(security find-generic-password -s tandemclip-sentry -w 2>/dev/null || true)"
+    export SENTRY_AUTH_TOKEN
+fi
 if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
     echo "==> Uploading dSYMs to Sentry"
     sentry-cli debug-files upload --org "${SENTRY_ORG:-get-virtual-view}" \
         --project "${SENTRY_PROJECT:-tandemclip}" .build 2>&1 | tail -3 || \
         echo "    dSYM upload failed (non-fatal)"
+else
+    echo "WARNING: no SENTRY_AUTH_TOKEN (env or Keychain 'tandemclip-sentry') — shipping without symbolicated crash reports" >&2
 fi
 
 # 2. Stage the DMG (app + /Applications drop target) and build it.

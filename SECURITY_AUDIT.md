@@ -2,7 +2,7 @@
 
 **Scope:** Swift source in `Sources/tandemclip`, packaging, appcast, web serving.
 **Threat model:** attacker on the same LAN; a rogue/revoked device that once knew the pairing code; a network MITM against the update channel; another local user on the same Mac.
-**Latest review:** 2026-07-02, against v0.2.1 (build 13).
+**Latest review:** 2026-07-03, against v0.14.0 (build 31).
 
 ## Summary
 
@@ -50,12 +50,76 @@ A re-audit against the current tree found no open Critical/High. Applied hardeni
 - **Allowlist-off default surfaced.** The trusted-device allowlist (hence per-device revocation) is off by default — the PSK is the trust boundary. This is now documented in-app (Settings → Security footer) and in the README so users know how to revoke a device that once knew the code.
 - **Password-manager guarantee stated honestly.** Help + README now spell out that concealed-type filtering is best-effort and depends on the source app setting the marker.
 
+## v0.14.0 review pass (build 31)
+
+The surface grew substantially between v0.2.1 and v0.14.0. A re-audit of every
+new mechanism found two issues, both fixed in this pass; no open Critical/High.
+
+**Delete-everywhere (`delete` message, v0.4.0).** Signed and hash-keyed;
+requires a valid identity signature (unsigned deletes are dropped), a fresh
+timestamp (10-min bound), and passes the seen-signature cache — which also
+stops relay loops. A replayed or forged delete cannot remove a re-copied clip.
+Deletes are honored from trusted peers even while receiving is disabled and
+are deliberately exempt from privacy hold: they reveal only the hash of
+content the peer already holds, and privacy is when removals matter most.
+Older builds fail to decode the unknown type and skip the frame.
+
+**Relay-echo handling (v0.4.0).** Frames carrying our own deviceID on an
+*identified* peer connection are now skipped instead of cancelling the
+connection (gossip echoes used to churn every link on every clip). Genuine
+self-dials — first frame, no identity learned — are still cancelled. Skipped
+frames are never processed, so a peer replaying our messages at us gains
+nothing beyond wasted bytes.
+
+**Privacy hold (v0.9.0).** While on: no clip broadcasts, no pull serving, no
+drop-shares, announces carry identity only, and — FIXED in this pass — AI
+cleanup calls are refused too (previously compose could send typed text to
+the AI endpoint during a hold, contradicting "nothing leaves this Mac").
+Receiving and local capture continue; deletes still propagate (above).
+
+**Auto-apply incoming (v0.13.0).** Manual-mode auto-apply carries Mirror's
+full receive guards: allowlist trust, signature verification, the 10-min
+freshness bound, seen-signature dedup, and hash dedup — and never relays, so
+a Manual Mac cannot be turned into a sender.
+
+**AI text cleanup (v0.10.0, bring-your-own-LLM).** Off by default; text goes
+directly from this Mac to a user-chosen endpoint (no proxy). API keys live in
+the Keychain (`AfterFirstUnlockThisDeviceOnly`), never in preferences. Input
+capped at 20k chars/run. FIXED in this pass: plain `http` endpoints are now
+rejected unless the host is loopback, `.local`, or RFC-1918 — a typo'd
+`http://api.…` would have sent the Bearer key and clipboard text across the
+internet in the clear. The same rule gates the fallback endpoint and the
+settings probe. Model output lands only in the compose editor for review —
+nothing auto-pastes or auto-sends; the §§CHANGES§§ changelog is parsed as
+plain text and stripped from what can reach the clipboard.
+
+**QuickLook previews (v0.12.0).** Peer-supplied file bytes are staged to the
+per-user temp dir just long enough for `QLThumbnailGenerator` — which parses
+out-of-process in sandboxed extensions — then deleted; results (and misses)
+are cached by content hash. Parsing attacker-supplied files is confined to
+Apple's sandboxed preview stack; we never parse them in-process.
+
+**Folder zipping (v0.14.0).** Copied folders travel as zip archives built by
+`/usr/bin/ditto` (absolute path, argv passed directly — no shell
+interpretation of folder names). A pre-flight size walk rejects folders whose
+uncompressed contents exceed 4× the clip cap before any CPU is spent, and the
+resulting archive must itself fit the cap.
+
+**Storage / eviction (v0.8.0).** The received-files cache cap is
+user-configurable (10 MB–1 GB); eviction is oldest-first and never removes
+the clip whose URLs are currently on the pasteboard.
+
+**Help search (v0.14.0).** Semantic matching runs entirely on-device
+(NaturalLanguage embeddings) — help queries generate no network traffic.
+
 ## Residual notes (accepted / low)
 
 - **Concealed-type filtering (9)** still depends on source apps setting the nspasteboard markers; apps that don't will have secrets synced. Inherent to the convention. Now stated plainly in the Help window and README.
 - **Env-var code injection** exposure to same-user processes remains for the headless/deploy path; it's strength-gated and documented.
 - **Origin HTTP (8)** relies on the external proxy for TLS termination; the fronting proxy MUST enforce HTTPS + HTTP→HTTPS redirect for `SUFeedURL`. Update integrity is EdDSA-gated regardless, but plain HTTP would let a MITM withhold/stall security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`.
 - **Trusted-peer DoS.** A peer holding the PSK can still open up to 16 connections and push frames at the per-connection rate cap; bounded, and outside the "unpaired attacker" threat model.
+- **AI endpoint trust.** With AI cleanup enabled, composed/cleaned text is disclosed to whatever endpoint the user configures — that third party is chosen and trusted by the user (local Ollama/LM Studio keeps it on-machine). TLS is enforced off-LAN; content policy at the provider is out of scope.
+- **QuickLook parser surface.** Preview generation feeds attacker-controllable bytes to Apple's QL extensions. They are sandboxed and out-of-process, and patched by macOS updates, but the parser surface itself is Apple's, not ours.
 
 ## What's done well (keep)
 
