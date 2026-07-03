@@ -299,6 +299,17 @@ final class Config {
         }
     }
 
+    /// AI-on-receive features — each sends clip content to the configured
+    /// endpoint automatically, so they are separate opt-ins (default off).
+    var aiSmartLabels: Bool {
+        get { defaults.bool(forKey: "aiSmartLabels") }
+        set { set("aiSmartLabels", newValue) }
+    }
+    var aiTranslateIncoming: Bool {
+        get { defaults.bool(forKey: "aiTranslateIncoming") }
+        set { set("aiTranslateIncoming", newValue) }
+    }
+
     /// Cap on cleanup input so a giant clip can't become a giant bill.
     static let aiMaxInputChars = 20_000
 

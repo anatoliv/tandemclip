@@ -120,3 +120,18 @@ final class ClipIntelligenceTests: XCTestCase {
         XCTAssertFalse(called)
     }
 }
+
+extension ClipIntelligenceTests {
+    func testTitleSanitizer() {
+        XCTAssertEqual(SyncEngine.sanitizeTitle("\"Deploy Runbook For Web\"\nextra line"), "Deploy Runbook For Web")
+        XCTAssertEqual(SyncEngine.sanitizeTitle("  Title.  "), "Title")
+        XCTAssertEqual(SyncEngine.sanitizeTitle(String(repeating: "Long ", count: 40)).count, 60)
+        XCTAssertEqual(SyncEngine.sanitizeTitle(""), "")
+    }
+
+    func testDominantLanguageDetection() {
+        XCTAssertEqual(SyncEngine.dominantLanguage(of: "Buenos días, ¿cómo estás? Nos vemos mañana en la oficina."), "es")
+        XCTAssertEqual(SyncEngine.dominantLanguage(of: "Good morning, see you tomorrow at the office."), "en")
+        XCTAssertNil(SyncEngine.dominantLanguage(of: "x1 z9"))
+    }
+}
