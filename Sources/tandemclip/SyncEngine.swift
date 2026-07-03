@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NaturalLanguage
 
 /// A recent clipboard entry (in-memory history).
 struct HistoryItem: Identifiable {
@@ -264,6 +265,8 @@ final class SyncEngine {
         heldSecret = nil   // every new copy is re-assessed
         recordHistory(snap, hash, source: config.deviceName)
 
+        maybeSmartLabel(snap, hash)
+
         // Secret guard: a text clip that looks like a credential is captured
         // (history, snapshot) but held from ALL sending until released — the
         // backstop for apps that don't set the concealed-type marker.
@@ -446,6 +449,8 @@ final class SyncEngine {
         localTimestamp = now()
         clipOrigin = name
         recordHistory(snap, hash, source: name)
+        maybeSmartLabel(snap, hash)
+        maybeTranslate(snap, hash)
         let urls = watcher.write(snap)   // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
@@ -461,6 +466,94 @@ final class SyncEngine {
         guard !urls.isEmpty else { return }
         for url in urls { Log.trace("sync", "reveal \(url.lastPathComponent)") }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    // MARK: - AI on receive/capture (smart labels, translations)
+
+    /// AI-generated titles by content hash (session cache).
+    private var titleCache: [String: String] = [:]
+    /// Translations of incoming foreign-language clips, by content hash —
+    /// shown in the preview card, never replacing the clip itself.
+    private(set) var translations: [String: String] = [:]
+
+    private static let titlePrompt = """
+        Give this text a short title of 3-7 words in Title Case that captures \
+        what it is. Output only the title - no quotes, no trailing punctuation.
+        """
+
+    /// Generate a 3–7 word title for a long text clip (tonebox's title
+    /// pattern), then relabel the history entry. Opt-in; never runs during
+    /// privacy hold or on a secret-guard-held clip.
+    private func maybeSmartLabel(_ snap: ClipSnapshot, _ hash: String) {
+        guard config.aiSmartLabels, !config.privacyHold, heldSecret?.hash != hash,
+              titleCache[hash] == nil,
+              let text = snap.plainText, text.count > 200,
+              let client = AIClient.fromConfig(config) else { return }
+        titleCache[hash] = ""   // claim, so bursts don't double-bill
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let raw = (try? await client.complete([
+                .init(role: .system, content: Self.titlePrompt),
+                .init(role: .user, content: String(text.prefix(4000))),
+            ])) ?? ""
+            let title = Self.sanitizeTitle(raw)
+            guard !title.isEmpty else { self.titleCache[hash] = nil; return }
+            self.titleCache[hash] = title
+            self.relabel(hash, to: "✨ " + title)
+            self.onStatusChange?()
+        }
+    }
+
+    /// A runaway model response must never become a history label.
+    static func sanitizeTitle(_ raw: String) -> String {
+        let first = raw.split(separator: "\n").first.map(String.init) ?? ""
+        let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.,:;"))
+        return String(trimmed.prefix(60))
+    }
+
+    private func relabel(_ hash: String, to label: String) {
+        guard let i = history.firstIndex(where: { $0.hash == hash }) else { return }
+        let old = history[i]
+        history[i] = HistoryItem(snapshot: old.snapshot, hash: old.hash,
+                                 timestamp: old.timestamp, label: label, source: old.source)
+    }
+
+    /// Translate an incoming clip whose dominant language differs from the
+    /// user's (local detection via NaturalLanguage; only the translation call
+    /// touches the endpoint). Opt-in, incoming clips only.
+    private func maybeTranslate(_ snap: ClipSnapshot, _ hash: String) {
+        guard config.aiTranslateIncoming, !config.privacyHold,
+              translations[hash] == nil,
+              let text = snap.plainText, text.count > 20,
+              let detected = Self.dominantLanguage(of: text),
+              let userLang = Locale.current.language.languageCode?.identifier,
+              detected != userLang,
+              let client = AIClient.fromConfig(config) else { return }
+        translations[hash] = ""   // claim
+        let prompt = config.aiPresets.first { $0.id == "translate" }?.prompt
+            ?? AIPreset.bundled[5].prompt
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = (try? await client.complete([
+                .init(role: .system, content: prompt),
+                .init(role: .user, content: String(text.prefix(Config.aiMaxInputChars))),
+            ]))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if result.isEmpty { self.translations[hash] = nil }
+            else {
+                self.translations[hash] = result
+                self.onStatusChange?()
+            }
+        }
+    }
+
+    static func dominantLanguage(of text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(String(text.prefix(400)))
+        guard let lang = recognizer.dominantLanguage,
+              let confidence = recognizer.languageHypotheses(withMaximum: 1)[lang],
+              confidence > 0.6 else { return nil }
+        return lang.rawValue
     }
 
     // MARK: - Replay guard
