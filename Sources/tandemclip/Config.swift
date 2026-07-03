@@ -205,6 +205,95 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
+    // MARK: - AI text cleanup (bring-your-own-LLM, tonebox pattern)
+
+    /// Master switch for the AI cleanup feature (off until configured).
+    var aiEnabled: Bool {
+        get { defaults.bool(forKey: "aiEnabled") }
+        set { set("aiEnabled", newValue) }
+    }
+
+    /// OpenAI-compatible chat-completions endpoint URL.
+    var aiEndpoint: String {
+        get { defaults.string(forKey: "aiEndpoint") ?? "" }
+        set { set("aiEndpoint", newValue) }
+    }
+
+    /// Model name sent in the request body.
+    var aiModel: String {
+        get { defaults.string(forKey: "aiModel") ?? "" }
+        set { set("aiModel", newValue) }
+    }
+
+    /// API key — Keychain, never UserDefaults. Empty is valid (local servers).
+    var aiAPIKey: String {
+        get { KeychainStore.get("aiApiKey") ?? "" }
+        set {
+            if newValue.isEmpty { KeychainStore.delete("aiApiKey") }
+            else { KeychainStore.set("aiApiKey", newValue) }
+        }
+    }
+
+    /// Default system prompt for the "Clean up" preset — adapted from
+    /// tonebox's dictation-cleanup prompt to general written/pasted text.
+    static let defaultAICleanupPrompt = """
+        You are cleaning up a piece of text the user wrote or pasted. Rewrite \
+        it into clean, correct, readable text that preserves the meaning, \
+        intent, and voice. Fix grammar, punctuation, capitalization, and \
+        typos; tighten filler and false starts. Do NOT add greetings, \
+        sign-offs, commentary, quotation marks around the whole thing, or any \
+        information that isn't in the text. Output only the cleaned text, \
+        nothing else.
+        """
+
+    /// Tone presets (tonebox's VoiceMode pattern): user-editable, seeded with
+    /// the bundled set on first read.
+    var aiPresets: [AIPreset] {
+        get {
+            guard let data = defaults.data(forKey: "aiPresets"),
+                  let presets = try? JSONDecoder().decode([AIPreset].self, from: data),
+                  !presets.isEmpty else { return AIPreset.bundled }
+            return presets
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) { set("aiPresets", data) }
+        }
+    }
+
+    /// The preset last used in the compose area.
+    var aiSelectedPresetID: String {
+        get { defaults.string(forKey: "aiSelectedPresetID") ?? "cleanup" }
+        set { set("aiSelectedPresetID", newValue) }
+    }
+
+    /// Adapt the rewrite's tone to the app the picker was opened over
+    /// (email / chat / code / notes — tonebox's auto-tone pattern).
+    var aiAutoTone: Bool {
+        get { defaults.object(forKey: "aiAutoTone") == nil ? true : defaults.bool(forKey: "aiAutoTone") }
+        set { set("aiAutoTone", newValue) }
+    }
+
+    /// Optional fallback endpoint, tried once when the primary fails
+    /// retryably (rate limit, server error, network) before any output.
+    var aiFallbackEndpoint: String {
+        get { defaults.string(forKey: "aiFallbackEndpoint") ?? "" }
+        set { set("aiFallbackEndpoint", newValue) }
+    }
+    var aiFallbackModel: String {
+        get { defaults.string(forKey: "aiFallbackModel") ?? "" }
+        set { set("aiFallbackModel", newValue) }
+    }
+    var aiFallbackAPIKey: String {
+        get { KeychainStore.get("aiFallbackApiKey") ?? "" }
+        set {
+            if newValue.isEmpty { KeychainStore.delete("aiFallbackApiKey") }
+            else { KeychainStore.set("aiFallbackApiKey", newValue) }
+        }
+    }
+
+    /// Cap on cleanup input so a giant clip can't become a giant bill.
+    static let aiMaxInputChars = 20_000
+
     /// Privacy hold: while on, nothing of ours leaves this Mac — no clip
     /// broadcasts, no pull serving, no drop-shares, no metadata/previews in
     /// announces. Receiving still works. Toggled from the picker; persisted so
