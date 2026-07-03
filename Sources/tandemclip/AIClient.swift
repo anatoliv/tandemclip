@@ -73,6 +73,12 @@ struct AIClient {
         switch config.aiAuthMode {
         case .codexOAuth:
             guard !config.aiModel.isEmpty else { return nil }
+            // Self-heal: if a prior OAuth call latched degraded (token expired
+            // / revoked / signed out) and an API-key fallback is configured,
+            // route new work straight there instead of failing every call.
+            if CodexDegradation.isDegraded, let fallback = fallbackFromConfig(config) {
+                return fallback
+            }
             // The endpoint is forced to the Codex backend; the config URL is
             // ignored. If not signed in yet, the first stream throws
             // `notSignedIn` so the UI can point at Settings.
@@ -212,8 +218,17 @@ struct AIClient {
                         }
                         if let delta { continuation.yield(delta) }
                     }
+                    // The OAuth path just worked — clear any degraded latch so
+                    // fromConfig routes back to the subscription.
+                    if case .codexOAuth = auth { CodexDegradation.isDegraded = false }
                     continuation.finish()
                 } catch {
+                    // An OAuth call that couldn't authenticate latches degraded
+                    // so future work reroutes to the API-key fallback instead
+                    // of failing every time.
+                    if case .codexOAuth = auth, Self.isAuthFailure(error) {
+                        CodexDegradation.isDegraded = true
+                    }
                     continuation.finish(throwing: error)
                 }
             }
@@ -301,6 +316,19 @@ extension AIClient {
         guard let url = URL(string: config.aiFallbackEndpoint), isAcceptableEndpoint(url),
               !config.aiFallbackModel.isEmpty else { return nil }
         return AIClient(endpoint: url, model: config.aiFallbackModel, apiKey: config.aiFallbackAPIKey)
+    }
+
+    /// True when a ChatGPT-OAuth call failed because it couldn't authenticate
+    /// (signed out, or the token was rejected 401/403). These are exactly the
+    /// failures `isRetryable` excludes, so they need the degraded latch to
+    /// reroute future work rather than fail every call.
+    static func isAuthFailure(_ error: Error) -> Bool {
+        guard let e = error as? AIError else { return false }
+        switch e {
+        case .notSignedIn: return true
+        case let .httpStatus(code, _): return code == 401 || code == 403
+        default: return false
+        }
     }
 
     /// Retry on rate limits, server errors, and network trouble; never on
