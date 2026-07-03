@@ -1439,7 +1439,19 @@ private struct HistoryRow: View {
         HStack(spacing: 10) {
             thumb
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.label.isEmpty ? item.kindLabel : item.label).lineLimit(1).font(.system(size: Tokens.CompactSize.rowTitle))
+                if item.label.hasPrefix(HistoryItem.smartTitlePrefix) {
+                    // Smart title: a crisp accent glyph reads far better than the
+                    // raw ✨ emoji baked into the string (tiny, off-palette).
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: Tokens.CompactSize.rowTitle))
+                            .foregroundColor(Tokens.accent)
+                        Text(String(item.label.dropFirst(HistoryItem.smartTitlePrefix.count)))
+                            .lineLimit(1).font(.system(size: Tokens.CompactSize.rowTitle))
+                    }
+                } else {
+                    Text(item.label.isEmpty ? item.kindLabel : item.label).lineLimit(1).font(.system(size: Tokens.CompactSize.rowTitle))
+                }
                 HStack(spacing: 6) {
                     Text(item.source).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
                     Text("·").foregroundColor(.secondary)
