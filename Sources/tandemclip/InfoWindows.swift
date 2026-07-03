@@ -119,6 +119,8 @@ struct HelpView: View {
         // pane that grows, bounded by a sensible minimum. The window's own
         // initial/min size is set in InfoWindowController.showHelp().
         .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
+        // Sidebar selection + controls ride the accent (DESIGN_SYSTEM.md §2).
+        .tint(Tokens.accent)
     }
 
     // MARK: Sidebar
