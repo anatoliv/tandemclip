@@ -4,6 +4,12 @@ import NaturalLanguage
 
 /// A recent clipboard entry (in-memory history).
 struct HistoryItem: Identifiable {
+    /// Marks a label as an AI smart title. The picker strips this and draws a
+    /// crisp accent `sparkles` glyph instead of rendering the raw emoji, which
+    /// is small and low-contrast inline. Kept as a stored-label prefix (not a
+    /// separate flag) so search and previews still see the title text.
+    static let smartTitlePrefix = "✨ "
+
     let snapshot: ClipSnapshot
     let hash: String
     let timestamp: Double
@@ -690,7 +696,7 @@ final class SyncEngine {
                     return
                 }
                 self.titleCache[hash] = title
-                self.relabel(hash, to: "✨ " + title)
+                self.relabel(hash, to: HistoryItem.smartTitlePrefix + title)
                 self.onStatusChange?()
             } catch {
                 // Release the claim so a later retry (or a re-copy) can try again.
