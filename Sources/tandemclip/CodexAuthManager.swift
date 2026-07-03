@@ -37,6 +37,9 @@ final class CodexAuthManager: ObservableObject {
 
     private init() {
         loadFromKeychain()
+        // Start each launch on the real OAuth path; a prior session's outage
+        // may have been transient, and the first failed call re-latches.
+        CodexDegradation.isDegraded = false
     }
 
     // MARK: - Public flows
@@ -99,6 +102,9 @@ final class CodexAuthManager: ObservableObject {
         accountID = nil
         refreshInFlight?.cancel()
         refreshInFlight = nil
+        // Abandoning OAuth — drop the latch so it doesn't accuse a path the
+        // user just left.
+        CodexDegradation.isDegraded = false
     }
 
     /// Returns a usable access token (refreshing on the fly near expiry) plus
@@ -160,6 +166,9 @@ final class CodexAuthManager: ObservableObject {
         KeychainStore.setData(Self.keychainAccount, data)
         tokens = fresh
         applyClaims(from: fresh)
+        // A fresh token landed (sign-in OR successful refresh) — the OAuth
+        // path works again, so retire any degraded latch.
+        CodexDegradation.isDegraded = false
     }
 
     /// Decode the id_token JWT into display fields. Tolerates failure — a
