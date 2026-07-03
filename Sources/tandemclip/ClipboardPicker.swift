@@ -189,11 +189,19 @@ final class ClipboardPickerController {
             model?.flashDrop("This Mac is receive-only — can’t share.")
             return
         }
-        let n = engine.shareFiles(urls)
-        if n > 0 {
-            model?.flashDrop("Shared \(urls.count) file\(urls.count == 1 ? "" : "s") to \(n) Mac\(n == 1 ? "" : "s")")
+        // Honest reporting: say what was actually sent, to how many Macs, and
+        // why anything was skipped — no more "No connected Macs" when the real
+        // problem was an oversized file.
+        let outcome = engine.shareFiles(urls)
+        if outcome.sent == 0 {
+            model?.flashDrop(outcome.skipped > 0
+                ? "Nothing sent — items were over the size limit or unreadable"
+                : "No connected Macs to share with")
         } else {
-            model?.flashDrop("No connected Macs to share with")
+            var msg = "Shared \(outcome.sent) file\(outcome.sent == 1 ? "" : "s")"
+            msg += outcome.peers > 0 ? " to \(outcome.peers) Mac\(outcome.peers == 1 ? "" : "s")" : " — no Macs connected right now"
+            if outcome.skipped > 0 { msg += " · \(outcome.skipped) skipped (too large)" }
+            model?.flashDrop(msg)
         }
         refreshIfVisible()
     }
@@ -327,6 +335,12 @@ final class PickerModel: ObservableObject {
     /// text is restored — words are never lost.
     func runCleanup() {
         guard !composeBusy else { return }
+        // Privacy hold promises nothing leaves this Mac — that includes the
+        // AI endpoint, even a local one (keep the promise simple).
+        guard !privacyHold else {
+            composeError = "Privacy hold is on (✋) — AI calls are paused until you switch it off."
+            return
+        }
         let input = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { return }
         guard let stream = makeCleanupStream?(input, selectedPreset) else {
