@@ -232,6 +232,30 @@ final class SyncEngine {
         onStatusChange?()
     }
 
+    /// Share a piece of text to the mesh right now — the Services-menu twin
+    /// of shareFiles: explicit user action, works in both modes, honors
+    /// role/pause/privacy/network. Recorded in history; clipboard untouched.
+    @discardableResult
+    func shareText(_ text: String) -> Bool {
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed(),
+              !text.isEmpty else { return false }
+        let snap = ClipSnapshot(parts: [.text: Data(text.utf8)])
+        var m = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = snap.hash
+        m.size = snap.totalBytes
+        m.contentType = snap.contentLabel
+        m.text = snap.plainText
+        m.parts = snap.wireParts
+        config.identity.sign(&m)
+        recordHistory(snap, snap.hash, source: "\(config.deviceName) (shared)")
+        Log.trace("sync", "share text \(snap.totalBytes)B")
+        transport.broadcast(m)
+        lastSyncSource = "\(config.deviceName) (shared)"
+        onStatusChange?()
+        return true
+    }
+
     // MARK: - Local clipboard changed
 
     /// A local copy the secret guard held back from syncing (cleared by the
