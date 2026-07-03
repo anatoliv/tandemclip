@@ -662,21 +662,41 @@ final class SyncEngine {
     /// privacy hold or on a secret-guard-held clip.
     private func maybeSmartLabel(_ snap: ClipSnapshot, _ hash: String) {
         guard config.aiSmartLabels, !config.privacyHold, heldSecret?.hash != hash,
-              titleCache[hash] == nil,
-              let text = snap.plainText, text.count > 200,
-              let client = AIClient.fromConfig(config) else { return }
+              titleCache[hash] == nil, let text = snap.plainText else { return }
+        // Split the length + client gates out of the guard so a missing title
+        // has a reason in the log — the failure/skip path used to be silent,
+        // which reads as "smart titles don't work" even when they're just
+        // skipping a short clip or the endpoint is erroring.
+        guard text.count > 200 else {
+            Log.trace("ai", "smart-title skip: \(text.count) plain chars (needs >200)")
+            return
+        }
+        guard let client = AIClient.fromConfig(config) else {
+            Log.trace("ai", "smart-title skip: AI not configured")
+            return
+        }
         titleCache[hash] = ""   // claim, so bursts don't double-bill
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let raw = (try? await client.complete([
-                .init(role: .system, content: Self.titlePrompt),
-                .init(role: .user, content: String(text.prefix(4000))),
-            ])) ?? ""
-            let title = Self.sanitizeTitle(raw)
-            guard !title.isEmpty else { self.titleCache[hash] = nil; return }
-            self.titleCache[hash] = title
-            self.relabel(hash, to: "✨ " + title)
-            self.onStatusChange?()
+            do {
+                let raw = try await client.complete([
+                    .init(role: .system, content: Self.titlePrompt),
+                    .init(role: .user, content: String(text.prefix(4000))),
+                ])
+                let title = Self.sanitizeTitle(raw)
+                guard !title.isEmpty else {
+                    Log.error("smart-title: model returned an unusable title for clip \(hash.prefix(8))")
+                    self.titleCache[hash] = nil
+                    return
+                }
+                self.titleCache[hash] = title
+                self.relabel(hash, to: "✨ " + title)
+                self.onStatusChange?()
+            } catch {
+                // Release the claim so a later retry (or a re-copy) can try again.
+                Log.error("smart-title: request failed for clip \(hash.prefix(8)): \(error)")
+                self.titleCache[hash] = nil
+            }
         }
     }
 
