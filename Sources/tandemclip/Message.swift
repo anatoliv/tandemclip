@@ -9,7 +9,9 @@ import Foundation
 /// - `delete`: "remove the history item with this `hash` everywhere" — a signed
 ///   user action, broadcast and relayed like a clip. Older builds fail to decode
 ///   the unknown type and skip the frame, so this is forward-compatible.
-enum MessageType: String, Codable { case announce, clip, request, delete }
+/// - `pin` / `unpin`: a clip pinned (full content, label in `preview`) or
+///   unpinned (hash only) — signed user actions, relayed like clips.
+enum MessageType: String, Codable { case announce, clip, request, delete, pin, unpin }
 
 /// Wire format. JSON body, length-prefixed on the wire (see Transport). Every
 /// message carries the sender's identity so peers can be listed, addressed, and

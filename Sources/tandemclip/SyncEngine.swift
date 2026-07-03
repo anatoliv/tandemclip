@@ -222,6 +222,7 @@ final class SyncEngine {
     /// should no longer be pasteable anywhere.
     private func removeClip(hash: String) {
         history.removeAll { $0.hash == hash }
+        removePinLocally(hash: hash)   // deleting everywhere unpins everywhere
         purgeReceivedFiles(hash: hash)
         if localHash == hash {
             localSnapshot = nil
@@ -387,6 +388,26 @@ final class SyncEngine {
                 transport.broadcast(msg)
             }
 
+        case .pin:
+            // Content delivery — gated like clips; freshness + replay guarded.
+            guard receiveAllowed, verifiedKey != nil, let hash = msg.hash else { return }
+            guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+            guard let snap = snapshot(from: msg), snap.totalBytes <= config.maxClipBytes * 2 else { return }
+            let label = msg.preview ?? snap.plainText.map { String($0.prefix(64)) } ?? snap.contentLabel
+            Log.trace("sync", "pin from \(msg.deviceName): \(label)")
+            addPin(PinnedClip(hash: hash, label: label, source: msg.deviceName,
+                              timestamp: msg.timestamp, parts: snap.wireParts,
+                              files: snap.wireFiles))
+            if config.role.canSend { transport.broadcast(msg) }   // gossip
+
+        case .unpin:
+            // Data-minimizing — honored from any trusted peer, like delete.
+            guard verifiedKey != nil, let hash = msg.hash else { return }
+            guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+            Log.trace("sync", "unpin from \(msg.deviceName)")
+            removePinLocally(hash: hash)
+            if config.role.canSend { transport.broadcast(msg) }
+
         case .request:
             // A pull is the peer's explicit ask for our current clipboard, so it
             // is served whatever the snapshot holds — including file content when
@@ -490,6 +511,72 @@ final class SyncEngine {
         guard !urls.isEmpty else { return }
         for url in urls { Log.trace("sync", "reveal \(url.lastPathComponent)") }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    // MARK: - Pinned clips (persistent + synced)
+
+    private(set) var pins: [PinnedClip] = PinStore.load()
+
+    /// Pin a clip: persist locally and broadcast a signed `pin` carrying the
+    /// full content so every Mac keeps it past restarts. Explicit action —
+    /// works in both modes; sending honors the usual gates (pin still sticks
+    /// locally when they block).
+    @discardableResult
+    func pin(_ item: HistoryItem) -> Bool {
+        guard item.snapshot.totalBytes <= config.maxClipBytes else { return false }
+        let pinned = PinnedClip(hash: item.hash, label: item.label, source: item.source,
+                                timestamp: now(), parts: item.snapshot.wireParts,
+                                files: item.snapshot.wireFiles)
+        addPin(pinned)
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed(),
+              heldSecret?.hash != item.hash else { return true }
+        var m = Message(type: .pin, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = item.hash
+        m.size = item.snapshot.totalBytes
+        m.contentType = item.snapshot.contentLabel
+        m.preview = String(item.label.prefix(80))
+        m.parts = pinned.parts
+        m.files = pinned.files.isEmpty ? nil : pinned.files
+        config.identity.sign(&m)
+        transport.broadcast(m)
+        return true
+    }
+
+    /// Unpin everywhere (signed, hash-keyed — delete-everywhere's twin).
+    func unpin(hash: String) {
+        removePinLocally(hash: hash)
+        guard config.role.canSend, !config.paused, networkAllowed() else { return }
+        var m = Message(type: .unpin, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = hash
+        config.identity.sign(&m)
+        transport.broadcast(m)
+    }
+
+    private func addPin(_ pinned: PinnedClip) {
+        pins.removeAll { $0.hash == pinned.hash }
+        pins.insert(pinned, at: 0)
+        if pins.count > PinStore.maxPins { pins.removeLast(pins.count - PinStore.maxPins) }
+        PinStore.save(pins)
+        onStatusChange?()
+    }
+
+    private func removePinLocally(hash: String) {
+        guard pins.contains(where: { $0.hash == hash }) else { return }
+        pins.removeAll { $0.hash == hash }
+        PinStore.save(pins)
+        onStatusChange?()
+    }
+
+    /// Put a pinned clip back on the clipboard (re-syncs in Mirror, like
+    /// history re-apply); reveals materialized files.
+    func applyPinned(hash: String) {
+        guard let pinned = pins.first(where: { $0.hash == hash }),
+              let snap = pinned.snapshot else { return }
+        Log.trace("sync", "pinned re-apply \(pinned.label)")
+        let urls = watcher.repost(snap)
+        openFiles(urls)
     }
 
     // MARK: - AI on receive/capture (smart labels, translations)
