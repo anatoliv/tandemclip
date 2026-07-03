@@ -205,6 +205,22 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
+    /// Privacy hold: while on, nothing of ours leaves this Mac — no clip
+    /// broadcasts, no pull serving, no drop-shares, no metadata/previews in
+    /// announces. Receiving still works. Toggled from the picker; persisted so
+    /// a privacy choice survives relaunch.
+    var privacyHold: Bool {
+        get { defaults.bool(forKey: "privacyHold") }
+        set { set("privacyHold", newValue) }
+    }
+
+    /// Keep the picker panel open after picking/pulling (pin), instead of
+    /// auto-closing. Esc still closes it.
+    var pickerPinned: Bool {
+        get { defaults.bool(forKey: "pickerPinned") }
+        set { set("pickerPinned", newValue) }
+    }
+
     /// On-disk cap for the received-files cache. Past it, the oldest per-clip
     /// folders are evicted automatically (see ClipboardWatcher).
     var receivedCacheCap: Int {

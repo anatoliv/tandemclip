@@ -78,8 +78,15 @@ final class ClipboardPickerController {
 
     private func makeModel() -> PickerModel {
         let m = PickerModel(
-            onPickHistory: { [weak self] hash in self?.engine.applyHistory(hash: hash); self?.hide() },
-            onPullPeer:    { [weak self] id in self?.engine.pull(from: id); self?.hide() },
+            // Pinned: stay open after picking/pulling (Esc still closes).
+            onPickHistory: { [weak self] hash in
+                self?.engine.applyHistory(hash: hash)
+                self?.hideUnlessPinned()
+            },
+            onPullPeer: { [weak self] id in
+                self?.engine.pull(from: id)
+                self?.hideUnlessPinned()
+            },
             onDropFiles:   { [weak self] urls in self?.handleDrop(urls) },
             // Deleting keeps the picker open (you may be pruning several).
             onDeleteHistory: { [weak self] hash in
@@ -94,13 +101,29 @@ final class ClipboardPickerController {
             self?.config.collapsedGroups = groups.sorted()
             self?.config.collapsedSubgroups = subs.sorted()
         }
+        // Privacy hold + pin: seeded from config, persisted on toggle.
+        m.privacyHold = config.privacyHold
+        m.pinned = config.pickerPinned
+        m.onPrivacyChange = { [weak self] on in
+            self?.config.privacyHold = on
+            self?.engine.onStatusChange?()   // menu state line + icon update
+        }
+        m.onPinnedChange = { [weak self] on in self?.config.pickerPinned = on }
         return m
+    }
+
+    private func hideUnlessPinned() {
+        if model?.pinned == true { refreshIfVisible() } else { hide() }
     }
 
     /// Share dropped files and surface the outcome in the picker. Kept here (not
     /// in the model) so the messaging can consult config/engine state.
     private func handleDrop(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
+        guard !config.privacyHold else {
+            model?.flashDrop("Privacy hold is on — nothing is shared.")
+            return
+        }
         guard config.role.canSend else {
             model?.flashDrop("This Mac is receive-only — can’t share.")
             return
@@ -159,6 +182,17 @@ final class PickerModel: ObservableObject {
     /// Called on every fold/unfold (groups, sub-sections) so the owner can
     /// persist the new state.
     var onCollapsedChange: ((_ groups: Set<String>, _ subs: Set<String>) -> Void)?
+
+    /// Privacy hold — nothing of ours leaves this Mac while on (mirrors
+    /// config.privacyHold; the controller seeds + persists it).
+    @Published var privacyHold = false
+    /// Pinned — the panel stays open after picking/pulling.
+    @Published var pinned = false
+    var onPrivacyChange: ((Bool) -> Void)?
+    var onPinnedChange: ((Bool) -> Void)?
+
+    func togglePrivacy() { privacyHold.toggle(); onPrivacyChange?(privacyHold) }
+    func togglePin() { pinned.toggle(); onPinnedChange?(pinned) }
 
     /// Unit separator keeps composite keys unambiguous even if a Mac's name
     /// contains punctuation.
@@ -510,16 +544,27 @@ struct PickerView: View {
             }
 
             Divider()
-            HStack(spacing: 14) {
+            HStack(spacing: 9) {
                 hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1–9", "quick"); hint("⌘⌫", "delete"); hint("⎋", "close")
-                Spacer()
+                Spacer(minLength: 6)
                 if !model.clipUsage.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.clipboard").font(.system(size: 9))
-                        Text(model.clipUsage).font(.system(size: 10))
+                        Text(model.clipUsage).font(.system(size: 10)).lineLimit(1)
                     }
                     .foregroundColor(.secondary)
+                    .layoutPriority(-1)   // first to give way when the panel is narrow
                 }
+                footerToggle("hand.raised" + (model.privacyHold ? ".fill" : ""),
+                             active: model.privacyHold,
+                             help: model.privacyHold
+                                ? "Privacy hold is ON — nothing you copy leaves this Mac. Click to resume sharing."
+                                : "Privacy hold: stop sending your copies to other Macs") { model.togglePrivacy() }
+                footerToggle("pin" + (model.pinned ? ".fill" : ""),
+                             active: model.pinned,
+                             help: model.pinned
+                                ? "Pinned — the picker stays open after picking. Click to unpin."
+                                : "Pin: keep the picker open after picking a clip") { model.togglePin() }
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
         }
@@ -655,12 +700,29 @@ struct PickerView: View {
         .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { model.toggleSub(source, section.title) } }
         .handCursorOnHover()
     }
-    private func hint(_ k: String, _ t: String) -> some View {
-        HStack(spacing: 4) {
-            Text(k).font(.system(size: 10, design: .monospaced)).padding(.horizontal, 4).padding(.vertical, 1)
-                .background(Color.secondary.opacity(0.15)).cornerRadius(3)
-            Text(t).font(.system(size: 10)).foregroundColor(.secondary)
+    /// Small stateful icon button for the footer (privacy hold, pin). Accent
+    /// tint + filled symbol when active so the state reads at a glance.
+    private func footerToggle(_ symbol: String, active: Bool, help: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: { withAnimation(.easeOut(duration: 0.12)) { action() } }) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(active ? .white : .secondary)
+                .frame(width: 24, height: 18)
+                .background(RoundedRectangle(cornerRadius: 4)
+                    .fill(active ? Color.accentColor : Color.secondary.opacity(0.12)))
         }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func hint(_ k: String, _ t: String) -> some View {
+        HStack(spacing: 3) {
+            Text(k).font(.system(size: 10, design: .monospaced)).lineLimit(1).padding(.horizontal, 4).padding(.vertical, 1)
+                .background(Color.secondary.opacity(0.15)).cornerRadius(3)
+            Text(t).font(.system(size: 10)).lineLimit(1).foregroundColor(.secondary)
+        }
+        .fixedSize()
     }
 }
 
