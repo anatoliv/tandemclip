@@ -109,23 +109,31 @@ No hover elevation (flat language). Respect Reduce Motion where practical.
 | `Theme.swift` tokens | ✅ full scale (colors, radius, space, type, icons, motion) |
 | Help / About (`InfoWindows.swift`) | ✅ tokenized — the reference implementation |
 | `SettingsWindow.swift` | ✅ tokenized; controls accent-tinted |
-| `ClipboardPicker.swift` | ◐ radii + accent tokenized; compact type is a tracked exception (below) |
+| `ClipboardPicker.swift` | ✅ tokenized (radii, accent, and compact type via `CompactSize`) |
 
-### The picker's compact type — a deliberate, tracked exception
+**The whole app now draws from `Tokens`.** The design-drift lint in
+`Scripts/check-release.sh` enforces it: no raw `cornerRadius: <n>` or
+`.system(size: <n>` in any view (only SF-Rounded faces are exempt).
 
-`ClipboardPicker.swift` is the densest surface in the app and uses a finer type
-ramp than `FontScale` (many `10.5` / `9.5` / `11.5` sizes), hand-tuned so clip
-rows, chips, and hover previews stay legible without truncating in their
-fixed-width frames. Snapping these to the coarse scale risks reflowing that
-dense layout, and the picker **cannot be render-verified offline** (its models
-pull in the whole sync/crypto stack) — nor should it be live-driven on a
-primary Mac. So its **radii and accent are tokenized; its font sizes are left
-as-is pending a dedicated pass** that adds an in-app debug render hook and
-verifies each picker state (row, group header, hover preview, compose) before
-snapping. Until then, treat the picker's `.system(size:)` values as intentional.
+### The picker's compact type — `Tokens.CompactSize`
+
+The picker is the app's densest surface and needs a finer type ramp than the
+reading-oriented `FontScale`. That ramp lives in **`Tokens.CompactSize`**
+(`mini 6` · `tiny 8` · `badge 9` · `label 10` · `meta 11` · `rowText 12` ·
+`rowTitle 13` · `hero 27`) — raw CGFloat sizes so call sites keep their own
+`weight:` / `design:`. These replaced a sprawl of half-point literals
+(`6.5`/`8.5`/`9.5`/`10.5`/`11.5`/`12.5`/`13.5`), each rounded **down** to the
+nearest clean value (smaller text can't overflow a frame the larger size
+already fit).
+
+**Verified, not guessed.** The picker can't be rendered from a lightweight
+standalone harness (its models pull in the whole sync engine), so a
+DEBUG-only, env-gated renderer — `DebugRender.swift`, driven by
+`TANDEMCLIP_RENDER_PICKER=list|hover|compose` — hosts a seeded `PickerModel`
+in a window and screenshots it. Every picker state was compared before/after
+the token migration; use it again before changing picker type.
 
 **Migration rule:** when you next touch a view, replace its raw `cornerRadius`,
 `.system(size:)`, and `.padding()` numbers with the nearest `Tokens` value.
 Don't introduce a new raw number — if the scale lacks it, add a named token
-here and in `Theme.swift` first. (The picker's compact type is the one
-documented exception.)
+here and in `Theme.swift` first.
