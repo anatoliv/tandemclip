@@ -191,7 +191,7 @@ final class SyncEngine {
         config.identity.sign(&m)
         recordHistory(snap, snap.hash, source: "\(config.deviceName) (shared)")
         Log.trace("sync", "share \(files.count) file(s) \(snap.totalBytes)B")
-        transport.broadcast(m)
+        dispatch(m)
         lastSyncSource = "\(config.deviceName) (shared)"
         onStatusChange?()
         return ShareOutcome(sent: files.count, skipped: skipped, peers: peerCount)
@@ -274,7 +274,7 @@ final class SyncEngine {
         if config.mode == .mirror, let msg = clipMessage(type: .clip) {
             lastHash = held.hash
             Log.trace("sync", "secret hold released — broadcasting")
-            transport.broadcast(msg)
+            dispatch(msg)
             lastSyncSource = "\(config.deviceName) (local)"
         } else {
             transport.broadcast(makeAnnounce())
@@ -323,7 +323,7 @@ final class SyncEngine {
             guard let msg = clipMessage(type: .clip) else { return }
             lastHash = hash
             Log.trace("sync", "mirror: broadcast \(snap.contentLabel) \(snap.totalBytes)B")
-            transport.broadcast(msg)
+            dispatch(msg)
             lastSyncSource = "\(config.deviceName) (local)"
         } else {
             // Manual: only advertise metadata; content stays until pulled.
@@ -388,6 +388,9 @@ final class SyncEngine {
                 transport.broadcast(msg)
             }
 
+        case .chunk:
+            handleChunk(msg, verifiedKey: verifiedKey)
+
         case .pin:
             // Content delivery — gated like clips; freshness + replay guarded.
             guard receiveAllowed, verifiedKey != nil, let hash = msg.hash else { return }
@@ -426,7 +429,7 @@ final class SyncEngine {
             }
             guard let reply = clipMessage(type: .clip) else { return }
             Log.trace("sync", "serving pull -> \(msg.deviceName)")
-            transport.send(reply, to: msg.deviceID)
+            dispatch(reply, to: msg.deviceID)
         }
     }
 
@@ -511,6 +514,68 @@ final class SyncEngine {
         guard !urls.isEmpty else { return }
         for url in urls { Log.trace("sync", "reveal \(url.lastPathComponent)") }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    // MARK: - Chunked transfers (clips beyond the per-frame ceiling)
+
+    /// In-flight inbound transfers: "deviceID|hash" → slices. Bounded: one
+    /// live transfer per key, byte cap tied to the local clip limit, stale
+    /// entries dropped after 120s.
+    private var inboundChunks: [String: (parts: [Int: Data], total: Int, bytes: Int, started: Double)] = [:]
+
+    /// Send a clip message, chunking it when the encoded frame would blow
+    /// past receivers' frame caps. `to: nil` broadcasts.
+    private func dispatch(_ msg: Message, to deviceID: String? = nil) {
+        guard let payload = try? JSONEncoder().encode(msg),
+              payload.count > ClipChunker.directLimit else {
+            if let deviceID { transport.send(msg, to: deviceID) } else { transport.broadcast(msg) }
+            return
+        }
+        let slices = ClipChunker.slices(of: payload)
+        Log.trace("sync", "chunking \(payload.count)B clip into \(slices.count) slices")
+        for slice in slices {
+            var m = Message(type: .chunk, deviceID: config.deviceID, deviceName: config.deviceName)
+            m.timestamp = now()
+            m.hash = msg.hash
+            m.size = payload.count
+            m.chunkIndex = slice.index
+            m.chunkTotal = slice.total
+            m.chunkData = slice.data.base64EncodedString()
+            config.identity.sign(&m)
+            if let deviceID { transport.send(m, to: deviceID) } else { transport.broadcast(m) }
+        }
+    }
+
+    private func handleChunk(_ msg: Message, verifiedKey: String?) {
+        guard receiveAllowed, verifiedKey != nil,
+              let hash = msg.hash, let index = msg.chunkIndex, let total = msg.chunkTotal,
+              let b64 = msg.chunkData, let data = Data(base64Encoded: b64),
+              total > 0, total <= 256, index >= 0, index < total else { return }
+        guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+
+        // Stale-transfer sweep + per-transfer byte cap (the local clip limit
+        // ×3 covers base64/JSON inflation of a legitimate max-size clip).
+        let cap = config.maxClipBytes * 3
+        inboundChunks = inboundChunks.filter { now() - $0.value.started < 120 }
+        let key = "\(msg.deviceID)|\(hash)"
+        var entry = inboundChunks[key] ?? (parts: [:], total: total, bytes: 0, started: now())
+        guard entry.total == total, entry.parts[index] == nil,
+              entry.bytes + data.count <= cap else { return }
+        entry.parts[index] = data
+        entry.bytes += data.count
+        inboundChunks[key] = entry
+
+        guard let payload = ClipChunker.assemble(entry.parts, total: total) else { return }
+        inboundChunks[key] = nil
+        guard let inner = try? JSONDecoder().decode(Message.self, from: payload),
+              inner.deviceID == msg.deviceID, inner.type == .clip else {
+            Log.trace("sync", "chunked payload from \(msg.deviceName) invalid — dropped")
+            return
+        }
+        Log.trace("sync", "reassembled \(payload.count)B clip from \(msg.deviceName)")
+        // Route through the normal path: the inner message carries its own
+        // signature and faces the full trust/freshness/replay checks.
+        handleRemote(inner, verifiedKey: DeviceIdentity.verifiedPublicKey(for: inner))
     }
 
     // MARK: - Pinned clips (persistent + synced)

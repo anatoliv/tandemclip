@@ -11,7 +11,9 @@ import Foundation
 ///   the unknown type and skip the frame, so this is forward-compatible.
 /// - `pin` / `unpin`: a clip pinned (full content, label in `preview`) or
 ///   unpinned (hash only) — signed user actions, relayed like clips.
-enum MessageType: String, Codable { case announce, clip, request, delete, pin, unpin }
+/// - `chunk`: one slice of a large clip message (see ClipChunker) — `hash`
+///   is the transfer key, `chunkIndex`/`chunkTotal`/`chunkData` the slice.
+enum MessageType: String, Codable { case announce, clip, request, delete, pin, unpin, chunk }
 
 /// Wire format. JSON body, length-prefixed on the wire (see Transport). Every
 /// message carries the sender's identity so peers can be listed, addressed, and
@@ -35,4 +37,9 @@ struct Message: Codable {
     var text: String?      // plain-text representation (preview / legacy)
     var parts: [ClipPart]? // full multi-representation payload on `clip`
     var files: [ClipFileWire]? // copied files, transferred by content
+
+    // Chunked transfer of oversized clip messages (type == .chunk).
+    var chunkIndex: Int?
+    var chunkTotal: Int?
+    var chunkData: String?     // base64 slice of the encoded inner message
 }

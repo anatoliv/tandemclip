@@ -454,13 +454,13 @@ struct SettingsView: View {
             }
             Section {
                 SettingsDropdown(title: "Max clipboard size",
-                                 options: [1.0, 2.0, 5.0, 10.0, 25.0].map { ($0, "\(Int($0)) MB") },
+                                 options: [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0].map { ($0, "\(Int($0)) MB") },
                                  selection: $model.maxMB)
             } header: {
                 Text("Limits")
             } footer: {
                 SettingsBullets(items: [
-                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text."),
+                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text. Large clips travel in chunks automatically — but all Macs need a recent version for clips over ~25 MB."),
                 ])
             }
         }
