@@ -234,6 +234,8 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Storage limit — configurable received-files cache (10 MB–1 GB) with pasteboard-safe oldest-first eviction
 - [x] Settings — sidebar navigation, plain-English bullet descriptions on every section
 - [x] Help — every settings tab documented with worked examples; on-device semantic search
+- [x] AirDrop a clip — hover action sends any clip to nearby Apple devices outside the mesh (iPhone/iPad/unpaired Macs) via the system sheet
+- [ ] Share extension — "Share → TandemClip" from any app's share sheet
 - [ ] Drag-out — drag a received file from the picker to Finder/an app (single-file first)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 ```

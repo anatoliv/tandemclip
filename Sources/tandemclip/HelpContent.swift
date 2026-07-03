@@ -42,6 +42,8 @@ enum HelpCatalog {
               body: "Picking a file clip copies it to the clipboard and opens it in its default app. Received files are cached on disk (Settings → Content → Storage controls how much)."),
         .init(id: "drop-share", category: "Clipboard picker", title: "Drop to share",
               body: "Drag files from Finder — or emails from Outlook/Mail, photos from Photos, images from a browser — onto the picker to send them to your other Macs right away. Works in both Mirror and Manual mode; folders travel as .zip archives (as does copying a folder with ⌘C)."),
+        .init(id: "airdrop", category: "Clipboard picker", title: "AirDrop a clip",
+              body: "Hover a clip and click the share button to AirDrop it to any nearby Apple device — an iPhone, iPad, or a Mac that isn't in your pairing group. Text goes as a small .txt, images as .png, files as themselves. TandemClip syncs your paired Macs; AirDrop covers everything else."),
         .init(id: "delete-everywhere", category: "Clipboard picker", title: "Delete everywhere",
               body: "Hover a clip and click ✕ (or press ⌘⌫) to remove it from history on every Mac — including any clipboard or received file still holding it. Deletions are signed and can't be forged or replayed."),
         .init(id: "privacy-hold", category: "Clipboard picker", title: "Privacy hold ✋",
