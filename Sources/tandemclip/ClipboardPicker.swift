@@ -1555,6 +1555,14 @@ private struct PreviewCard: View {
                 }
                 Spacer(minLength: 0)
                 Text(exactTime(item.timestamp)).font(.system(size: Tokens.CompactSize.label)).foregroundColor(.secondary)
+                Button { HelpDeepLink.open(topic: "picker-preview") } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: Tokens.CompactSize.badge))
+                        .foregroundColor(.secondary)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Help — Hover previews & quick actions")
             }
             Divider()
             content
