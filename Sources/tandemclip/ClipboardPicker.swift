@@ -715,6 +715,7 @@ extension View {
 struct PickerView: View {
     @ObservedObject var model: PickerModel
     @State private var dropTargeted = false
+    @FocusState private var composeFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -856,6 +857,7 @@ struct PickerView: View {
             }
             TextEditor(text: $model.composeText)
                 .font(.system(size: 12.5))
+                .focused($composeFocused)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
@@ -918,6 +920,17 @@ struct PickerView: View {
             }
         }
         .padding(12)
+        // Focus lands in the note field the moment compose opens (tiny delay
+        // lets the KeyCatcher release first responder first), and returns
+        // there after an AI run re-enables the editor.
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { composeFocused = true }
+        }
+        .onChange(of: model.composeBusy) { busy in
+            if !busy && model.composing {
+                DispatchQueue.main.async { composeFocused = true }
+            }
+        }
     }
 
     /// Full-panel affordance shown while files are dragged over the picker.
