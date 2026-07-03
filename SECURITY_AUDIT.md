@@ -2,7 +2,7 @@
 
 **Scope:** Swift source in `Sources/tandemclip`, packaging, appcast, web serving.
 **Threat model:** attacker on the same LAN; a rogue/revoked device that once knew the pairing code; a network MITM against the update channel; another local user on the same Mac.
-**Latest review:** 2026-07-03, against v0.17.0 (build 35).
+**Latest review:** 2026-07-03, against v0.17.1 (build 36).
 
 ## Summary
 
@@ -171,7 +171,8 @@ same trust as the user pasting the link themselves.
 - **Origin HTTP (8)** relies on the external proxy for TLS termination; the fronting proxy MUST enforce HTTPS + HTTP→HTTPS redirect for `SUFeedURL`. Update integrity is EdDSA-gated regardless, but plain HTTP would let a MITM withhold/stall security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`.
 - **Trusted-peer DoS.** A peer holding the PSK can still open up to 16 connections and push frames at the per-connection rate cap; bounded, and outside the "unpaired attacker" threat model.
 - **AI endpoint trust.** With AI cleanup enabled, composed/cleaned text is disclosed to whatever endpoint the user configures — that third party is chosen and trusted by the user (local Ollama/LM Studio keeps it on-machine). TLS is enforced off-LAN; content policy at the provider is out of scope.
-- **Secret-guard heuristics are best-effort.** Pattern/entropy detection misses secrets that look like prose and can false-positive on random-looking IDs (one click to release). It narrows, not closes, the unmarked-secret gap.
+- **Secret-guard heuristics are best-effort.** v0.17.1 widened coverage — Stripe/HF/DO/Google-OAuth prefixes plus a `KEY=value` credential-in-text matcher (placeholder-aware) that catches env/config leaks like `DB_PASSWORD=…`. Still pattern/entropy-based: misses secrets phrased as prose (privacy hold ✋ is the catch-all there) and can false-positive on random-looking IDs (one click to release). Narrows, doesn't close, the unmarked-secret gap.
+- **AI client wire path is now tested end to end** (v0.17.1): AIClientLiveTests drives the real `URLSession.bytes` path against a localhost HTTP server — SSE streaming, request format (method/auth/JSON body), HTTP-error mapping with server detail, and cross-endpoint fallback — the exact code every AI feature (summarize/titles/translate/ask/cleanup) runs.
 - **Pins/chunks require current builds mesh-wide.** Older peers ignore the new message types safely but won't receive pins or >25 MB clips until updated.
 - **QuickLook parser surface.** Preview generation feeds attacker-controllable bytes to Apple's QL extensions. They are sandboxed and out-of-process, and patched by macOS updates, but the parser surface itself is Apple's, not ours.
 
