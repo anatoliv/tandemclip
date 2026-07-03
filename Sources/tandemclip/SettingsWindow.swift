@@ -35,6 +35,7 @@ final class SettingsModel: ObservableObject {
     // MARK: AI settings
 
     @Published var aiEnabled: Bool = false { didSet { config.aiEnabled = aiEnabled } }
+    @Published var aiAuthMode: LLMAuthMode = .apiKey { didSet { config.aiAuthMode = aiAuthMode; aiProbe = nil } }
     @Published var aiEndpoint: String = "" { didSet { config.aiEndpoint = aiEndpoint } }
     @Published var aiModel: String = "" { didSet { config.aiModel = aiModel } }
     @Published var aiKey: String = "" { didSet { config.aiAPIKey = aiKey } }   // Keychain-backed
@@ -75,6 +76,7 @@ final class SettingsModel: ObservableObject {
     }
 
     func applyPreset(_ p: AIProviderPreset) {
+        aiAuthMode = p.authMode
         aiEndpoint = p.endpoint
         aiModel = p.model
         aiProbe = nil
@@ -103,12 +105,20 @@ final class SettingsModel: ObservableObject {
 
     /// The probe should work even while the feature toggle is still off.
     private func forcedClient() -> AIClient? {
+        if aiAuthMode == .codexOAuth {
+            guard !aiModel.isEmpty else {
+                aiProbe = (false, "Enter a model (e.g. gpt-5.4-mini) first.")
+                return nil
+            }
+            return AIClient(endpoint: CodexOAuth.codexResponsesURL, model: aiModel, auth: .codexOAuth)
+        }
         guard let url = URL(string: aiEndpoint), !aiModel.isEmpty else { return nil }
         guard AIClient.isAcceptableEndpoint(url) else {
             aiProbe = (false, "Plain http is only allowed for local/LAN endpoints — use https for anything on the internet.")
             return nil
         }
-        return AIClient(endpoint: url, model: aiModel, apiKey: aiKey)
+        let auth: AIClient.AuthStrategy = aiAuthMode == .azureApiKey ? .azureApiKey(aiKey) : .apiKey(aiKey)
+        return AIClient(endpoint: url, model: aiModel, auth: auth)
     }
 
     /// Applied immediately (live preview) as well as persisted; Config.didChange
@@ -143,6 +153,7 @@ final class SettingsModel: ObservableObject {
         receivedCacheMB = config.receivedCacheCap / 1_000_000
         cacheUsage = engine.watcher.receivedCacheUsage()
         aiEnabled = config.aiEnabled
+        aiAuthMode = config.aiAuthMode
         aiEndpoint = config.aiEndpoint
         aiModel = config.aiModel
         aiKey = config.aiAPIKey
@@ -328,6 +339,7 @@ struct SettingsDropdown<Value: Hashable>: View {
 
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
+    @ObservedObject private var codexAuth = CodexAuthManager.shared
     @State private var peers: [(id: String, clip: PeerClip)] = []
     @State private var currentSSID: String = ""
     @State private var tab: Tab = .general
@@ -541,6 +553,35 @@ struct SettingsView: View {
 
     // MARK: AI — bring-your-own-LLM text cleanup (tonebox pattern)
 
+    /// Sign-in status + action for the ChatGPT-OAuth auth mode. Reads the
+    /// shared CodexAuthManager so the row reflects live sign-in state.
+    @ViewBuilder private var chatGPTSignInRow: some View {
+        HStack {
+            Text("ChatGPT account")
+            Spacer()
+            if codexAuth.isSignedIn {
+                VStack(alignment: .trailing, spacing: 1) {
+                    if let email = codexAuth.signedInEmail {
+                        Text(email).foregroundColor(.secondary)
+                    }
+                    if let plan = codexAuth.signedInPlan, !plan.isEmpty {
+                        Text(plan.capitalized).font(.caption).foregroundColor(.secondary)
+                    }
+                }
+                Button("Sign Out") { codexAuth.signOut() }
+            } else {
+                Button(codexAuth.isSigningIn ? "Signing in…" : "Sign in with ChatGPT") {
+                    Task { try? await codexAuth.signIn() }
+                }
+                .disabled(codexAuth.isSigningIn)
+            }
+        }
+        if let err = codexAuth.lastError, !codexAuth.isSignedIn {
+            Text(err).font(.caption).foregroundColor(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var aiTab: some View {
         Form {
             Section {
@@ -551,10 +592,13 @@ struct SettingsView: View {
                 ])
             }
             Section {
-                // Applying a preset fills the fields below; the label reflects
-                // whichever provider the current fields match ("Custom" if
-                // they've been hand-edited).
-                SettingsDropdown(title: "Provider preset",
+                SettingsDropdown(title: "Authentication",
+                                 options: LLMAuthMode.allCases.map { ($0, $0.label) },
+                                 selection: $model.aiAuthMode)
+                // Applying a preset fills the fields below AND switches the
+                // authentication to match; the label reflects whichever
+                // provider the current fields match ("Custom" if hand-edited).
+                SettingsDropdown(title: "Use preset",
                                  options: AIProviderPreset.all.map { ($0.id, $0.name) },
                                  selection: Binding(
                                      get: {
@@ -569,13 +613,27 @@ struct SettingsView: View {
                                          }
                                      }),
                                  fallbackLabel: model.aiEndpoint.isEmpty ? "Choose…" : "Custom")
-                TextField("Endpoint URL", text: $model.aiEndpoint,
-                          prompt: Text("https://api…/v1/chat/completions"))
-                    .autocorrectionDisabled()
-                TextField("Model", text: $model.aiModel, prompt: Text("e.g. claude-haiku-4-5-20251001"))
-                    .autocorrectionDisabled()
-                SecureField("API key", text: $model.aiKey,
-                            prompt: Text("empty is fine for local servers"))
+
+                if model.aiAuthMode == .codexOAuth {
+                    // The endpoint is fixed (Codex backend) and there's no API
+                    // key — the user signs in instead. Only the model is free.
+                    chatGPTSignInRow
+                    TextField("Model", text: $model.aiModel, prompt: Text("e.g. gpt-5.4-mini"))
+                        .autocorrectionDisabled()
+                } else {
+                    TextField("Endpoint URL", text: $model.aiEndpoint,
+                              prompt: Text(model.aiAuthMode == .azureApiKey
+                                  ? "https://<resource>.openai.azure.com/…?api-version=…"
+                                  : "https://api…/v1/chat/completions"))
+                        .autocorrectionDisabled()
+                    TextField("Model", text: $model.aiModel, prompt: Text("e.g. claude-haiku-4-5-20251001"))
+                        .autocorrectionDisabled()
+                    SecureField(model.aiAuthMode == .azureApiKey ? "api-key" : "API key",
+                                text: $model.aiKey,
+                                prompt: Text(model.aiAuthMode == .azureApiKey
+                                    ? "your Azure OpenAI key"
+                                    : "empty is fine for local servers"))
+                }
                 HStack {
                     Button(model.aiProbing ? "Testing…" : "Test Connection") { model.testAIConnection() }
                         .disabled(model.aiProbing)
@@ -587,10 +645,11 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Endpoint")
+                Text("Model")
             } footer: {
                 SettingsBullets(items: [
-                    ("Provider preset", "fills the fields below for a known provider. Any OpenAI-compatible server works — a local Ollama / LM Studio keeps text entirely on your machine."),
+                    ("Authentication", "API key / local server for any OpenAI-compatible endpoint; Azure OpenAI sends the key in an api-key header; ChatGPT sign-in uses your ChatGPT Plus/Pro subscription — no API key needed."),
+                    ("Use preset", "fills the fields for a known provider and sets the matching authentication. A local Ollama / LM Studio keeps text entirely on your machine."),
                     ("Endpoint URL / Model", "where requests go and which model handles them."),
                     ("API key", "stored in the Keychain, never in preferences. Local servers usually need none."),
                     ("Test Connection", "sends a tiny real request and reports the round-trip time."),
