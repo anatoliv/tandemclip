@@ -282,6 +282,25 @@ enum CodexOAuth {
     }
 }
 
+/// Runtime latch: set when the ChatGPT-OAuth path stops authenticating so new
+/// work reroutes to a configured API-key fallback instead of throwing on every
+/// call. `streamWithFallback` only retries *retryable* errors (429/5xx/network)
+/// — an expired/revoked OAuth token (401/403) or a signed-out state would
+/// otherwise fail every call forever. Reset on a fresh token, sign-out, and
+/// each launch, so a transient outage never strands the user on the fallback.
+///
+/// Nonisolated + lock-guarded because it's read from `AIClient.fromConfig`
+/// (any thread) and the streaming Task, and written from the main actor.
+enum CodexDegradation {
+    private static let lock = NSLock()
+    private static var _degraded = false
+
+    static var isDegraded: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _degraded }
+        set { lock.lock(); _degraded = newValue; lock.unlock() }
+    }
+}
+
 // MARK: - URL-safe base64 helpers
 
 extension Data {

@@ -84,7 +84,13 @@ final class SettingsModel: ObservableObject {
 
     /// Real end-to-end probe, tonebox-style: tiny request, report latency.
     func testAIConnection() {
-        guard let client = AIClient.fromConfig(config) ?? forcedClient() else {
+        // On the OAuth path always exercise the *real* subscription (via
+        // forcedClient), never the degraded-reroute fallback — a success then
+        // clears the degraded latch through the stream's success path.
+        let client = aiAuthMode == .codexOAuth
+            ? forcedClient()
+            : (AIClient.fromConfig(config) ?? forcedClient())
+        guard let client else {
             aiProbe = (false, "Enter an endpoint URL and model first.")
             return
         }
