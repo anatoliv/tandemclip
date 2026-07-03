@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.6", date: "July 3, 2026",
+              highlight: "A clearer smart-title mark.",
+              changes: [
+                .init(.improved, "Smart-titled clips now show a crisp accent ✨ sparkles icon in the picker instead of a tiny inline emoji — easier to spot and read in both light and dark mode."),
+              ]),
         .init(version: "0.22.5", date: "July 3, 2026",
               highlight: "Smart titles that actually turn on.",
               changes: [

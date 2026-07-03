@@ -132,6 +132,7 @@ private final class PickerRenderDelegate: NSObject, NSApplicationDelegate {
             )
         }
         var items: [HistoryItem] = [
+            text(HistoryItem.smartTitlePrefix + "Quarterly Revenue Summary", "MacBook Pro", ago: 15),
             text("https://tandemclip.com/download", "MacBook Pro", ago: 30),
             text("The quarterly numbers are in — revenue up 18% QoQ, churn down to 2.1%. Full breakdown in the deck; the headline is we beat plan on every line except EMEA, which slipped on the FX move.",
                  "MacBook Pro", ago: 120),
