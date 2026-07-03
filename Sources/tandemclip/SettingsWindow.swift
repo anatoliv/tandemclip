@@ -291,9 +291,9 @@ struct SettingsBullets: View {
     let items: [(term: String, text: String)]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: Tokens.Space.row) {
             ForEach(items, id: \.term) { item in
-                HStack(alignment: .top, spacing: 6) {
+                HStack(alignment: .top, spacing: Tokens.Space.row6) {
                     Text("•")
                     (Text(item.term).fontWeight(.semibold) + Text(" — ") + Text(item.text))
                         .fixedSize(horizontal: false, vertical: true)
@@ -385,6 +385,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 680, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
+        // Controls ride the brand terracotta, not system blue (DESIGN_SYSTEM.md §2).
+        .tint(Tokens.accent)
         .onAppear {
             if let saved = UserDefaults.standard.string(forKey: "settingsSelectedTab"),
                let t = Tab(rawValue: saved) { tab = t }
@@ -646,7 +648,7 @@ struct SettingsView: View {
                     if let probe = model.aiProbe {
                         Image(systemName: probe.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundColor(probe.ok ? .green : .red)
-                        Text(probe.message).font(.system(size: 11)).foregroundColor(.secondary)
+                        Text(probe.message).font(Tokens.FontScale.tiny).foregroundColor(.secondary)
                             .lineLimit(2)
                     }
                 }
@@ -672,11 +674,11 @@ struct SettingsView: View {
                     TextEditor(text: Binding(
                         get: { model.aiPresets[i].prompt },
                         set: { model.aiPresets[i].prompt = $0 }))
-                        .font(.system(size: 11.5))
+                        .font(Tokens.FontScale.tiny)
                         .frame(minHeight: 96)
                         .scrollContentBackground(.hidden)
-                        .padding(4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.06)))
+                        .padding(Tokens.Space.row)
+                        .background(RoundedRectangle(cornerRadius: Tokens.Radius.card).fill(Color.secondary.opacity(0.06)))
                 }
                 HStack {
                     Button("Add Preset") { model.addAIPreset() }
