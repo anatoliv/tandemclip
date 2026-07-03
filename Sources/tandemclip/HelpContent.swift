@@ -30,6 +30,8 @@ enum HelpCatalog {
               body: "Install TandemClip on each Mac and enter the same pairing code under Settings → Security. The code is the encryption key — being on the same Wi-Fi grants nothing by itself."),
         .init(id: "first-sync", category: "Getting started", title: "Your first sync",
               body: "With two paired Macs in Mirror mode, copy some text on one and paste on the other — that's the whole loop. The menu-bar icon shows sync state; the picker (⇧⌘V) shows everything else."),
+        .init(id: "menu-bar", category: "Getting started", title: "The menu-bar menu",
+              body: "TandemClip has no Dock icon — the menu-bar icon is home base. The icon itself reflects state: syncing normally, a raised hand while privacy hold is on, a warning when paused because the Wi-Fi isn't allowed. Open the menu for the live status and quick controls.\n\nWhat you'll find there:\n- A **status line** — the current state and how many Macs are connected.\n- The **current clipboard** — its kind, size, which Mac it came from, and how long ago.\n- **Pause / Resume** syncing, and **pull a peer's clipboard** on demand.\n- **Copy Pairing Code** — puts the code on your clipboard to type into another Mac.\n- **Check for Updates…**, Settings, this Help window, and Quit.\n\nThe picker (⇧⌘V) is the other half: history, search, previews, pins, and compose all live there."),
 
         // MARK: Picker
         .init(id: "picker-open", category: "Clipboard picker", title: "Open & navigate",
@@ -47,7 +49,7 @@ enum HelpCatalog {
         .init(id: "ocr", category: "Clipboard picker", title: "Text inside images",
               body: "Screenshots and image clips get their text recognized on-device. It shows in the hover preview with a Copy Text button, it's searchable, and links or phone numbers found in it become quick actions."),
         .init(id: "quick-actions", category: "Clipboard picker", title: "Quick actions",
-              body: "The hover preview offers one-click actions for what it finds in a clip: Open a link, Email an address, Copy a phone number, Save files to Downloads — detected locally. Long text clips add a Summarize button (uses your AI endpoint); pins, AirDrop, and drag-out round it out."),
+              body: "The hover preview offers one-click actions for what it finds in a clip: Open a link, Email an address, Copy a phone number, Save files to Downloads — all detected locally. When AI cleanup is set up, a text clip longer than about 600 characters also gets a **Summarize** button. Pins, AirDrop, and drag-out round it out."),
         .init(id: "pinned", category: "Clipboard picker", title: "Pinned clips",
               body: "Hover a clip and click the pin to keep it permanently: pins survive restarts, sync to your other Macs, and sit in a PINNED section above RECENT (up to 20). Click one to put it back on the clipboard; the pin.slash button unpins everywhere. Deleting a clip everywhere unpins it too."),
         .init(id: "drag-out", category: "Clipboard picker", title: "Drag a clip out",
@@ -65,15 +67,17 @@ enum HelpCatalog {
         .init(id: "pin", category: "Clipboard picker", title: "Pin 📌",
               body: "The pin keeps the picker open: it stays up after picking a clip, survives clicking into other apps, and ignores Esc until you unpin it. Unpinned, the picker is transient — Esc or clicking away closes it."),
         .init(id: "compose", category: "Clipboard picker", title: "Compose & AI cleanup ✎",
-              body: "The pencil button opens a text area: write or paste something, pick a tone preset (Clean up, Email reply, Summarize, Translate, …), and the AI rewrite streams in. Undo restores your original; Use (⌘⏎) puts the result on the clipboard so it syncs like any copy. Needs an endpoint configured under Settings → AI."),
+              body: "The pencil button opens a text area: write or paste something, pick a tone preset (Clean up, Email reply, Summarize, Translate, …), and the AI rewrite streams in. Undo restores your original; **Use (⌘⏎)** puts the result on the clipboard so it syncs like any copy. Needs an endpoint configured under Settings → AI.\n\nShortcut: when AI is set up, hovering a text clip shows a **✨ button** on the row that opens compose already filled with that clip and runs your selected tone preset right away — a one-click way to clean up something already in your history."),
 
         // MARK: Settings — General
         .init(id: "general-startup", category: "Settings — General", title: "Startup",
               body: "Launch at login opens TandemClip automatically. Start paused keeps syncing off after launch until you hit Resume in the menu — nothing is shared right after boot."),
         .init(id: "general-name", category: "Settings — General", title: "Display name",
               body: "The name your other Macs see for this computer — in the picker's group headers, the peer list, and sync history. Two Macs should not share a name."),
+        .init(id: "general-appearance", category: "Settings — General", title: "Appearance (light / dark)",
+              body: "Sets how TandemClip looks: **System** follows your Mac's light/dark setting and switches with it; **Light** and **Dark** pin the app to that look no matter what the system does. The change applies instantly to the picker, Settings, and these windows, and is remembered. Default is System."),
         .init(id: "general-diagnostics", category: "Settings — General", title: "Verbose logging",
-              body: "Records detailed activity (connections, syncs) to /tmp/tandemclip.err.log. Turn it on when chasing a problem, off otherwise."),
+              body: "Records detailed activity (connections, syncs) to `/tmp/tandemclip.err.log`. Turn it on when chasing a problem, off otherwise."),
 
         // MARK: Settings — Sync (with worked examples for every combination)
         .init(id: "sync-mirror", category: "Settings — Sync", title: "Mode: Mirror",
@@ -101,13 +105,17 @@ enum HelpCatalog {
         .init(id: "content-storage", category: "Settings — Content", title: "Received-files storage",
               body: "Files received from your Macs are cached on disk so paste keeps working. Past the limit (10 MB–1 GB, default 200 MB) the oldest clips are evicted automatically — picking them from history re-materializes them. The clip currently on your clipboard is never evicted."),
         .init(id: "content-history", category: "Settings — Content", title: "History",
-              body: "In-memory for the session only — quitting clears it. Choose how many clips to remember and how many the picker shows. Clear History Now also wipes the received-files cache from disk."),
+              body: "Your clip history is kept **in memory for the session only** — quitting clears it. **Keep clipboard history** is the master switch: turn it off and TandemClip stops remembering clips entirely (the count and picker controls disappear with it). With it on, choose how many clips to remember and how many the picker shows. **Clear History Now** empties the list and also wipes the received-files cache from disk."),
 
         // MARK: Settings — AI
         .init(id: "ai-setup", category: "Settings — AI", title: "Setting up AI cleanup",
-              body: "Pick a provider preset (Anthropic, OpenAI, OpenRouter, Groq — or a local Ollama / LM Studio, which keeps text entirely on your machine), paste an API key, and hit Test Connection. Calls go directly from this Mac to that endpoint; there is no middleman and the key lives in the Keychain."),
+              body: "AI cleanup is optional — set it up once and the compose (✎) rewrites and Summarize/Ask actions light up. Pick a **provider preset** to fill the endpoint and a sensible default model, choose how it authenticates, then hit **Test Connection**.\n\nEvery call goes **directly from this Mac to the endpoint you chose** — there is no TandemClip server in between, and your API key is stored in the macOS Keychain, never synced to your other Macs.\n\nThree ways to connect (the preset sets this for you):\n- **API key / local server** — the usual path. Paste a key for a cloud provider, or point at a local server (Ollama, LM Studio, llama.cpp) where nothing leaves your Mac at all.\n- **ChatGPT sign-in (OAuth)** — run cleanup off a ChatGPT Plus/Pro subscription with no API key. See “Sign in with ChatGPT.”\n- **Azure OpenAI** — sends the key in an `api-key` header against your Azure resource URL.\n\nThere's a cap of **20,000 characters** per run — longer clips are trimmed before sending so a giant paste can't run up a huge request."),
+        .init(id: "ai-providers", category: "Settings — AI", title: "Choosing a provider",
+              body: "The preset dropdown is curated cost-first — OpenAI is there because most people start there; the rest are ways to spend less or stay local:\n- **Paid cloud:** OpenAI (gpt-4o-mini), Anthropic Claude, OpenRouter, Azure OpenAI, Groq (very cheap, fast), Together AI, Fireworks AI.\n- **Free tier:** GitHub Models (free personal tier — good for trying it out).\n- **Local & private:** Ollama, LM Studio, llama.cpp — these run on your own machine, so clip text never leaves it.\n- **No API key:** ChatGPT Plus/Pro via sign-in.\n\nPicking a preset also switches the auth mode to match. You can edit the endpoint and model afterward, or hand-configure any OpenAI-compatible service."),
+        .init(id: "ai-chatgpt", category: "Settings — AI", title: "Sign in with ChatGPT",
+              body: "If you pay for **ChatGPT Plus or Pro**, you can use that subscription for cleanup with no API key. Pick the “ChatGPT Plus/Pro (sign in — no API key)” preset and click Sign in — a browser window handles a standard OAuth sign-in with OpenAI, and TandemClip stores only the resulting token in the Keychain.\n\nOnce signed in, Settings shows your account email and plan, and a Sign Out button. The endpoint is fixed to OpenAI's Codex backend and isn't editable; only the model field is (default `gpt-5.4-mini`).\n\n**Automatic fallback:** if the sign-in token is later revoked or expires and you've set a fallback endpoint (see “Fallback endpoint”), cleanup quietly reroutes there instead of failing, and stays on the fallback until sign-in works again."),
         .init(id: "ai-presets", category: "Settings — AI", title: "Tone presets",
-              body: "Each preset is a rewrite instruction: Clean up, Email reply, Casual chat, Commit message, Summarize, Translate — all editable, and you can add your own. Pick which one runs from the ▾ next to the button in compose."),
+              body: "Each preset is a rewrite instruction: **Clean up**, **Email reply**, **Casual chat**, **Commit message**, **Summarize**, **Translate** — all editable, and you can add your own. Pick which one runs from the ▾ next to the button in compose."),
         .init(id: "ai-autotone", category: "Settings — AI", title: "Auto-tone by destination",
               body: "When on, the rewrite adapts to the app you opened the picker over: professional for email, casual for chat, literal for code editors and terminals, structured prose for notes apps."),
         .init(id: "ai-on-receive", category: "Settings — AI", title: "Automatic AI on clips",
@@ -121,7 +129,7 @@ enum HelpCatalog {
         .init(id: "security-allowlist", category: "Settings — Security", title: "Trusted devices",
               body: "Off, any Mac holding the pairing code can sync — the code is the trust boundary. On, only checked devices sync, pinned by their signing key: unchecking one revokes it instantly even though it still knows the code. Example: you sold a Mac that once had the code — revoke it here instead of rotating the code everywhere."),
         .init(id: "security-wifi", category: "Settings — Security", title: "Wi-Fi allowlist",
-              body: "Restrict syncing to named Wi-Fi networks — nothing is shared on networks you haven't listed. On Ethernet or VPN there's no network name to verify, so sync pauses unless you allow it explicitly."),
+              body: "Restrict syncing to named Wi-Fi networks — nothing is shared on networks you haven't listed. On Ethernet or VPN there's no Wi-Fi name to verify, so by default sync pauses there; the **“Allow sync when Wi-Fi can't be verified”** toggle (off by default) lets it run anyway on those connections.\n\nmacOS only hands apps the exact Wi-Fi name if you grant **Location** permission. Without it, TandemClip guesses the network a rougher way, so if a network won't add or shows a placeholder name, granting Location (the app will prompt) fixes it."),
 
         // MARK: Privacy
         .init(id: "privacy-lan", category: "Private by design", title: "No cloud, no relay",
@@ -129,13 +137,13 @@ enum HelpCatalog {
         .init(id: "privacy-passwords", category: "Private by design", title: "Password managers",
               body: "Content a password manager marks as secret is never synced — same for one-time and transient copies. This relies on the source app setting the marker (1Password, Keychain and most managers do); treat unmanaged secrets with care, or flip on the ✋ privacy hold first."),
         .init(id: "secret-guard", category: "Private by design", title: "Secret guard",
-              body: "Copies that look like credentials — API keys, private keys, card numbers, lone random tokens — are held on this Mac instead of syncing. The menu bar shows the hold and \"Send Held Clip Anyway\" releases it; the next copy clears it automatically. Toggle under Settings → Security. This backstops apps that don't mark passwords as concealed."),
+              body: "Copies that *look* like credentials are held on this Mac instead of syncing — a backstop for apps that don't mark passwords as concealed. It recognizes a lot: **API keys and tokens** (Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Shopify, Hugging Face, DigitalOcean and more), **private keys**, **JWTs**, **payment-card numbers** (Luhn-checked), **IBANs**, `PASSWORD=…` / `api_key:…` assignments inside text, and lone high-entropy random tokens — all detected on-device, with obvious placeholders skipped.\n\nWhen a copy is held, the menu bar shows it and **“Send Held Clip Anyway”** releases that one; your next copy clears the hold automatically. Turn the whole feature on or off under Settings → Security."),
         .init(id: "privacy-quarantine", category: "Private by design", title: "Received files are quarantined",
               body: "Files that arrive from peers are written with restrictive permissions and macOS quarantine, and are revealed in Finder rather than auto-opened — you decide what runs."),
 
         // MARK: Troubleshooting
         .init(id: "ts-not-syncing", category: "Troubleshooting", title: "Not syncing?",
-              body: "Check, in order: same pairing code on every Mac; same Wi-Fi (and that network is allowed under Settings → Security); not paused (menu); not in privacy hold (✋); role isn't Receive only on the sender; the clip isn't over the size limit."),
+              body: "Check, in order:\n- Same **pairing code** on every Mac.\n- Same **Wi-Fi**, and that network is allowed under Settings → Security (on Ethernet/VPN, either allow the unverifiable-network toggle or grant Location).\n- Not **paused** (menu) and not in **privacy hold** (✋).\n- The sender's **role** isn't Receive only.\n- The clip isn't over the **size limit**, and it isn't being held by Secret guard.\n- With Trusted devices on, the target Mac is actually checked."),
         .init(id: "ts-peer-missing", category: "Troubleshooting", title: "A Mac won't appear",
               body: "Give it a moment after wake — peers rediscover automatically every few seconds. Make sure the two Macs don't share a display name, and that your network allows Bonjour (some guest networks block it)."),
         .init(id: "ts-updates", category: "Troubleshooting", title: "Stay current",
