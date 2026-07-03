@@ -39,6 +39,9 @@ final class SettingsModel: ObservableObject {
     @Published var aiModel: String = "" { didSet { config.aiModel = aiModel } }
     @Published var aiKey: String = "" { didSet { config.aiAPIKey = aiKey } }   // Keychain-backed
     @Published var aiAutoTone: Bool = true { didSet { config.aiAutoTone = aiAutoTone } }
+    @Published var aiSmartLabels: Bool = false { didSet { config.aiSmartLabels = aiSmartLabels } }
+    @Published var aiTranslateIncoming: Bool = false { didSet { config.aiTranslateIncoming = aiTranslateIncoming } }
+    @Published var secretGuard: Bool = true { didSet { config.secretGuardEnabled = secretGuard } }
     @Published var aiFallbackEndpoint: String = "" { didSet { config.aiFallbackEndpoint = aiFallbackEndpoint } }
     @Published var aiFallbackModel: String = "" { didSet { config.aiFallbackModel = aiFallbackModel } }
     @Published var aiFallbackKey: String = "" { didSet { config.aiFallbackAPIKey = aiFallbackKey } }
@@ -141,6 +144,9 @@ final class SettingsModel: ObservableObject {
         aiModel = config.aiModel
         aiKey = config.aiAPIKey
         aiAutoTone = config.aiAutoTone
+        aiSmartLabels = config.aiSmartLabels
+        aiTranslateIncoming = config.aiTranslateIncoming
+        secretGuard = config.secretGuardEnabled
         aiFallbackEndpoint = config.aiFallbackEndpoint
         aiFallbackModel = config.aiFallbackModel
         aiFallbackKey = config.aiFallbackAPIKey
@@ -448,13 +454,13 @@ struct SettingsView: View {
             }
             Section {
                 SettingsDropdown(title: "Max clipboard size",
-                                 options: [1.0, 2.0, 5.0, 10.0, 25.0].map { ($0, "\(Int($0)) MB") },
+                                 options: [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0].map { ($0, "\(Int($0)) MB") },
                                  selection: $model.maxMB)
             } header: {
                 Text("Limits")
             } footer: {
                 SettingsBullets(items: [
-                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text."),
+                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text. Large clips travel in chunks automatically — but all Macs need a recent version for clips over ~25 MB."),
                 ])
             }
         }
@@ -612,6 +618,17 @@ struct SettingsView: View {
                 ])
             }
             Section {
+                Toggle("Smart titles for long clips", isOn: $model.aiSmartLabels)
+                Toggle("Translate incoming foreign-language clips", isOn: $model.aiTranslateIncoming)
+            } header: {
+                Text("AI on your clips (automatic)")
+            } footer: {
+                SettingsBullets(items: [
+                    ("Smart titles", "clips longer than a couple of sentences get a short AI-generated title (marked ✨) in the picker instead of their first line. Sends clip text to your endpoint automatically."),
+                    ("Translate incoming", "clips arriving from your Macs in another language get a translation in the hover preview — the clip itself is never altered. Language detection is on-device; only the translation call uses your endpoint."),
+                ])
+            }
+            Section {
                 TextField("Fallback endpoint URL", text: $model.aiFallbackEndpoint,
                           prompt: Text("optional — e.g. a cloud endpoint behind local Ollama"))
                     .autocorrectionDisabled()
@@ -652,6 +669,16 @@ struct SettingsView: View {
                     ("Pairing code", "the shared secret that encrypts everything. Enter the same code on every Mac you want in the group."),
                     ("Apply", "re-keys the connection immediately — peers drop until they also have the new code (no relaunch needed)."),
                     ("Regenerate", "makes a fresh strong code; copy it to your other Macs afterwards."),
+                ])
+            }
+
+            Section {
+                Toggle("Hold likely secrets", isOn: $model.secretGuard)
+            } header: {
+                Text("Secret guard")
+            } footer: {
+                SettingsBullets(items: [
+                    ("Hold likely secrets", "copies that look like credentials — API keys, private keys, card numbers, lone random tokens — are kept on this Mac instead of syncing. The menu shows the hold; \"Send Held Clip Anyway\" releases it. Backstops apps that don't mark passwords as concealed."),
                 ])
             }
 

@@ -58,7 +58,10 @@ struct DeviceIdentity {
             parts: copy.parts?.sorted { $0.kind.rawValue < $1.kind.rawValue }
                 .map { SignedPart(kind: $0.kind.rawValue, b64: $0.b64) },
             files: copy.files?.map { SignedFile(name: $0.name, b64: $0.b64) },
-            identityPublicKey: copy.identityPublicKey
+            identityPublicKey: copy.identityPublicKey,
+            chunkIndex: copy.chunkIndex,
+            chunkTotal: copy.chunkTotal,
+            chunkData: copy.chunkData
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -80,6 +83,9 @@ private struct SignedMessagePayload: Codable {
     let parts: [SignedPart]?
     let files: [SignedFile]?
     let identityPublicKey: String?
+    let chunkIndex: Int?
+    let chunkTotal: Int?
+    let chunkData: String?
 }
 
 private struct SignedPart: Codable {

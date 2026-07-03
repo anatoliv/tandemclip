@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NaturalLanguage
 
 /// A recent clipboard entry (in-memory history).
 struct HistoryItem: Identifiable {
@@ -190,7 +191,7 @@ final class SyncEngine {
         config.identity.sign(&m)
         recordHistory(snap, snap.hash, source: "\(config.deviceName) (shared)")
         Log.trace("sync", "share \(files.count) file(s) \(snap.totalBytes)B")
-        transport.broadcast(m)
+        dispatch(m)
         lastSyncSource = "\(config.deviceName) (shared)"
         onStatusChange?()
         return ShareOutcome(sent: files.count, skipped: skipped, peers: peerCount)
@@ -221,6 +222,7 @@ final class SyncEngine {
     /// should no longer be pasteable anywhere.
     private func removeClip(hash: String) {
         history.removeAll { $0.hash == hash }
+        removePinLocally(hash: hash)   // deleting everywhere unpins everywhere
         purgeReceivedFiles(hash: hash)
         if localHash == hash {
             localSnapshot = nil
@@ -231,14 +233,75 @@ final class SyncEngine {
         onStatusChange?()
     }
 
+    /// Share a piece of text to the mesh right now — the Services-menu twin
+    /// of shareFiles: explicit user action, works in both modes, honors
+    /// role/pause/privacy/network. Recorded in history; clipboard untouched.
+    @discardableResult
+    func shareText(_ text: String) -> Bool {
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed(),
+              !text.isEmpty else { return false }
+        let snap = ClipSnapshot(parts: [.text: Data(text.utf8)])
+        var m = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = snap.hash
+        m.size = snap.totalBytes
+        m.contentType = snap.contentLabel
+        m.text = snap.plainText
+        m.parts = snap.wireParts
+        config.identity.sign(&m)
+        recordHistory(snap, snap.hash, source: "\(config.deviceName) (shared)")
+        Log.trace("sync", "share text \(snap.totalBytes)B")
+        transport.broadcast(m)
+        lastSyncSource = "\(config.deviceName) (shared)"
+        onStatusChange?()
+        return true
+    }
+
     // MARK: - Local clipboard changed
+
+    /// A local copy the secret guard held back from syncing (cleared by the
+    /// next copy or by releaseHeldSecret). Pull serving skips it too.
+    private(set) var heldSecret: (hash: String, reason: String)?
+
+    /// "Send anyway": lift the hold and, in Mirror mode, broadcast the clip
+    /// that was held (Manual peers can now pull it).
+    func releaseHeldSecret() {
+        guard let held = heldSecret, held.hash == localHash else { heldSecret = nil; return }
+        heldSecret = nil
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
+            onStatusChange?(); return
+        }
+        if config.mode == .mirror, let msg = clipMessage(type: .clip) {
+            lastHash = held.hash
+            Log.trace("sync", "secret hold released — broadcasting")
+            dispatch(msg)
+            lastSyncSource = "\(config.deviceName) (local)"
+        } else {
+            transport.broadcast(makeAnnounce())
+        }
+        onStatusChange?()
+    }
 
     private func handleLocal(_ snap: ClipSnapshot, _ hash: String) {
         localSnapshot = snap
         localHash = hash
         localTimestamp = now()
         clipOrigin = nil   // copied here
+        heldSecret = nil   // every new copy is re-assessed
         recordHistory(snap, hash, source: config.deviceName)
+
+        maybeSmartLabel(snap, hash)
+
+        // Secret guard: a text clip that looks like a credential is captured
+        // (history, snapshot) but held from ALL sending until released — the
+        // backstop for apps that don't set the concealed-type marker.
+        if config.secretGuardEnabled, snap.files.isEmpty,
+           let text = snap.plainText, let finding = SecretGuard.assess(text) {
+            heldSecret = (hash, finding.reason)
+            Log.trace("sync", "secret guard held clip (\(finding.reason))")
+            onStatusChange?()
+            return
+        }
 
         guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
             onStatusChange?()
@@ -260,7 +323,7 @@ final class SyncEngine {
             guard let msg = clipMessage(type: .clip) else { return }
             lastHash = hash
             Log.trace("sync", "mirror: broadcast \(snap.contentLabel) \(snap.totalBytes)B")
-            transport.broadcast(msg)
+            dispatch(msg)
             lastSyncSource = "\(config.deviceName) (local)"
         } else {
             // Manual: only advertise metadata; content stays until pulled.
@@ -325,6 +388,29 @@ final class SyncEngine {
                 transport.broadcast(msg)
             }
 
+        case .chunk:
+            handleChunk(msg, verifiedKey: verifiedKey)
+
+        case .pin:
+            // Content delivery — gated like clips; freshness + replay guarded.
+            guard receiveAllowed, verifiedKey != nil, let hash = msg.hash else { return }
+            guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+            guard let snap = snapshot(from: msg), snap.totalBytes <= config.maxClipBytes * 2 else { return }
+            let label = msg.preview ?? snap.plainText.map { String($0.prefix(64)) } ?? snap.contentLabel
+            Log.trace("sync", "pin from \(msg.deviceName): \(label)")
+            addPin(PinnedClip(hash: hash, label: label, source: msg.deviceName,
+                              timestamp: msg.timestamp, parts: snap.wireParts,
+                              files: snap.wireFiles))
+            if config.role.canSend { transport.broadcast(msg) }   // gossip
+
+        case .unpin:
+            // Data-minimizing — honored from any trusted peer, like delete.
+            guard verifiedKey != nil, let hash = msg.hash else { return }
+            guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+            Log.trace("sync", "unpin from \(msg.deviceName)")
+            removePinLocally(hash: hash)
+            if config.role.canSend { transport.broadcast(msg) }
+
         case .request:
             // A pull is the peer's explicit ask for our current clipboard, so it
             // is served whatever the snapshot holds — including file content when
@@ -336,9 +422,14 @@ final class SyncEngine {
             lastRequestServed = lastRequestServed.filter { t - $0.value < 60 }
             guard t - (lastRequestServed[msg.deviceID] ?? 0) >= 1 else { return }
             lastRequestServed[msg.deviceID] = t
+            // Never serve a clip the secret guard is holding.
+            guard heldSecret?.hash != localHash else {
+                Log.trace("sync", "pull refused — clip held by secret guard")
+                return
+            }
             guard let reply = clipMessage(type: .clip) else { return }
             Log.trace("sync", "serving pull -> \(msg.deviceName)")
-            transport.send(reply, to: msg.deviceID)
+            dispatch(reply, to: msg.deviceID)
         }
     }
 
@@ -406,6 +497,8 @@ final class SyncEngine {
         localTimestamp = now()
         clipOrigin = name
         recordHistory(snap, hash, source: name)
+        maybeSmartLabel(snap, hash)
+        maybeTranslate(snap, hash)
         let urls = watcher.write(snap)   // echo-suppressed inside write()
         lastSyncSource = name
         onStatusChange?()
@@ -421,6 +514,222 @@ final class SyncEngine {
         guard !urls.isEmpty else { return }
         for url in urls { Log.trace("sync", "reveal \(url.lastPathComponent)") }
         NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    // MARK: - Chunked transfers (clips beyond the per-frame ceiling)
+
+    /// In-flight inbound transfers: "deviceID|hash" → slices. Bounded: one
+    /// live transfer per key, byte cap tied to the local clip limit, stale
+    /// entries dropped after 120s.
+    private var inboundChunks: [String: (parts: [Int: Data], total: Int, bytes: Int, started: Double)] = [:]
+
+    /// Send a clip message, chunking it when the encoded frame would blow
+    /// past receivers' frame caps. `to: nil` broadcasts.
+    private func dispatch(_ msg: Message, to deviceID: String? = nil) {
+        guard let payload = try? JSONEncoder().encode(msg),
+              payload.count > ClipChunker.directLimit else {
+            if let deviceID { transport.send(msg, to: deviceID) } else { transport.broadcast(msg) }
+            return
+        }
+        let slices = ClipChunker.slices(of: payload)
+        Log.trace("sync", "chunking \(payload.count)B clip into \(slices.count) slices")
+        for slice in slices {
+            var m = Message(type: .chunk, deviceID: config.deviceID, deviceName: config.deviceName)
+            m.timestamp = now()
+            m.hash = msg.hash
+            m.size = payload.count
+            m.chunkIndex = slice.index
+            m.chunkTotal = slice.total
+            m.chunkData = slice.data.base64EncodedString()
+            config.identity.sign(&m)
+            if let deviceID { transport.send(m, to: deviceID) } else { transport.broadcast(m) }
+        }
+    }
+
+    private func handleChunk(_ msg: Message, verifiedKey: String?) {
+        guard receiveAllowed, verifiedKey != nil,
+              let hash = msg.hash, let index = msg.chunkIndex, let total = msg.chunkTotal,
+              let b64 = msg.chunkData, let data = Data(base64Encoded: b64),
+              total > 0, total <= 256, index >= 0, index < total else { return }
+        guard now() - msg.timestamp <= replayWindow, !isReplayedClip(msg) else { return }
+
+        // Stale-transfer sweep + per-transfer byte cap (the local clip limit
+        // ×3 covers base64/JSON inflation of a legitimate max-size clip).
+        let cap = config.maxClipBytes * 3
+        inboundChunks = inboundChunks.filter { now() - $0.value.started < 120 }
+        let key = "\(msg.deviceID)|\(hash)"
+        var entry = inboundChunks[key] ?? (parts: [:], total: total, bytes: 0, started: now())
+        guard entry.total == total, entry.parts[index] == nil,
+              entry.bytes + data.count <= cap else { return }
+        entry.parts[index] = data
+        entry.bytes += data.count
+        inboundChunks[key] = entry
+
+        guard let payload = ClipChunker.assemble(entry.parts, total: total) else { return }
+        inboundChunks[key] = nil
+        guard let inner = try? JSONDecoder().decode(Message.self, from: payload),
+              inner.deviceID == msg.deviceID, inner.type == .clip else {
+            Log.trace("sync", "chunked payload from \(msg.deviceName) invalid — dropped")
+            return
+        }
+        Log.trace("sync", "reassembled \(payload.count)B clip from \(msg.deviceName)")
+        // Route through the normal path: the inner message carries its own
+        // signature and faces the full trust/freshness/replay checks.
+        handleRemote(inner, verifiedKey: DeviceIdentity.verifiedPublicKey(for: inner))
+    }
+
+    // MARK: - Pinned clips (persistent + synced)
+
+    private(set) var pins: [PinnedClip] = PinStore.load()
+
+    /// Pin a clip: persist locally and broadcast a signed `pin` carrying the
+    /// full content so every Mac keeps it past restarts. Explicit action —
+    /// works in both modes; sending honors the usual gates (pin still sticks
+    /// locally when they block).
+    @discardableResult
+    func pin(_ item: HistoryItem) -> Bool {
+        guard item.snapshot.totalBytes <= config.maxClipBytes else { return false }
+        let pinned = PinnedClip(hash: item.hash, label: item.label, source: item.source,
+                                timestamp: now(), parts: item.snapshot.wireParts,
+                                files: item.snapshot.wireFiles)
+        addPin(pinned)
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed(),
+              heldSecret?.hash != item.hash else { return true }
+        var m = Message(type: .pin, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = item.hash
+        m.size = item.snapshot.totalBytes
+        m.contentType = item.snapshot.contentLabel
+        m.preview = String(item.label.prefix(80))
+        m.parts = pinned.parts
+        m.files = pinned.files.isEmpty ? nil : pinned.files
+        config.identity.sign(&m)
+        transport.broadcast(m)
+        return true
+    }
+
+    /// Unpin everywhere (signed, hash-keyed — delete-everywhere's twin).
+    func unpin(hash: String) {
+        removePinLocally(hash: hash)
+        guard config.role.canSend, !config.paused, networkAllowed() else { return }
+        var m = Message(type: .unpin, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.timestamp = now()
+        m.hash = hash
+        config.identity.sign(&m)
+        transport.broadcast(m)
+    }
+
+    private func addPin(_ pinned: PinnedClip) {
+        pins.removeAll { $0.hash == pinned.hash }
+        pins.insert(pinned, at: 0)
+        if pins.count > PinStore.maxPins { pins.removeLast(pins.count - PinStore.maxPins) }
+        PinStore.save(pins)
+        onStatusChange?()
+    }
+
+    private func removePinLocally(hash: String) {
+        guard pins.contains(where: { $0.hash == hash }) else { return }
+        pins.removeAll { $0.hash == hash }
+        PinStore.save(pins)
+        onStatusChange?()
+    }
+
+    /// Put a pinned clip back on the clipboard (re-syncs in Mirror, like
+    /// history re-apply); reveals materialized files.
+    func applyPinned(hash: String) {
+        guard let pinned = pins.first(where: { $0.hash == hash }),
+              let snap = pinned.snapshot else { return }
+        Log.trace("sync", "pinned re-apply \(pinned.label)")
+        let urls = watcher.repost(snap)
+        openFiles(urls)
+    }
+
+    // MARK: - AI on receive/capture (smart labels, translations)
+
+    /// AI-generated titles by content hash (session cache).
+    private var titleCache: [String: String] = [:]
+    /// Translations of incoming foreign-language clips, by content hash —
+    /// shown in the preview card, never replacing the clip itself.
+    private(set) var translations: [String: String] = [:]
+
+    private static let titlePrompt = """
+        Give this text a short title of 3-7 words in Title Case that captures \
+        what it is. Output only the title - no quotes, no trailing punctuation.
+        """
+
+    /// Generate a 3–7 word title for a long text clip (tonebox's title
+    /// pattern), then relabel the history entry. Opt-in; never runs during
+    /// privacy hold or on a secret-guard-held clip.
+    private func maybeSmartLabel(_ snap: ClipSnapshot, _ hash: String) {
+        guard config.aiSmartLabels, !config.privacyHold, heldSecret?.hash != hash,
+              titleCache[hash] == nil,
+              let text = snap.plainText, text.count > 200,
+              let client = AIClient.fromConfig(config) else { return }
+        titleCache[hash] = ""   // claim, so bursts don't double-bill
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let raw = (try? await client.complete([
+                .init(role: .system, content: Self.titlePrompt),
+                .init(role: .user, content: String(text.prefix(4000))),
+            ])) ?? ""
+            let title = Self.sanitizeTitle(raw)
+            guard !title.isEmpty else { self.titleCache[hash] = nil; return }
+            self.titleCache[hash] = title
+            self.relabel(hash, to: "✨ " + title)
+            self.onStatusChange?()
+        }
+    }
+
+    /// A runaway model response must never become a history label.
+    static func sanitizeTitle(_ raw: String) -> String {
+        let first = raw.split(separator: "\n").first.map(String.init) ?? ""
+        let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”.,:;"))
+        return String(trimmed.prefix(60))
+    }
+
+    private func relabel(_ hash: String, to label: String) {
+        guard let i = history.firstIndex(where: { $0.hash == hash }) else { return }
+        let old = history[i]
+        history[i] = HistoryItem(snapshot: old.snapshot, hash: old.hash,
+                                 timestamp: old.timestamp, label: label, source: old.source)
+    }
+
+    /// Translate an incoming clip whose dominant language differs from the
+    /// user's (local detection via NaturalLanguage; only the translation call
+    /// touches the endpoint). Opt-in, incoming clips only.
+    private func maybeTranslate(_ snap: ClipSnapshot, _ hash: String) {
+        guard config.aiTranslateIncoming, !config.privacyHold,
+              translations[hash] == nil,
+              let text = snap.plainText, text.count > 20,
+              let detected = Self.dominantLanguage(of: text),
+              let userLang = Locale.current.language.languageCode?.identifier,
+              detected != userLang,
+              let client = AIClient.fromConfig(config) else { return }
+        translations[hash] = ""   // claim
+        let prompt = config.aiPresets.first { $0.id == "translate" }?.prompt
+            ?? AIPreset.bundled[5].prompt
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let result = (try? await client.complete([
+                .init(role: .system, content: prompt),
+                .init(role: .user, content: String(text.prefix(Config.aiMaxInputChars))),
+            ]))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if result.isEmpty { self.translations[hash] = nil }
+            else {
+                self.translations[hash] = result
+                self.onStatusChange?()
+            }
+        }
+    }
+
+    static func dominantLanguage(of text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(String(text.prefix(400)))
+        guard let lang = recognizer.dominantLanguage,
+              let confidence = recognizer.languageHypotheses(withMaximum: 1)[lang],
+              confidence > 0.6 else { return nil }
+        return lang.rawValue
     }
 
     // MARK: - Replay guard
@@ -529,6 +838,7 @@ final class SyncEngine {
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
         guard config.role.canSend, !config.privacyHold, config.previewLevel != .names,
+              heldSecret?.hash != localHash,
               let h = localHash, let snap = localSnapshot else {
             config.identity.sign(&m)
             return m

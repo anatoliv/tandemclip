@@ -51,3 +51,19 @@ final class PrivacyHoldTests: XCTestCase {
         XCTAssertEqual(engine.shareFiles([f]).sent, 0)
     }
 }
+
+extension PrivacyHoldTests {
+    func testShareTextBroadcastsAndRecordsHistory() {
+        let engine = SyncEngine(config: Config())
+        engine.config.historyEnabled = true
+        engine.config.privacyHold = false
+        XCTAssertTrue(engine.shareText("shared via services"))
+        XCTAssertTrue(engine.history.contains { $0.label.contains("shared via services") })
+        XCTAssertEqual(engine.lastSyncSource?.contains("(shared)"), true)
+
+        engine.config.privacyHold = true
+        XCTAssertFalse(engine.shareText("held"), "privacy hold blocks explicit text shares too")
+        engine.config.privacyHold = false
+        XCTAssertFalse(engine.shareText(""))
+    }
+}
