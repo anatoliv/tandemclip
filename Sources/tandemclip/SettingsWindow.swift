@@ -11,6 +11,7 @@ final class SettingsModel: ObservableObject {
     @Published var previewLevel: PreviewLevel { didSet { config.previewLevel = previewLevel } }
     @Published var role: Role { didSet { config.role = role } }
     @Published var maxMB: Double { didSet { config.maxClipBytes = Int(maxMB * 1_000_000); engine.applyConfig() } }
+    @Published var autoApplyIncoming: Bool = false { didSet { config.autoApplyIncoming = autoApplyIncoming } }
     @Published var syncRichText: Bool { didSet { config.syncRichText = syncRichText } }
     @Published var syncImages: Bool { didSet { config.syncImages = syncImages } }
     @Published var syncFiles: Bool { didSet { config.syncFiles = syncFiles } }
@@ -125,6 +126,7 @@ final class SettingsModel: ObservableObject {
         previewLevel = config.previewLevel
         role = config.role
         maxMB = Double(config.maxClipBytes) / 1_000_000
+        autoApplyIncoming = config.autoApplyIncoming
         syncRichText = config.syncRichText
         syncImages = config.syncImages
         syncFiles = config.syncFiles
@@ -403,10 +405,12 @@ struct SettingsView: View {
                     (PreviewLevel.preview, "Live text preview"),
                     (PreviewLevel.names, "Names only"),
                 ], selection: $model.previewLevel)
+                Toggle("Apply incoming clips automatically", isOn: $model.autoApplyIncoming)
+                    .disabled(model.mode == .mirror)
             } header: {
                 Text("Behavior")
             } footer: {
-                Text("Mirror sends every copy to your other Macs the moment you copy it; Manual shares only when a Mac explicitly pulls. The role limits direction — a receive-only Mac never sends anything. Peer preview controls how much other Macs can see about your current clip before pulling it: its age and size, a snippet of the text, or nothing but your Mac's name.")
+                Text("Mirror sends every copy to your other Macs the moment you copy it; Manual shares only when a Mac explicitly pulls. The role limits direction — a receive-only Mac never sends anything. Peer preview controls how much other Macs can see about your current clip before pulling it. \"Apply incoming clips automatically\" makes clips copied on other Macs land on this clipboard without you clicking anything, even in Manual mode (Mirror always applies automatically).")
             }
             Section {
                 SettingsDropdown(title: "Max clipboard size",
