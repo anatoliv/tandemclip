@@ -67,38 +67,66 @@ struct AboutView: View {
 
 // MARK: - Help
 
+/// Two-pane help center: a left sidebar for navigation (search + category
+/// sections + topic rows) and a right detail pane that renders the selected
+/// article. Modeled on tonebox's HelpView so the two apps share a shape, but
+/// with tandemclip's leaner plain-text topic model rendered through a small
+/// inline Markdown formatter (no MarkdownUI dependency).
 struct HelpView: View {
+    /// Sidebar-selection id for the Welcome / overview landing panel.
+    static let welcomeID = "welcome"
+    /// Sidebar-selection id for the keyboard-shortcuts reference.
+    static let shortcutsID = "shortcuts"
+
     private let accent = Color.tandemAccent
     @StateObject private var search = HelpSearchModel()
     @State private var query = ""
+    @State private var selection: String? = HelpView.welcomeID
+
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearching: Bool { trimmedQuery.count >= 2 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                searchField
-            }
-            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 12)
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 244)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if query.trimmingCharacters(in: .whitespaces).count >= 2 {
-                        searchResults
-                    } else {
-                        shortcutsCard
-                        ForEach(HelpCatalog.categories, id: \.name) { cat in
-                            card(cat.name, cat.symbol) {
-                                ForEach(HelpCatalog.topics(in: cat.name)) { topic in
-                                    row(topic.title, topic.body)
-                                }
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: 860, height: 640)
+    }
+
+    // MARK: Sidebar
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            searchField
+                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 10)
+            Divider()
+            List(selection: $selection) {
+                if isSearching {
+                    searchResultRows
+                } else {
+                    Section("Start here") {
+                        navRow(Self.welcomeID, "Welcome to TandemClip", "hand.wave")
+                        navRow(Self.shortcutsID, "Keyboard shortcuts", "command.square")
+                    }
+                    ForEach(HelpCatalog.categories, id: \.name) { cat in
+                        Section(cat.name) {
+                            ForEach(HelpCatalog.topics(in: cat.name)) { topic in
+                                navRow(topic.id, topic.title, cat.symbol)
                             }
                         }
                     }
                 }
-                .padding(24)
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .frame(width: 580, height: 700)
     }
 
     /// Search over every topic — instant keywords plus on-device semantic
@@ -106,7 +134,7 @@ struct HelpView: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundColor(.secondary)
-            TextField("Search help — try “stop sharing my clipboard”", text: $query)
+            TextField("Search help", text: $query)
                 .textFieldStyle(.plain)
                 .onChange(of: query) { q in search.update(q) }
             if !query.isEmpty {
@@ -114,94 +142,140 @@ struct HelpView: View {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
     }
 
-    @ViewBuilder private var searchResults: some View {
+    @ViewBuilder private var searchResultRows: some View {
         if search.results.isEmpty {
-            Text("No help topics match “\(query)”.")
-                .font(.system(size: 12.5)).foregroundColor(.secondary)
-                .padding(.top, 8)
+            Text("No results for “\(trimmedQuery)”")
+                .font(.system(size: 12)).foregroundColor(.secondary)
         } else {
-            ForEach(search.results) { topic in
-                card(topic.category, symbol(for: topic.category)) {
-                    row(topic.title, topic.body)
+            Section(search.results.count == 1 ? "1 result" : "\(search.results.count) results") {
+                ForEach(search.results) { topic in
+                    HStack(spacing: 8) {
+                        Image(systemName: symbol(for: topic.category))
+                            .font(.system(size: 12)).foregroundColor(.secondary)
+                            .frame(width: 16)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(topic.title).font(.system(size: 12.5))
+                            Text(topic.category).font(.system(size: 10.5)).foregroundColor(.secondary)
+                        }
+                    }
+                    .tag(topic.id)
                 }
             }
         }
+    }
+
+    private func navRow(_ id: String, _ title: String, _ symbol: String) -> some View {
+        Label(title, systemImage: symbol).tag(id)
     }
 
     private func symbol(for category: String) -> String {
         HelpCatalog.categories.first { $0.name == category }?.symbol ?? "questionmark.circle"
     }
 
-    /// Keyboard reference — kept as a hand-built card (keycaps don't fit the
-    /// plain-text topic model).
-    private var shortcutsCard: some View {
-        card("Keyboard shortcuts", "command.square") {
+    // MARK: Detail
+
+    @ViewBuilder private var detail: some View {
+        if selection == Self.welcomeID {
+            welcomeDetail
+        } else if selection == Self.shortcutsID {
+            shortcutsDetail
+        } else if let topic = HelpCatalog.topics.first(where: { $0.id == selection }) {
+            topicDetail(topic)
+        } else {
+            welcomeDetail
+        }
+    }
+
+    private func topicDetail(_ topic: HelpTopic) -> some View {
+        detailScaffold(
+            title: topic.title,
+            symbol: symbol(for: topic.category),
+            badge: topic.category
+        ) {
+            HelpMarkdown(topic.body)
+        }
+    }
+
+    private var welcomeDetail: some View {
+        detailScaffold(
+            title: "Welcome to TandemClip",
+            symbol: "hand.wave",
+            badge: "Overview"
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 13) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable().frame(width: 56, height: 56)
+                    Text("Copy on one Mac, paste on another — end-to-end encrypted over your own network, with no cloud and no account.")
+                        .font(.system(size: 13.5)).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HelpMarkdown("""
+                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network — peers find each other with Bonjour and talk to each other; there is no server in the middle.
+
+                **The two things you'll use most:**
+
+                - The **menu-bar icon** shows sync state and holds the quick controls — pause/resume, pull from a peer, privacy hold, and Check for Updates.
+                - The **clipboard picker** (⇧⌘V) is where everything else lives: your history, search, previews, pins, compose/AI, and per-clip actions.
+
+                **Getting set up takes two steps:** install TandemClip on each Mac, then enter the same pairing code on all of them under Settings → Security. That code is the encryption key — sharing a network grants nothing without it.
+
+                Use the sidebar to browse, or search at the top — it matches by meaning as well as words, so “stop sharing my clipboard” finds the Privacy hold.
+                """)
+            }
+        }
+    }
+
+    private var shortcutsDetail: some View {
+        detailScaffold(
+            title: "Keyboard shortcuts",
+            symbol: "command.square",
+            badge: "Reference"
+        ) {
+            VStack(alignment: .leading, spacing: 18) {
+                shortcutGroup("The clipboard picker", [
+                    (["⇧", "⌘", "V"], "Open the picker (works in any app)"),
+                    (["↑", "↓"], "Move the selection"),
+                    (["⏎"], "Use the selected clip"),
+                    (["⌘", "1–9"], "Quick-pick a clip by its number"),
+                    (["⌘", "⌫"], "Delete the selected clip everywhere"),
+                    (["⎋"], "Close the picker (ignored while pinned 📌)"),
+                ])
+                shortcutGroup("Typing & search", [
+                    (["A–Z"], "Just start typing to search your clips"),
+                ])
+                shortcutGroup("Compose & AI (✎)", [
+                    (["⌘", "⏎"], "Use the composed / rewritten text"),
+                ])
+                Text("The picker's hotkey (⇧⌘V) is fixed. Everything else — pause, pull, privacy hold, Check for Updates — lives in the menu-bar menu.")
+                    .font(.system(size: 12)).foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func shortcutGroup(_ title: String, _ items: [(keys: [String], label: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .bold)).foregroundColor(.secondary)
+                .tracking(0.4)
             VStack(spacing: 7) {
-                shortcut(["⇧", "⌘", "V"], "Open the picker")
-                shortcut(["↑", "↓"], "Move the selection")
-                shortcut(["⏎"], "Use the selected clip")
-                shortcut(["⌘", "1–9"], "Quick-pick by number")
-                shortcut(["⌘", "⌫"], "Delete the selected clip everywhere")
-                shortcut(["⌘", "⏎"], "Use composed text (in compose)")
-                shortcut(["⎋"], "Close the picker (unless pinned)")
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 10) {
+                        HStack(spacing: 4) { ForEach(item.keys, id: \.self) { keyCap($0) } }
+                            .frame(width: 104, alignment: .leading)
+                        Text(item.label).font(.system(size: 12.5)).foregroundColor(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                }
             }
-            .padding(.top, 2)
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 13) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable().frame(width: 52, height: 52)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("TandemClip Help").font(.system(size: 19, weight: .semibold, design: .rounded))
-                Text("Copy on one Mac, paste on another — here’s everything.")
-                    .font(.system(size: 12.5)).foregroundColor(.secondary)
-            }
-            Spacer()
-        }
-        .padding(.bottom, 2)
-    }
-
-    private func card<Content: View>(_ title: String, _ symbol: String,
-                                     @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundColor(accent)
-                Text(title).font(.system(size: 13.5, weight: .semibold))
-            }
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(NSColor.controlBackgroundColor))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.secondary.opacity(0.14)))
-        .clipShape(RoundedRectangle(cornerRadius: 11))
-    }
-
-    private func row(_ title: String, _ desc: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 12.5, weight: .medium))
-            Text(desc).font(.system(size: 12)).foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func shortcut(_ keys: [String], _ label: String) -> some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                ForEach(keys, id: \.self) { keyCap($0) }
-            }
-            .frame(width: 96, alignment: .leading)
-            Text(label).font(.system(size: 12)).foregroundColor(.secondary)
-            Spacer()
         }
     }
 
@@ -211,5 +285,126 @@ struct HelpView: View {
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(Color.secondary.opacity(0.14))
             .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    /// Shared detail chrome: a pinned header (symbol + title + category badge)
+    /// over a scrolling body, matching the Help window's two-pane frame.
+    private func detailScaffold<Content: View>(
+        title: String, symbol: String, badge: String,
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 18, weight: .medium)).foregroundColor(accent)
+                    Text(title).font(.system(size: 20, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(badge.uppercased())
+                    .font(.system(size: 10, weight: .bold)).foregroundColor(.secondary)
+                    .tracking(0.5)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+            .padding(.horizontal, 28).padding(.top, 22).padding(.bottom, 16)
+            Divider()
+            ScrollView {
+                content()
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 28).padding(.vertical, 22)
+            }
+        }
+    }
+}
+
+/// A minimal Markdown renderer for help bodies: splits on blank lines into
+/// paragraphs and bullet lists, and renders inline **bold**, `code`, and
+/// links via AttributedString. Keeps articles readable without pulling in a
+/// full Markdown engine.
+struct HelpMarkdown: View {
+    private let blocks: [Block]
+
+    private enum Block: Identifiable {
+        case paragraph(String)
+        case bullets([String])
+        var id: String {
+            switch self {
+            case .paragraph(let s): return "p:" + s
+            case .bullets(let items): return "b:" + items.joined(separator: "|")
+            }
+        }
+    }
+
+    init(_ text: String) {
+        blocks = Self.parse(text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(blocks) { block in
+                switch block {
+                case .paragraph(let text):
+                    styled(text)
+                        .font(.system(size: 13.5)).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .bullets(let items):
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(items, id: \.self) { item in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("•").font(.system(size: 13.5)).foregroundColor(.secondary)
+                                styled(item)
+                                    .font(.system(size: 13.5)).lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 620, alignment: .leading)
+    }
+
+    /// Inline Markdown (bold / code / links) via AttributedString, falling
+    /// back to the raw string if parsing fails.
+    private func styled(_ text: String) -> Text {
+        if let attributed = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            return Text(attributed)
+        }
+        return Text(text)
+    }
+
+    private static func parse(_ text: String) -> [Block] {
+        var blocks: [Block] = []
+        var paragraph: [String] = []
+        var bullets: [String] = []
+
+        func flushParagraph() {
+            let joined = paragraph.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            if !joined.isEmpty { blocks.append(.paragraph(joined)) }
+            paragraph.removeAll()
+        }
+        func flushBullets() {
+            if !bullets.isEmpty { blocks.append(.bullets(bullets)); bullets.removeAll() }
+        }
+
+        for rawLine in text.components(separatedBy: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                flushParagraph(); flushBullets()
+            } else if line.hasPrefix("- ") || line.hasPrefix("• ") {
+                flushParagraph()
+                bullets.append(String(line.dropFirst(2)))
+            } else {
+                flushBullets()
+                paragraph.append(line)
+            }
+        }
+        flushParagraph(); flushBullets()
+        return blocks
     }
 }
