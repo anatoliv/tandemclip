@@ -1106,6 +1106,7 @@ struct PickerView: View {
                              help: model.pinned
                                 ? "Pinned — the picker stays open after picking. Click to unpin."
                                 : "Pin: keep the picker open after picking a clip") { model.togglePin() }
+                pickerHelp("picker-open", help: "Help — how the picker works")
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
         }
@@ -1146,6 +1147,7 @@ struct PickerView: View {
                     .foregroundColor(.secondary)
                 Spacer()
                 if model.composeBusy { ProgressView().controlSize(.small) }
+                pickerHelp("compose", help: "Help — Compose & AI cleanup")
             }
             TextEditor(text: $model.composeText)
                 .font(.system(size: Tokens.CompactSize.rowText))
@@ -1165,6 +1167,7 @@ struct PickerView: View {
                         Text("From your clipboard").font(.system(size: Tokens.CompactSize.label, weight: .semibold))
                         if model.askBusy { ProgressView().controlSize(.mini) }
                         Spacer()
+                        pickerHelp("ask", help: "Help — Ask your clipboard")
                         Button { model.clearAsk() } label: {
                             Image(systemName: "xmark.circle.fill").imageScale(.small)
                                 .foregroundStyle(.tertiary)
@@ -1384,6 +1387,21 @@ struct PickerView: View {
             Text(t).font(.system(size: Tokens.CompactSize.label)).lineLimit(1).foregroundColor(.secondary)
         }
         .fixedSize()
+    }
+
+    /// A "?" button that opens the Help window at a specific article (bidirectional
+    /// with Settings' inline links) — via the same `HelpDeepLink` route. Borderless
+    /// so it reads as auxiliary next to the footer's action toggles.
+    private func pickerHelp(_ topic: String, anchor: String? = nil, help: String) -> some View {
+        Button { HelpDeepLink.open(topic: topic, anchor: anchor) } label: {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: Tokens.CompactSize.meta, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
 

@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.1", date: "July 3, 2026",
+              highlight: "Help, right where you are.",
+              changes: [
+                .init(.added, "Help buttons in the clipboard picker — a ? in the footer, in compose, and on “Ask your clipboard” open the matching Help article, so guidance is one click away from the picker too."),
+              ]),
         .init(version: "0.22.0", date: "July 3, 2026",
               highlight: "Settings that explain themselves.",
               changes: [
