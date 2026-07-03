@@ -102,7 +102,10 @@ final class ClipboardPickerController {
                 self?.engine.deleteHistory(hash: hash)
                 self?.refreshIfVisible()
             },
-            onClose:       { [weak self] in self?.hide() })
+            // Esc closes the picker — unless pinned (unpin or ⇧⌘V to close then).
+            onClose:       { [weak self] in
+                if self?.model?.pinned != true { self?.hide() }
+            })
         // Restore fold state (groups + sub-sections) across relaunches.
         m.collapsed = Set(config.collapsedGroups)
         m.collapsedSubs = Set(config.collapsedSubgroups)
@@ -144,6 +147,9 @@ final class ClipboardPickerController {
             pb.clearContents()
             pb.setString(text, forType: .string)
         }
+        // Using the composed text behaves like picking a clip: the panel
+        // closes unless pinned.
+        m.onComposeDone = { [weak self] in self?.hideUnlessPinned() }
         return m
     }
 
@@ -334,11 +340,18 @@ final class PickerModel: ObservableObject {
         composeChanges = nil
     }
 
-    func copyCompose() {
+    /// Called after Use so the owner can close the panel (unless pinned).
+    var onComposeDone: (() -> Void)?
+
+    /// Accept the composed text: put it on the clipboard (it syncs like any
+    /// local copy) and leave compose, mirroring what picking a clip does.
+    func useCompose() {
         let text = composeText
         guard !text.isEmpty else { return }
         onComposeCopy?(text)
-        flashDrop("Copied — will sync like any copy")
+        endCompose()
+        flashDrop("On the clipboard — syncs like any copy")
+        onComposeDone?()
     }
 
     // MARK: Hover preview
@@ -865,10 +878,13 @@ struct PickerView: View {
                     Button("Undo") { model.undoCleanup() }.font(.system(size: 11.5))
                 }
                 Spacer()
+                Button("Cancel") { model.endCompose() }
+                    .font(.system(size: 11.5))
+                    .keyboardShortcut(.cancelAction)
                 Button {
-                    model.copyCompose()
+                    model.useCompose()
                 } label: {
-                    Label("Copy", systemImage: "doc.on.clipboard")
+                    Label("Use", systemImage: "checkmark.circle")
                         .font(.system(size: 11.5, weight: .medium))
                 }
                 .keyboardShortcut(.return, modifiers: .command)
@@ -1107,6 +1123,8 @@ private struct HistoryRow: View {
 /// or a first-page render for a PDF.
 private struct PreviewCard: View {
     let item: HistoryItem
+    /// QuickLook thumbnail + media duration, loaded async per hovered item.
+    @State private var generated = PreviewThumbnailer.Result()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -1116,6 +1134,10 @@ private struct PreviewCard: View {
                 Text("·").foregroundColor(.secondary)
                 Text(ByteCountFormatter.string(fromByteCount: Int64(item.snapshot.totalBytes), countStyle: .file))
                     .font(.system(size: 10.5))
+                if let d = generated.duration {
+                    Text("·").foregroundColor(.secondary)
+                    Text(PreviewThumbnailer.durationLabel(d)).font(.system(size: 10.5))
+                }
                 Spacer(minLength: 0)
                 Text(exactTime(item.timestamp)).font(.system(size: 10)).foregroundColor(.secondary)
             }
@@ -1129,6 +1151,11 @@ private struct PreviewCard: View {
         .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
         .padding(.trailing, 12).padding(.bottom, 44)
         .allowsHitTesting(false)   // never steal the pointer from the list
+        .task(id: item.id) {
+            generated = PreviewThumbnailer.Result()
+            guard !item.snapshot.files.isEmpty, item.imageData == nil else { return }
+            generated = await PreviewThumbnailer.shared.preview(for: item)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -1139,6 +1166,13 @@ private struct PreviewCard: View {
             Text("\(Int(img.size.width)) × \(Int(img.size.height))")
                 .font(.system(size: 9.5)).foregroundColor(.secondary)
         } else if !item.snapshot.files.isEmpty {
+            // QuickLook render of the first file — PDF first page, Office
+            // document, video frame, … — when the system can produce one.
+            if let thumb = generated.image {
+                Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 230, maxHeight: 140)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
             ForEach(PickerModel.previewFiles(item).prefix(6), id: \.name) { f in
                 HStack(spacing: 5) {
                     Image(systemName: "doc").font(.system(size: 9)).foregroundColor(.secondary)
