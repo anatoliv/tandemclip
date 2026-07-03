@@ -850,9 +850,13 @@ struct PickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)   // don't reserve the title-bar gap above search
         .background(KeyCatcher(model: model).frame(width: 0, height: 0))
-        .onDrop(of: [UTType.fileURL], isTargeted: $dropTargeted) { providers in
-            Self.loadFileURLs(from: providers) { model.onDropFiles($0) }
-            return true
+        // AppKit drop target: unlike .onDrop(of: [.fileURL]) it also accepts
+        // file *promises* (Outlook/Mail emails, Photos, browser images).
+        // Disabled in compose so text drags reach the editor.
+        .background {
+            if !model.composing {
+                PromiseDropTarget(targeted: $dropTargeted) { model.onDropFiles($0) }
+            }
         }
         .overlay { if dropTargeted { dropOverlay } }
         .overlay(alignment: .bottom) { if let msg = model.dropMessage { dropToast(msg) } }
@@ -986,23 +990,6 @@ struct PickerView: View {
                 : Color.tandemAccent.opacity(0.92)))
             .padding(.bottom, 44)
             .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    /// Resolve dropped item providers to on-disk file URLs, then call back on the
-    /// main thread. Non-file drops (e.g. a text selection) resolve to nothing.
-    private static func loadFileURLs(from providers: [NSItemProvider],
-                                     _ completion: @escaping ([URL]) -> Void) {
-        var urls: [URL] = []
-        let lock = NSLock()
-        let group = DispatchGroup()
-        for p in providers {
-            group.enter()
-            _ = p.loadObject(ofClass: URL.self) { url, _ in
-                if let url, url.isFileURL { lock.lock(); urls.append(url); lock.unlock() }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { completion(urls) }
     }
 
     private func filterChip(_ f: PickerModel.ContentFilter) -> some View {
