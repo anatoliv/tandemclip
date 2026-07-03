@@ -76,7 +76,7 @@ struct ClipSnapshot {
     static let documentExtensions: Set<String> =
         ["pdf", "doc", "docx", "rtf", "txt", "md", "markdown", "pages", "numbers", "key",
          "xls", "xlsx", "ppt", "pptx", "csv", "tsv", "odt", "ods", "odp", "epub",
-         "json", "xml", "yml", "yaml", "log"]
+         "json", "xml", "yml", "yaml", "log", "eml", "msg"]
 
     /// Text-like document extensions whose bytes can be shown as a preview.
     static let textLikeExtensions: Set<String> =
