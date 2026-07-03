@@ -225,7 +225,7 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Files (`public.file-url`) — transferred by content; always captured to history, auto-sync opt-in (Settings → Files)
 - [x] Drop-to-share — drag files onto the picker to send them to your Macs now
 - [x] Delete everywhere — remove a clip from the picker and it disappears from history, clipboards, and received files on every Mac (signed, relayed like a clip)
-- [x] Clipboard history — in-memory, opt-in (Settings), menu submenu to re-copy
+- [x] Clipboard history — in-memory, opt-in (Settings), browsed/re-copied via the picker
 - [ ] Drag-out — drag a received file from the picker to Finder/an app (single-file first)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 ```
