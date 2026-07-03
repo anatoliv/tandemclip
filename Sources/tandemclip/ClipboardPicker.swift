@@ -5,8 +5,13 @@ import UniformTypeIdentifiers
 // MARK: - Panel (borderless, can become key without activating everything)
 
 final class PickerPanel: NSPanel {
+    /// Esc fallback: when first responder is something other than the
+    /// KeyCatcher (a just-clicked button, nothing at all), the unhandled Esc
+    /// walks the responder chain and lands here instead of beeping.
+    var onCancel: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
 // MARK: - Controller
@@ -56,8 +61,23 @@ final class ClipboardPickerController {
             p.standardWindowButton(.miniaturizeButton)?.isHidden = true
             p.standardWindowButton(.zoomButton)?.isHidden = true
             p.contentView = NSHostingView(rootView: PickerView(model: model))
+            p.onCancel = { [weak self] in
+                if self?.model?.composing == true { self?.model?.endCompose() }
+                else if self?.model?.pinned != true { self?.hide() }
+            }
             p.setFrameAutosaveName("TandemClipPicker")   // remember size + position
             if p.frame.origin == .zero { p.center() }     // first run only
+            // Unpinned, the picker is a transient panel: clicking away (the
+            // panel resigning key) dismisses it — which also guarantees Esc
+            // works whenever the panel can hear keys at all. Pinned, it
+            // floats until unpinned or toggled away. Compose text survives a
+            // dismissal either way (the model keeps it).
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification, object: p, queue: .main
+            ) { [weak self] _ in
+                guard let self, self.model?.pinned != true else { return }
+                self.hide()
+            }
             panel = p
         }
         NSApp.activate(ignoringOtherApps: true)
