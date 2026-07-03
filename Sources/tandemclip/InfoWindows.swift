@@ -69,64 +69,90 @@ struct AboutView: View {
 
 struct HelpView: View {
     private let accent = Color(NSColor(srgbRed: 224/255, green: 122/255, blue: 75/255, alpha: 1))
+    @StateObject private var search = HelpSearchModel()
+    @State private var query = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
                 header
-
-                card("Getting started", "sparkles") {
-                    row("Pair your Macs", "Install TandemClip on each Mac and enter the same pairing code under Settings → Security. The pairing code becomes the encryption key — being on the same Wi-Fi grants nothing on its own.")
-                    row("Roles & trust", "Make a Mac send-only or receive-only, and restrict sync to a trusted-device allowlist, under Settings → Security.")
-                }
-
-                card("Sync modes", "arrow.triangle.2.circlepath") {
-                    row("Mirror", "Copy anywhere and it appears everywhere. Deduped, loop-safe, and it relays across Macs that can't see each other directly.")
-                    row("Manual", "Keep each Mac's clipboard its own. From the menu bar or picker, pull a specific Mac's clipboard only when you want it.")
-                }
-
-                card("Clipboard picker", "rectangle.stack") {
-                    Text("Press the shortcut anywhere to browse recent clips and grab another Mac's clipboard.")
-                        .font(.system(size: 12)).foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 7) {
-                        shortcut(["⇧", "⌘", "V"], "Open the picker")
-                        shortcut(["↑", "↓"], "Move the selection")
-                        shortcut(["⏎"], "Use the selected clip")
-                        shortcut(["⌘", "1–9"], "Quick-pick by number")
-                        shortcut(["⌘", "⌫"], "Delete the selected clip everywhere")
-                        shortcut(["⎋"], "Close")
+                searchField
+            }
+            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 12)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                        searchResults
+                    } else {
+                        shortcutsCard
+                        ForEach(HelpCatalog.categories, id: \.name) { cat in
+                            card(cat.name, cat.symbol) {
+                                ForEach(HelpCatalog.topics(in: cat.name)) { topic in
+                                    row(topic.title, topic.body)
+                                }
+                            }
+                        }
                     }
-                    .padding(.top, 2)
-                    row("Filter & search", "Narrow the list with the All / Text / Images / Files chips, or just start typing to search.")
-                    row("Files", "Picking a file copies it to the clipboard and opens it in its default app.")
-                    row("Drop to share", "Drag files from Finder onto the picker to send them to your other Macs right away — no need to copy them first.")
-                    row("Delete everywhere", "Hover a clip and click ✕ (or press ⌘⌫) to remove it from history on every Mac — including any clipboard or received file still holding it.")
-                    row("Privacy hold", "The ✋ button in the picker footer stops anything you copy from leaving this Mac — no broadcasts, no pull serving, no previews — until you switch it off. Receiving keeps working, and the menu-bar icon shows a raised hand while it's on.")
-                    row("Pin", "The 📌 button keeps the picker open — it stays up after picking a clip and ignores Esc until you unpin it (or toggle ⇧⌘V).")
                 }
+                .padding(24)
+            }
+        }
+        .frame(width: 580, height: 700)
+    }
 
-                card("Private by design", "lock.shield") {
-                    row("No cloud, no relay", "Peers talk directly over your LAN. There is no server, no account, and nothing to breach.")
-                    row("Password-manager safe", "Content a password manager marks as secret is never synced — same for one-time and transient copies. This relies on the source app flagging it (1Password, Keychain and most managers do); an app that copies a password without the flag can't be recognized, so treat unmanaged secrets with care.")
-                    row("A code only you hold", "The shared pairing code is the encryption key. Change it any time under Settings → Security; peers reconnect once they share the new code.")
-                    row("Wi-Fi limit", "Optionally restrict sync to trusted Wi-Fi networks under Settings → Security (needs Location permission).")
+    /// Search over every topic — instant keywords plus on-device semantic
+    /// matching, so "stop sharing my clipboard" finds Privacy hold.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundColor(.secondary)
+            TextField("Search help — try “stop sharing my clipboard”", text: $query)
+                .textFieldStyle(.plain)
+                .onChange(of: query) { q in search.update(q) }
+            if !query.isEmpty {
+                Button { query = ""; search.update("") } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary.opacity(0.6))
                 }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+    }
 
-                card("Menu bar & updates", "menubar.arrow.up.rectangle") {
-                    row("Status at a glance", "Click the ↻ menu-bar icon for connected peers, current mode, clipboard size, history, and your pairing code.")
-                    row("Pause & resume", "Pause syncing any time from the menu; ‘Start paused’ under Settings → General keeps it off at login.")
-                    row("Stay current", "Use ‘Check for Updates…’ in the menu to get the latest version.")
-                }
-
-                card("Troubleshooting", "wrench.and.screwdriver") {
-                    row("Not syncing?", "Confirm every Mac uses the same pairing code and is on the same Wi-Fi, and that this Mac isn’t paused or set to receive-only.")
-                    row("A Mac won’t appear", "Give it a moment after wake — peers rediscover automatically. Two Macs should not share the same display name.")
+    @ViewBuilder private var searchResults: some View {
+        if search.results.isEmpty {
+            Text("No help topics match “\(query)”.")
+                .font(.system(size: 12.5)).foregroundColor(.secondary)
+                .padding(.top, 8)
+        } else {
+            ForEach(search.results) { topic in
+                card(topic.category, symbol(for: topic.category)) {
+                    row(topic.title, topic.body)
                 }
             }
-            .padding(24)
         }
-        .frame(width: 560, height: 660)
+    }
+
+    private func symbol(for category: String) -> String {
+        HelpCatalog.categories.first { $0.name == category }?.symbol ?? "questionmark.circle"
+    }
+
+    /// Keyboard reference — kept as a hand-built card (keycaps don't fit the
+    /// plain-text topic model).
+    private var shortcutsCard: some View {
+        card("Keyboard shortcuts", "command.square") {
+            VStack(spacing: 7) {
+                shortcut(["⇧", "⌘", "V"], "Open the picker")
+                shortcut(["↑", "↓"], "Move the selection")
+                shortcut(["⏎"], "Use the selected clip")
+                shortcut(["⌘", "1–9"], "Quick-pick by number")
+                shortcut(["⌘", "⌫"], "Delete the selected clip everywhere")
+                shortcut(["⌘", "⏎"], "Use composed text (in compose)")
+                shortcut(["⎋"], "Close the picker (unless pinned)")
+            }
+            .padding(.top, 2)
+        }
     }
 
     private var header: some View {
