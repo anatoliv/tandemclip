@@ -221,6 +221,13 @@ final class Config {
         set { set("aiEnabled", newValue) }
     }
 
+    /// How the active model authenticates: API key / local, Azure (api-key
+    /// header), or ChatGPT sign-in (Codex OAuth). Defaults to API key.
+    var aiAuthMode: LLMAuthMode {
+        get { LLMAuthMode(rawValue: defaults.string(forKey: "aiAuthMode") ?? "") ?? .apiKey }
+        set { set("aiAuthMode", newValue.rawValue) }
+    }
+
     /// OpenAI-compatible chat-completions endpoint URL.
     var aiEndpoint: String {
         get { defaults.string(forKey: "aiEndpoint") ?? "" }

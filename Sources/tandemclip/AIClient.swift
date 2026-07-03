@@ -16,6 +16,7 @@ struct AIClient {
 
     enum AIError: LocalizedError {
         case notConfigured
+        case notSignedIn
         case httpStatus(Int, String)
         case emptyResponse
 
@@ -23,6 +24,8 @@ struct AIClient {
             switch self {
             case .notConfigured:
                 return "Set the AI endpoint and key in Settings → AI first."
+            case .notSignedIn:
+                return "Sign in to ChatGPT in Settings → AI first."
             case let .httpStatus(code, detail):
                 return AIClient.friendlyHTTPMessage(code: code, detail: detail)
             case .emptyResponse:
@@ -31,16 +34,58 @@ struct AIClient {
         }
     }
 
+    /// Which credential the request carries. Mirrors tonebox's AuthStrategy:
+    /// the API-key/local path (`Authorization: Bearer`), Azure OpenAI (the key
+    /// in an `api-key:` header instead), and the ChatGPT-subscription Codex
+    /// path (an OAuth bearer fetched per call so refresh-on-expiry is
+    /// transparent).
+    enum AuthStrategy: Equatable {
+        case apiKey(String)
+        case azureApiKey(String)
+        case codexOAuth
+    }
+
     let endpoint: URL
     let model: String
-    let apiKey: String   // empty is fine for local servers (Ollama, LM Studio)
+    let auth: AuthStrategy
 
-    /// Built from config; nil until the user has configured an endpoint+model.
+    /// Back-compat convenience: existing call sites pass a key directly and
+    /// get the classic Bearer path.
+    init(endpoint: URL, model: String, apiKey: String) {
+        self.endpoint = endpoint
+        self.model = model
+        self.auth = .apiKey(apiKey)
+    }
+
+    /// Explicit-strategy initializer (Azure / ChatGPT OAuth / tests).
+    init(endpoint: URL, model: String, auth: AuthStrategy) {
+        self.endpoint = endpoint
+        self.model = model
+        self.auth = auth
+    }
+
+    /// Built from config; nil until configured. Branches on the auth mode:
+    /// the ChatGPT-OAuth path forces the Codex Responses endpoint (the config
+    /// URL is ignored) and only needs a model; the API-key and Azure paths
+    /// need a valid endpoint + model.
     static func fromConfig(_ config: Config) -> AIClient? {
-        guard config.aiEnabled,
-              let url = URL(string: config.aiEndpoint), isAcceptableEndpoint(url),
-              !config.aiModel.isEmpty else { return nil }
-        return AIClient(endpoint: url, model: config.aiModel, apiKey: config.aiAPIKey)
+        guard config.aiEnabled else { return nil }
+        switch config.aiAuthMode {
+        case .codexOAuth:
+            guard !config.aiModel.isEmpty else { return nil }
+            // The endpoint is forced to the Codex backend; the config URL is
+            // ignored. If not signed in yet, the first stream throws
+            // `notSignedIn` so the UI can point at Settings.
+            return AIClient(endpoint: CodexOAuth.codexResponsesURL, model: config.aiModel, auth: .codexOAuth)
+        case .azureApiKey:
+            guard let url = URL(string: config.aiEndpoint), isAcceptableEndpoint(url),
+                  !config.aiModel.isEmpty else { return nil }
+            return AIClient(endpoint: url, model: config.aiModel, auth: .azureApiKey(config.aiAPIKey))
+        case .apiKey:
+            guard let url = URL(string: config.aiEndpoint), isAcceptableEndpoint(url),
+                  !config.aiModel.isEmpty else { return nil }
+            return AIClient(endpoint: url, model: config.aiModel, auth: .apiKey(config.aiAPIKey))
+        }
     }
 
     /// HTTPS is required except for endpoints that never leave the machine or
@@ -77,13 +122,66 @@ struct AIClient {
         let stream: Bool
     }
 
-    func makeRequest(_ messages: [Message], stream: Bool) throws -> URLRequest {
+    /// Codex Responses-API body — used only on the `.codexOAuth` path, which
+    /// rejects Chat Completions bodies. System messages become the top-level
+    /// `instructions`; user/assistant turns pass through `input`. Both
+    /// `instructions` (non-empty) and `store: false` are hard-required by the
+    /// `chatgpt.com/backend-api/codex/responses` endpoint (400 otherwise).
+    private struct ResponsesRequest: Encodable {
+        struct InputMessage: Encodable { let role: String; let content: String }
+        let model: String
+        let input: [InputMessage]
+        let stream: Bool
+        let instructions: String
+        let store: Bool
+
+        private static let defaultInstructions = "You are a helpful assistant."
+
+        static func from(messages: [Message], model: String, stream: Bool) -> ResponsesRequest {
+            var systemParts: [String] = []
+            var turns: [InputMessage] = []
+            for m in messages {
+                switch m.role {
+                case .system:    systemParts.append(m.content)
+                case .user:      turns.append(InputMessage(role: "user", content: m.content))
+                case .assistant: turns.append(InputMessage(role: "assistant", content: m.content))
+                }
+            }
+            return ResponsesRequest(
+                model: model,
+                input: turns,
+                stream: stream,
+                instructions: systemParts.isEmpty ? defaultInstructions : systemParts.joined(separator: "\n\n"),
+                store: false)
+        }
+    }
+
+    func makeRequest(_ messages: [Message], stream: Bool) async throws -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if stream { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
-        if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
-        request.httpBody = try JSONEncoder().encode(ChatRequest(model: model, messages: messages, stream: stream))
+        switch auth {
+        case let .apiKey(key):
+            if !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+            request.httpBody = try JSONEncoder().encode(ChatRequest(model: model, messages: messages, stream: stream))
+        case let .azureApiKey(key):
+            // Azure rejects `Authorization: Bearer <key>` with 401 — the key
+            // goes in an `api-key:` header. The body is the same OpenAI shape.
+            if !key.isEmpty { request.setValue(key, forHTTPHeaderField: "api-key") }
+            request.httpBody = try JSONEncoder().encode(ChatRequest(model: model, messages: messages, stream: stream))
+        case .codexOAuth:
+            // Fetch (and refresh-on-near-expiry) the access token per call.
+            guard let creds = try await CodexAuthManager.shared.currentAccessToken() else {
+                throw AIError.notSignedIn
+            }
+            request.setValue("Bearer \(creds.token)", forHTTPHeaderField: "Authorization")
+            if let accountID = creds.accountID {
+                request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+            }
+            request.setValue(CodexOAuth.originator, forHTTPHeaderField: "originator")
+            request.httpBody = try JSONEncoder().encode(ResponsesRequest.from(messages: messages, model: model, stream: stream))
+        }
         return request
     }
 
@@ -92,7 +190,7 @@ struct AIClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let request = try makeRequest(messages, stream: true)
+                    let request = try await makeRequest(messages, stream: true)
                     let (bytes, response) = try await Self.session.bytes(for: request)
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                         var body = ""
@@ -107,7 +205,12 @@ struct AIClient {
                         guard line.hasPrefix("data:") else { continue }
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if payload == "[DONE]" { break }
-                        if let delta = Self.decodeDelta(payload) { continuation.yield(delta) }
+                        let delta: String?
+                        switch auth {
+                        case .apiKey, .azureApiKey: delta = Self.decodeDelta(payload)
+                        case .codexOAuth:           delta = Self.decodeResponsesDelta(payload)
+                        }
+                        if let delta { continuation.yield(delta) }
                     }
                     continuation.finish()
                 } catch {
@@ -139,6 +242,18 @@ struct AIClient {
               let chunk = try? JSONDecoder().decode(Chunk.self, from: data)
         else { return nil }
         return chunk.choices?.first?.delta?.content
+    }
+
+    /// Decode one SSE chunk from the Codex Responses stream. Unlike Chat
+    /// Completions, the text arrives in typed `response.output_text.delta`
+    /// events with a flat `delta` string; every other event type
+    /// (`response.created`, `.completed`, reasoning traces, …) is skipped.
+    static func decodeResponsesDelta(_ payload: String) -> String? {
+        struct Event: Decodable { let type: String; let delta: String? }
+        guard let data = payload.data(using: .utf8),
+              let event = try? JSONDecoder().decode(Event.self, from: data)
+        else { return nil }
+        return event.type == "response.output_text.delta" ? event.delta : nil
     }
 
     /// Map failures to actionable text (tonebox's friendlyMessage, condensed).
@@ -319,33 +434,77 @@ enum AIAutoTone {
     }
 }
 
-/// Provider presets (endpoint + a sensible cheap default model), mirroring
-/// tonebox's curated list. Picking one fills the endpoint/model fields; the
-/// key always comes from the user.
+/// How the active LLM request authenticates. Mirrors tonebox's LLMAuthMode:
+/// the classic API-key/local path, Azure (api-key header), and the ChatGPT
+/// subscription via the Codex OAuth backend.
+enum LLMAuthMode: String, CaseIterable, Identifiable {
+    case apiKey
+    case azureApiKey
+    case codexOAuth
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .apiKey:      return "API key / local server"
+        case .azureApiKey: return "Azure OpenAI (api-key)"
+        case .codexOAuth:  return "ChatGPT sign-in (OAuth)"
+        }
+    }
+}
+
+/// Provider presets (endpoint + a sensible cheap default model + implied auth
+/// mode), mirroring tonebox's curated LLMProviderPreset list. Picking one fills
+/// the endpoint/model fields and switches the auth mode; the key (or ChatGPT
+/// sign-in) always comes from the user. Curated cost-first: OpenAI is here
+/// because most people start there; everything else is a way to spend less.
 struct AIProviderPreset: Identifiable {
     let id: String
     let name: String
     let endpoint: String
     let model: String
+    let authMode: LLMAuthMode
+
+    init(id: String, name: String, endpoint: String, model: String, authMode: LLMAuthMode = .apiKey) {
+        self.id = id; self.name = name; self.endpoint = endpoint; self.model = model; self.authMode = authMode
+    }
 
     static let all: [AIProviderPreset] = [
-        .init(id: "anthropic", name: "Anthropic Claude",
-              endpoint: "https://api.anthropic.com/v1/chat/completions",
-              model: "claude-haiku-4-5-20251001"),
-        .init(id: "openai", name: "OpenAI",
+        .init(id: "openai-chatgpt", name: "ChatGPT Plus/Pro (sign in — no API key)",
+              endpoint: "https://chatgpt.com/backend-api/codex/responses",
+              model: "gpt-5.4-mini", authMode: .codexOAuth),
+        .init(id: "openai", name: "OpenAI (gpt-4o-mini, paid)",
               endpoint: "https://api.openai.com/v1/chat/completions",
               model: "gpt-4o-mini"),
-        .init(id: "openrouter", name: "OpenRouter",
+        .init(id: "openrouter", name: "OpenRouter (many models, paid)",
               endpoint: "https://openrouter.ai/api/v1/chat/completions",
               model: "openrouter/auto"),
-        .init(id: "groq", name: "Groq",
+        .init(id: "anthropic", name: "Anthropic Claude (paid)",
+              endpoint: "https://api.anthropic.com/v1/chat/completions",
+              model: "claude-haiku-4-5-20251001"),
+        .init(id: "azure", name: "Azure OpenAI (paid, api-key)",
+              endpoint: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT/chat/completions?api-version=2024-10-21",
+              model: "", authMode: .azureApiKey),
+        .init(id: "github", name: "GitHub Models (free personal tier)",
+              endpoint: "https://models.inference.ai.azure.com/chat/completions",
+              model: "gpt-4o-mini"),
+        .init(id: "groq", name: "Groq (very cheap, fast llama variants)",
               endpoint: "https://api.groq.com/openai/v1/chat/completions",
               model: "llama-3.3-70b-versatile"),
-        .init(id: "ollama", name: "Ollama (local)",
+        .init(id: "together", name: "Together AI (cheap open-weight models)",
+              endpoint: "https://api.together.xyz/v1/chat/completions",
+              model: "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+        .init(id: "fireworks", name: "Fireworks AI (cheap open-weight models)",
+              endpoint: "https://api.fireworks.ai/inference/v1/chat/completions",
+              model: "accounts/fireworks/models/llama-v3p3-70b-instruct"),
+        .init(id: "ollama", name: "Ollama (local, free)",
               endpoint: "http://localhost:11434/v1/chat/completions",
               model: "llama3.2:3b"),
-        .init(id: "lmstudio", name: "LM Studio (local)",
+        .init(id: "lmstudio", name: "LM Studio (local, free)",
               endpoint: "http://localhost:1234/v1/chat/completions",
+              model: ""),
+        .init(id: "llamacpp", name: "llama.cpp (local, free)",
+              endpoint: "http://localhost:8080/v1/chat/completions",
               model: ""),
     ]
 }

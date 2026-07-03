@@ -4,10 +4,10 @@ import XCTest
 final class AICleanupTests: XCTestCase {
     // MARK: Client wire format
 
-    func testRequestShapeMatchesOpenAICompat() throws {
+    func testRequestShapeMatchesOpenAICompat() async throws {
         let client = AIClient(endpoint: URL(string: "https://api.example.com/v1/chat/completions")!,
                               model: "test-model", apiKey: "sk-123")
-        let req = try client.makeRequest([
+        let req = try await client.makeRequest([
             .init(role: .system, content: "clean it"),
             .init(role: .user, content: "the text"),
         ], stream: true)
@@ -26,11 +26,26 @@ final class AICleanupTests: XCTestCase {
         XCTAssertNil(body?["max_tokens"])
     }
 
-    func testNoAuthHeaderForLocalServers() throws {
+    func testNoAuthHeaderForLocalServers() async throws {
         let client = AIClient(endpoint: URL(string: "http://localhost:11434/v1/chat/completions")!,
                               model: "llama3.2:3b", apiKey: "")
-        let req = try client.makeRequest([.init(role: .user, content: "hi")], stream: false)
+        let req = try await client.makeRequest([.init(role: .user, content: "hi")], stream: false)
         XCTAssertNil(req.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testAzureUsesApiKeyHeaderNotBearer() async throws {
+        let client = AIClient(endpoint: URL(string: "https://x.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-10-21")!,
+                              model: "gpt-4o", auth: .azureApiKey("az-key"))
+        let req = try await client.makeRequest([.init(role: .user, content: "hi")], stream: true)
+        XCTAssertEqual(req.value(forHTTPHeaderField: "api-key"), "az-key")
+        XCTAssertNil(req.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    func testDecodeResponsesDeltaParsesCodexEvent() {
+        let event = #"{"type":"response.output_text.delta","delta":"Hi"}"#
+        XCTAssertEqual(AIClient.decodeResponsesDelta(event), "Hi")
+        // Non-text events (created/completed/reasoning) yield nothing.
+        XCTAssertNil(AIClient.decodeResponsesDelta(#"{"type":"response.created"}"#))
     }
 
     func testDecodeDeltaParsesChatChunk() {
