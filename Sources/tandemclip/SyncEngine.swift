@@ -57,7 +57,10 @@ final class SyncEngine {
     // Our current shareable clipboard (last non-secret local copy).
     private var localSnapshot: ClipSnapshot?
     private var localHash: String?
-    private var localTimestamp: Double = 0
+    private(set) var localTimestamp: Double = 0
+    /// Which peer the current clipboard came from — nil when it was copied on
+    /// this Mac. Set alongside localSnapshot so it can't go stale.
+    private(set) var clipOrigin: String?
 
     private(set) var peers: [String: PeerClip] = [:]   // by deviceID
     private(set) var lastSyncSource: String?
@@ -166,7 +169,7 @@ final class SyncEngine {
     /// a Manual-mode peer would still pull it on demand.
     @discardableResult
     func shareFiles(_ urls: [URL]) -> Int {
-        guard config.role.canSend, !config.paused, networkAllowed() else { return 0 }
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else { return 0 }
         let files = ClipboardWatcher.collectFiles(urls, maxBytes: config.maxClipBytes)
         guard !files.isEmpty else { return 0 }
         let snap = ClipSnapshot(parts: [:], files: files)
@@ -193,6 +196,9 @@ final class SyncEngine {
     func deleteHistory(hash: String) {
         Log.trace("sync", "delete \(hash.prefix(12)) (local user action)")
         removeClip(hash: hash)
+        // Deliberately NOT gated on privacyHold: a delete reveals nothing new
+        // (peers already hold the content) and privacy is exactly when you
+        // want removals to propagate.
         guard config.role.canSend, !config.paused, networkAllowed() else { return }
         var m = Message(type: .delete, deviceID: config.deviceID, deviceName: config.deviceName)
         m.timestamp = now()
@@ -223,9 +229,10 @@ final class SyncEngine {
         localSnapshot = snap
         localHash = hash
         localTimestamp = now()
+        clipOrigin = nil   // copied here
         recordHistory(snap, hash, source: config.deviceName)
 
-        guard config.role.canSend, !config.paused, networkAllowed() else {
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
             onStatusChange?()
             return
         }
@@ -314,7 +321,7 @@ final class SyncEngine {
             // A pull is the peer's explicit ask for our current clipboard, so it
             // is served whatever the snapshot holds — including file content when
             // the auto-sync toggle is off (that toggle gates unasked pushes only).
-            guard config.role.canSend, !config.paused, networkAllowed() else { return }
+            guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else { return }
             let t = now()
             // Drop entries older than the 1s throttle so this map can't grow
             // without bound under spoofed deviceIDs.
@@ -378,6 +385,7 @@ final class SyncEngine {
         localHash = hash            // our clipboard now equals this; don't re-announce it
         localSnapshot = snap
         localTimestamp = now()
+        clipOrigin = name
         recordHistory(snap, hash, source: name)
         let urls = watcher.write(snap)   // echo-suppressed inside write()
         lastSyncSource = name
@@ -501,7 +509,7 @@ final class SyncEngine {
     /// the preview level. Sent on connect and on local change in Manual mode.
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
-        guard config.role.canSend, config.previewLevel != .names,
+        guard config.role.canSend, !config.privacyHold, config.previewLevel != .names,
               let h = localHash, let snap = localSnapshot else {
             config.identity.sign(&m)
             return m

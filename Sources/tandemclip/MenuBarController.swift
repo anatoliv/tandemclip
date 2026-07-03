@@ -40,7 +40,9 @@ final class MenuBarController: NSObject {
     /// sync arrows normally and a pause glyph when paused.
     private func applyStatusIcon() {
         guard let button = statusItem.button else { return }
-        let symbol = config.paused ? "pause.circle" : "arrow.triangle.2.circlepath"
+        let symbol = config.paused ? "pause.circle"
+            : config.privacyHold ? "hand.raised.circle"
+            : "arrow.triangle.2.circlepath"
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
         if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "TandemClip")?
             .withSymbolConfiguration(symbolConfig) {
@@ -61,27 +63,27 @@ final class MenuBarController: NSObject {
     private func rebuildMenu() {
         let menu = NSMenu()
 
+        // Status: two lines — state + peer count, and what's on the clipboard
+        // (with where it came from).
         let modeName = config.mode == .mirror ? "Mirror" : "Manual"
-        let state = config.paused ? "Paused" : modeName
-        menu.addItem(disabled: "TandemClip — \(state)")
+        var state = config.paused ? "Paused" : modeName
+        if config.privacyHold { state += " · Private" }
+        let n = engine.peerCount
+        menu.addItem(disabled: "TandemClip — \(state) · \(n) Mac\(n == 1 ? "" : "s")")
         if let info = engine.currentClipInfo {
-            let kind = info.kind == "text" ? "text" : info.kind
-            menu.addItem(disabled: "Clipboard: \(kind) · \(Self.sizeString(info.bytes))")
+            let origin = engine.clipOrigin.map { "from \($0), \(age(engine.localTimestamp))" } ?? "local"
+            menu.addItem(disabled: "Clipboard: \(info.kind) · \(Self.sizeString(info.bytes)) · \(origin)")
         } else {
             menu.addItem(disabled: "Clipboard: empty")
         }
-        menu.addItem(disabled: "Peers connected: \(engine.peerCount)")
         if config.networkAllowlistEnabled, !NetworkGuard.syncAllowed(config) {
             menu.addItem(disabled: "⚠︎ Paused — Wi-Fi not allowed/verified")
-        }
-        if let src = engine.lastSyncSource {
-            menu.addItem(disabled: "Last sync: \(src)")
         }
 
         // Manual mode: pull a specific peer's clipboard.
         if config.mode == .manual {
             menu.addItem(.separator())
-            menu.addItem(disabled: "Get clipboard from:")
+            menu.addItem(disabled: "Get Clipboard From:")
             // syncablePeers() is empty (and shows no previews) when receiving
             // isn't allowed — so a paused / disallowed-network / send-only Mac
             // reveals no peer clipboard metadata here.
@@ -107,50 +109,28 @@ final class MenuBarController: NSObject {
         pick.target = self
         menu.addItem(pick)
 
-        // Mode toggle.
+        // Mode toggle — the current mode reads in the item title without
+        // opening the submenu. (History browsing lives in the picker; the old
+        // History submenu was a worse duplicate of it.)
         menu.addItem(.separator())
         let modeMenu = NSMenu()
         addCheck(modeMenu, "Mirror (auto-sync)", on: config.mode == .mirror, sel: #selector(setMirror))
         addCheck(modeMenu, "Manual (pull on demand)", on: config.mode == .manual, sel: #selector(setManual))
-        let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
+        let modeItem = NSMenuItem(title: "Mode: \(modeName)", action: nil, keyEquivalent: "")
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
 
         menu.addItem(action: config.paused ? "Resume" : "Pause",
                      selector: #selector(togglePause), target: self)
 
-        // History (in-memory, opt-in).
-        if config.historyEnabled {
-            let items = engine.history
-            let histMenu = NSMenu()
-            if items.isEmpty {
-                histMenu.addItem(disabled: "(empty)")
-            } else {
-                for item in items.prefix(15) {
-                    let mi = NSMenuItem(title: historyTitle(item), action: #selector(applyHistory(_:)), keyEquivalent: "")
-                    mi.target = self
-                    mi.representedObject = item.hash
-                    histMenu.addItem(mi)
-                }
-                histMenu.addItem(.separator())
-                let clear = NSMenuItem(title: "Clear history", action: #selector(clearHistory), keyEquivalent: "")
-                clear.target = self
-                histMenu.addItem(clear)
-            }
-            let histItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
-            histItem.submenu = histMenu
-            menu.addItem(histItem)
-        }
-
         menu.addItem(.separator())
         menu.addItem(action: "Settings…", selector: #selector(openSettings), target: self, key: ",")
-        menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
-        menu.addItem(disabled: "Pairing code: ••••")
-        menu.addItem(action: "Copy pairing code", selector: #selector(copyPairing), target: self)
+        menu.addItem(action: "Copy Pairing Code", selector: #selector(copyPairing), target: self)
 
         menu.addItem(.separator())
         menu.addItem(action: "About TandemClip", selector: #selector(openAbout), target: self)
-        menu.addItem(action: "Help — Keyboard & Tips…", selector: #selector(openHelp), target: self)
+        menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
+        menu.addItem(action: "Help — Keyboard & Tips", selector: #selector(openHelp), target: self)
 
         menu.addItem(.separator())
         menu.addItem(action: "Quit TandemClip", selector: #selector(quit), target: self, key: "q")
@@ -193,18 +173,6 @@ final class MenuBarController: NSObject {
         guard let id = sender.representedObject as? String else { return }
         engine.pull(from: id)
     }
-
-    private func historyTitle(_ item: HistoryItem) -> String {
-        let label = item.label.isEmpty ? "—" : item.label
-        return "\(label)   \(age(item.timestamp))"
-    }
-
-    @objc private func applyHistory(_ sender: NSMenuItem) {
-        guard let hash = sender.representedObject as? String else { return }
-        engine.applyHistory(hash: hash)
-    }
-
-    @objc private func clearHistory() { engine.clearHistory() }
 
     @objc private func setMirror() { config.mode = .mirror; refresh() }
     @objc private func setManual() { config.mode = .manual; refresh() }
