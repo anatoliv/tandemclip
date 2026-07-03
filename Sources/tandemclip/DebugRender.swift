@@ -22,14 +22,50 @@ enum DebugRender {
     /// normal app launch proceeds.
     static func runIfRequested() -> Bool {
         let env = ProcessInfo.processInfo.environment
-        guard let state = env["TANDEMCLIP_RENDER_PICKER"] else { return false }
-        let out = env["TANDEMCLIP_RENDER_OUT"] ?? "/tmp/tandemclip-picker.png"
+        let out = env["TANDEMCLIP_RENDER_OUT"] ?? "/tmp/tandemclip-render.png"
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let delegate = PickerRenderDelegate(state: state, out: out)
-        app.delegate = delegate
+        if let state = env["TANDEMCLIP_RENDER_PICKER"] {
+            app.delegate = PickerRenderDelegate(state: state, out: out)
+        } else if env["TANDEMCLIP_RENDER_SETTINGS"] != nil {
+            app.delegate = SettingsRenderDelegate(tab: env["TANDEMCLIP_RENDER_SETTINGS"] ?? "sync", out: out)
+        } else {
+            return false
+        }
         app.run()
         return true
+    }
+}
+
+/// Renders a Settings tab (env `TANDEMCLIP_RENDER_SETTINGS=general|sync|content|ai|security`)
+/// so the footer "learn more" links can be verified. Constructs a bare
+/// Config + SyncEngine but never calls `engine.start()`, so nothing binds a
+/// socket.
+private final class SettingsRenderDelegate: NSObject, NSApplicationDelegate {
+    let tab: String
+    let out: String
+    var window: NSWindow!
+    init(tab: String, out: String) { self.tab = tab; self.out = out }
+
+    func applicationDidFinishLaunching(_: Notification) {
+        let config = Config()
+        let engine = SyncEngine(config: config)
+        let model = SettingsModel(config: config, engine: engine)
+        UserDefaults.standard.set(tab.capitalized, forKey: "settingsSelectedTab")
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 620),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
+        )
+        window.contentView = NSHostingView(rootView: SettingsView(model: model))
+        window.center(); window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+            let p = Process()
+            p.launchPath = "/usr/sbin/screencapture"
+            p.arguments = ["-l", String(window.windowNumber), "-o", "-x", out]
+            try? p.run(); p.waitUntilExit()
+            NSApp.terminate(nil)
+        }
     }
 }
 

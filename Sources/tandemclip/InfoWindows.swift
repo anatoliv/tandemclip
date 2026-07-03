@@ -1,6 +1,54 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    /// Posted when something (e.g. a Settings link) wants the Help window
+    /// opened. AppController observes it and calls `InfoWindowController.showHelp`.
+    static let tandemOpenHelp = Notification.Name("tandemclip.openHelp")
+}
+
+/// Opens the in-app Help window at a specific article — and, optionally, at a
+/// specific spot *within* that article (a phrase to scroll to and briefly
+/// highlight). Settings' inline "learn more" links call `open(topic:anchor:)`;
+/// those links are encoded as `tchelp://<topic>?a=<phrase>` URLs and decoded by
+/// `handle(_:)` from an `openURL` handler.
+enum HelpDeepLink {
+    /// Custom URL scheme used by inline Settings links.
+    static let scheme = "tchelp"
+    /// UserDefaults keys the Help window reads (via @AppStorage) to know where
+    /// to jump. Shared across the two AppKit-hosted windows.
+    static let topicKey = "tandemclip.help.requestedTopic"
+    static let anchorKey = "tandemclip.help.requestedAnchor"
+
+    /// Request the Help window at `topic`, optionally scrolled to `anchor`
+    /// (a substring of the article body). Opens/raises the window.
+    static func open(topic: String, anchor: String? = nil) {
+        let defaults = UserDefaults.standard
+        defaults.set(topic, forKey: topicKey)
+        defaults.set(anchor ?? "", forKey: anchorKey)
+        NotificationCenter.default.post(name: .tandemOpenHelp, object: nil)
+    }
+
+    /// Decode a `tchelp://<topic>?a=<phrase>` link and route it. Returns true
+    /// when handled (so an `openURL` handler can claim it).
+    static func handle(_ url: URL) -> Bool {
+        guard url.scheme == scheme, let topic = url.host, !topic.isEmpty else { return false }
+        let anchor = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "a" }?.value
+        open(topic: topic, anchor: anchor)
+        return true
+    }
+
+    /// Build the `tchelp://` link a Settings term points at.
+    static func url(topic: String, anchor: String? = nil) -> URL? {
+        var comps = URLComponents()
+        comps.scheme = scheme
+        comps.host = topic
+        if let anchor, !anchor.isEmpty { comps.queryItems = [URLQueryItem(name: "a", value: anchor)] }
+        return comps.url
+    }
+}
+
 /// Hosts the About and Help windows for the menu-bar-only app.
 final class InfoWindowController {
     private var aboutWindow: NSWindow?
@@ -90,15 +138,46 @@ struct HelpView: View {
     /// Sidebar-selection id for the What's New release history.
     static let whatsNewID = "whatsnew"
 
+    /// Scroll-target id assigned to the article block a deep-link anchor points
+    /// at, so `ScrollViewReader` can bring it into view.
+    static let anchorBlockID = "help-anchor-block"
+
     private let accent = Color.tandemAccent
     @StateObject private var search = HelpSearchModel()
     @State private var query = ""
     @State private var selection: String?
 
+    /// A phrase to scroll to + highlight inside the selected article (set by a
+    /// deep-link); nil when the article was opened normally.
+    @State private var anchor: String?
+    /// Bumped on each deep-link so the scaffold re-scrolls even to the same topic.
+    @State private var anchorNonce = 0
+
+    /// Deep-link inbox, written by `HelpDeepLink.open` and observed here.
+    @AppStorage(HelpDeepLink.topicKey) private var requestedTopic = ""
+    @AppStorage(HelpDeepLink.anchorKey) private var requestedAnchor = ""
+
     /// Opens the Help window to a specific sidebar item (a topic id or one of
     /// the special ids). Defaults to the Welcome landing.
     init(initialSelection: String = HelpView.welcomeID) {
         _selection = State(initialValue: initialSelection)
+    }
+
+    /// Honor a pending deep-link (topic + optional anchor), then clear it so the
+    /// same request isn't re-applied. Runs on appear and whenever the request
+    /// changes while the window is already open.
+    private func applyDeepLink() {
+        let topic = requestedTopic
+        guard !topic.isEmpty else { return }
+        let isKnown = topic == Self.welcomeID || topic == Self.shortcutsID
+            || topic == Self.whatsNewID || HelpCatalog.topics.contains { $0.id == topic }
+        guard isKnown else { requestedTopic = ""; requestedAnchor = ""; return }
+        query = ""
+        selection = topic
+        anchor = requestedAnchor.isEmpty ? nil : requestedAnchor
+        anchorNonce += 1
+        requestedTopic = ""
+        requestedAnchor = ""
     }
 
     private var trimmedQuery: String {
@@ -121,6 +200,8 @@ struct HelpView: View {
         .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
         // Sidebar selection + controls ride the accent (DESIGN_SYSTEM.md §2).
         .tint(Tokens.accent)
+        .onAppear { applyDeepLink() }
+        .onChange(of: requestedTopic) { _ in applyDeepLink() }
     }
 
     // MARK: Sidebar
@@ -223,9 +304,10 @@ struct HelpView: View {
         detailScaffold(
             title: topic.title,
             symbol: symbol(for: topic.category),
-            badge: topic.category
+            badge: topic.category,
+            scrollNonce: anchorNonce
         ) {
-            HelpMarkdown(topic.body)
+            HelpMarkdown(topic.body, highlight: anchor)
         }
     }
 
@@ -385,10 +467,12 @@ struct HelpView: View {
     }
 
     /// Shared detail chrome: a pinned header (symbol + title + category badge)
-    /// over a scrolling body, matching the Help window's two-pane frame.
+    /// over a scrolling body, matching the Help window's two-pane frame. When
+    /// `scrollNonce` changes to a non-zero value, the body scrolls to the
+    /// deep-link anchor block (if the current article contains one).
     private func detailScaffold<Content: View>(
-        title: String, symbol: String, badge: String,
-        @ViewBuilder _ content: () -> Content
+        title: String, symbol: String, badge: String, scrollNonce: Int = 0,
+        @ViewBuilder _ content: @escaping () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: Tokens.Space.tight) {
@@ -406,11 +490,22 @@ struct HelpView: View {
             }
             .padding(.horizontal, Tokens.Space.pane).padding(.top, Tokens.Space.wide).padding(.bottom, Tokens.Space.regular)
             Divider()
-            ScrollView {
-                content()
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Tokens.Space.pane).padding(.vertical, Tokens.Space.wide)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    content()
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Tokens.Space.pane).padding(.vertical, Tokens.Space.wide)
+                }
+                // Runs on appear and whenever a new deep-link arrives; a beat of
+                // delay lets the body lay out before we scroll to the anchor.
+                .task(id: scrollNonce) {
+                    guard scrollNonce > 0 else { return }
+                    try? await Task.sleep(nanoseconds: 60_000_000)
+                    withAnimation(Tokens.Motion.paneCurve) {
+                        proxy.scrollTo(HelpView.anchorBlockID, anchor: .center)
+                    }
+                }
             }
         }
     }
@@ -422,6 +517,12 @@ struct HelpView: View {
 /// full Markdown engine.
 struct HelpMarkdown: View {
     private let blocks: [Block]
+    /// Deep-link phrase to scroll to + briefly highlight (nil = none).
+    private let highlight: String?
+    /// Index of the first block containing `highlight` (−1 = no match).
+    private let matchIndex: Int
+    /// Drives the fade-out of the highlight flash.
+    @State private var flashed = false
 
     private enum Block: Identifiable {
         case paragraph(String)
@@ -432,35 +533,84 @@ struct HelpMarkdown: View {
             case .bullets(let items): return "b:" + items.joined(separator: "|")
             }
         }
+        var searchText: String {
+            switch self {
+            case .paragraph(let s): return s
+            case .bullets(let items): return items.joined(separator: " ")
+            }
+        }
     }
 
-    init(_ text: String) {
-        blocks = Self.parse(text)
+    init(_ text: String, highlight: String? = nil) {
+        let parsed = Self.parse(text)
+        blocks = parsed
+        self.highlight = highlight
+        if let needle = highlight?.lowercased(), !needle.isEmpty {
+            matchIndex = parsed.firstIndex { $0.searchText.lowercased().contains(needle) } ?? -1
+        } else {
+            matchIndex = -1
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Tokens.Space.snug) {
-            ForEach(blocks) { block in
-                switch block {
-                case .paragraph(let text):
-                    styled(text)
-                        .font(Tokens.FontScale.body).lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                case .bullets(let items):
-                    VStack(alignment: .leading, spacing: Tokens.Space.row6) {
-                        ForEach(items, id: \.self) { item in
-                            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.tight) {
-                                Text("•").font(Tokens.FontScale.body).foregroundColor(.secondary)
-                                styled(item)
-                                    .font(Tokens.FontScale.body).lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                blockView(block)
+                    .modifier(AnchorHighlight(isTarget: index == matchIndex, flashed: flashed))
+            }
+        }
+        .frame(maxWidth: 620, alignment: .leading)
+        // Flash the anchored block once, then fade it out.
+        .task(id: highlight) {
+            guard matchIndex >= 0 else { return }
+            flashed = false
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            withAnimation(.easeOut(duration: 1.6)) { flashed = true }
+        }
+    }
+
+    @ViewBuilder private func blockView(_ block: Block) -> some View {
+        switch block {
+        case .paragraph(let text):
+            styled(text)
+                .font(Tokens.FontScale.body).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        case .bullets(let items):
+            VStack(alignment: .leading, spacing: Tokens.Space.row6) {
+                ForEach(items, id: \.self) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.tight) {
+                        Text("•").font(Tokens.FontScale.body).foregroundColor(.secondary)
+                        styled(item)
+                            .font(Tokens.FontScale.body).lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
-        .frame(maxWidth: 620, alignment: .leading)
+    }
+
+    /// Tags the deep-link target block with the scroll id and paints a brief
+    /// accent flash behind it that fades to nothing. Non-target blocks are
+    /// untouched.
+    private struct AnchorHighlight: ViewModifier {
+        let isTarget: Bool
+        let flashed: Bool
+        func body(content: Content) -> some View {
+            if isTarget {
+                content
+                    .padding(.horizontal, Tokens.Space.tight)
+                    .padding(.vertical, Tokens.Space.row6)
+                    .background(
+                        RoundedRectangle(cornerRadius: Tokens.Radius.card)
+                            .fill(Tokens.accent.opacity(flashed ? 0 : 0.16))
+                    )
+                    .padding(.horizontal, -Tokens.Space.tight)
+                    .padding(.vertical, -Tokens.Space.row6)
+                    .id(HelpView.anchorBlockID)
+            } else {
+                content
+            }
+        }
     }
 
     /// Inline Markdown (bold / code / links) via AttributedString, falling
