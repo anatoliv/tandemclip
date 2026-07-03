@@ -66,6 +66,15 @@ enum Tokens {
     /// Destructive/error stays the system red; caution is never the accent.
     static let warning = Color(red: 0.85, green: 0.52, blue: 0.19)
 
+    /// Peak opacity of the Help deep-link flash highlight (an accent wash behind
+    /// the anchored paragraph). Higher in dark mode — a 0.16 wash reads on light
+    /// paper but nearly vanishes over a dark surface. Guarded by
+    /// `HelpContrastTests`; keep the view (`AnchorHighlight`) and test in step.
+    enum HelpHighlight {
+        static let light: Double = 0.16
+        static let dark: Double = 0.30
+    }
+
     // MARK: Radius — crisp scale (never rounded/pill for containers)
 
     /// Corner-radius tokens. tonebox evaluated a soft 12/16/20/24 scale in
