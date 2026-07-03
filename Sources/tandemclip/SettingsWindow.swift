@@ -100,7 +100,11 @@ final class SettingsModel: ObservableObject {
 
     /// The probe should work even while the feature toggle is still off.
     private func forcedClient() -> AIClient? {
-        guard let url = URL(string: aiEndpoint), url.scheme != nil, !aiModel.isEmpty else { return nil }
+        guard let url = URL(string: aiEndpoint), !aiModel.isEmpty else { return nil }
+        guard AIClient.isAcceptableEndpoint(url) else {
+            aiProbe = (false, "Plain http is only allowed for local/LAN endpoints — use https for anything on the internet.")
+            return nil
+        }
         return AIClient(endpoint: url, model: aiModel, apiKey: aiKey)
     }
 
