@@ -22,13 +22,22 @@ final class ClipboardPickerController {
         self.engine = engine
     }
 
+    /// The app the user was in when they opened the picker — the paste
+    /// destination, used to steer the AI rewrite's tone. Captured before we
+    /// activate (activation would make us frontmost).
+    private var frontAppBundleID: String?
+
     func toggle() { (panel?.isVisible ?? false) ? hide() : show() }
 
     func show() {
+        frontAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let model = self.model ?? makeModel()
         self.model = model
         model.reload(history: engine.history, peers: engine.syncablePeers(),
                      showCount: config.pickerShowCount, clipUsage: usageString())
+        model.presets = config.aiPresets
+        model.selectedPresetID = config.aiSelectedPresetID
+        model.aiConfigured = AIClient.fromConfig(config) != nil
 
         if panel == nil {
             let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
@@ -109,6 +118,32 @@ final class ClipboardPickerController {
             self?.engine.onStatusChange?()   // menu state line + icon update
         }
         m.onPinnedChange = { [weak self] on in self?.config.pickerPinned = on }
+        // Compose + AI cleanup: the stream factory returns nil when AI isn't
+        // configured, which the model surfaces as a pointer to Settings → AI.
+        // System prompt = tone preset + destination-app steer + changelog ask.
+        m.makeCleanupStream = { [weak self] text, preset in
+            guard let self, let client = AIClient.fromConfig(self.config) else { return nil }
+            var system = preset.prompt
+            if self.config.aiAutoTone,
+               let tone = AIAutoTone.instruction(forBundleID: self.frontAppBundleID) {
+                system += "\n\n" + tone
+            }
+            system += "\n\n" + AIClient.changesInstruction
+            let capped = String(text.prefix(Config.aiMaxInputChars))
+            return AIClient.streamWithFallback(
+                primary: client,
+                fallback: AIClient.fallbackFromConfig(self.config),
+                messages: [.init(role: .system, content: system),
+                           .init(role: .user, content: capped)])
+        }
+        m.onPresetSelect = { [weak self] id in self?.config.aiSelectedPresetID = id }
+        m.onComposeCopy = { text in
+            // A plain local copy: the watcher captures it on the next poll and
+            // it syncs (or not) exactly per the current mode/privacy settings.
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+        }
         return m
     }
 
@@ -143,28 +178,33 @@ final class ClipboardPickerController {
 final class PickerModel: ObservableObject {
     /// Quick content-type filter for the RECENT list.
     enum ContentFilter: String, CaseIterable, Identifiable {
-        case all, text, image, file
+        case all, text, image, document, media, file
         var id: String { rawValue }
         var symbol: String {
             switch self {
-            case .all:   return "square.grid.2x2"
-            case .text:  return "textformat"
-            case .image: return "photo"
-            case .file:  return "doc"
+            case .all:      return "square.grid.2x2"
+            case .text:     return "textformat"
+            case .image:    return "photo"
+            case .document: return "doc.text"
+            case .media:    return "play.rectangle"
+            case .file:     return "shippingbox"
             }
         }
         var label: String {
             switch self {
             case .all: return "All"; case .text: return "Text"
-            case .image: return "Images"; case .file: return "Files"
+            case .image: return "Images"; case .document: return "Documents"
+            case .media: return "Audio & Video"; case .file: return "Files"
             }
         }
         func matches(_ item: HistoryItem) -> Bool {
             switch self {
-            case .all:   return true
-            case .text:  return item.category == .text || item.category == .richText
-            case .image: return item.category == .image   // includes picture files
-            case .file:  return item.category == .file
+            case .all:      return true
+            case .text:     return item.category == .text || item.category == .richText
+            case .image:    return item.category == .image      // includes picture files
+            case .document: return item.category == .document   // PDF / Office / text-like files
+            case .media:    return item.category == .audio || item.category == .video
+            case .file:     return item.category == .file       // archives, binaries, the rest
             }
         }
     }
@@ -193,6 +233,152 @@ final class PickerModel: ObservableObject {
 
     func togglePrivacy() { privacyHold.toggle(); onPrivacyChange?(privacyHold) }
     func togglePin() { pinned.toggle(); onPinnedChange?(pinned) }
+
+    // MARK: Compose + AI cleanup
+
+    /// Compose mode swaps the list for a text area where the user can write or
+    /// paste text, optionally run AI cleanup on it, then copy the result (which
+    /// syncs like any local copy).
+    @Published var composing = false
+    @Published var composeText = ""
+    @Published private(set) var composeBusy = false
+    @Published private(set) var composeError: String?
+    /// Pre-cleanup text, kept for one-tap Undo after an AI rewrite.
+    @Published private(set) var composeOriginal: String?
+    /// The model's one-line changelog (from the §§CHANGES§§ sentinel).
+    @Published private(set) var composeChanges: String?
+
+    /// Tone presets + the one applied by "Clean Up" (persisted via callback).
+    @Published var presets: [AIPreset] = AIPreset.bundled
+    @Published var selectedPresetID: String = "cleanup"
+    var onPresetSelect: ((String) -> Void)?
+    /// Whether AI is configured — gates the ✨ row action.
+    @Published var aiConfigured = false
+
+    var selectedPreset: AIPreset {
+        presets.first { $0.id == selectedPresetID } ?? presets.first ?? AIPreset.bundled[0]
+    }
+
+    func selectPreset(_ id: String) {
+        selectedPresetID = id
+        onPresetSelect?(id)
+    }
+
+    /// Provided by the controller: nil when AI isn't configured/enabled.
+    var makeCleanupStream: ((String, AIPreset) -> AsyncThrowingStream<String, Error>?)?
+    var onComposeCopy: ((String) -> Void)?
+    private var cleanupTask: Task<Void, Never>?
+
+    func startCompose() { composing = true; composeError = nil }
+
+    func endCompose() {
+        cleanupTask?.cancel()
+        composeBusy = false
+        composing = false
+        composeError = nil
+        composeChanges = nil
+    }
+
+    /// ✨ on a history row: open compose with the clip's text and run the
+    /// selected preset on it straight away.
+    func cleanUpItem(_ item: HistoryItem) {
+        guard let text = item.snapshot.plainText, !text.isEmpty else { return }
+        composeText = text
+        composeChanges = nil
+        composeOriginal = nil
+        startCompose()
+        runCleanup()
+    }
+
+    /// Stream the AI rewrite into the editor (cumulative, tonebox-style),
+    /// hiding the changelog tail behind the sentinel. On failure the original
+    /// text is restored — words are never lost.
+    func runCleanup() {
+        guard !composeBusy else { return }
+        let input = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return }
+        guard let stream = makeCleanupStream?(input, selectedPreset) else {
+            composeError = "Set up AI cleanup in Settings → AI first."
+            return
+        }
+        composeOriginal = composeText
+        composeBusy = true
+        composeError = nil
+        composeChanges = nil
+        cleanupTask = Task { @MainActor [weak self] in
+            var acc = ""
+            do {
+                for try await delta in stream {
+                    guard let self, self.composing else { return }
+                    acc += delta
+                    self.composeText = AIClient.splitChanges(acc).body
+                }
+                if acc.isEmpty { throw AIClient.AIError.emptyResponse }
+                let (body, changes) = AIClient.splitChanges(acc)
+                self?.composeText = body
+                self?.composeChanges = changes
+            } catch is CancellationError {
+                self?.composeText = self?.composeOriginal ?? acc
+            } catch {
+                self?.composeError = AIClient.friendlyMessage(for: error)
+                self?.composeText = self?.composeOriginal ?? acc
+            }
+            self?.composeBusy = false
+        }
+    }
+
+    func undoCleanup() {
+        guard let original = composeOriginal else { return }
+        composeText = original
+        composeOriginal = nil
+        composeChanges = nil
+    }
+
+    func copyCompose() {
+        let text = composeText
+        guard !text.isEmpty else { return }
+        onComposeCopy?(text)
+        flashDrop("Copied — will sync like any copy")
+    }
+
+    // MARK: Hover preview
+
+    /// The row the pointer is dwelling on (drives the preview card). Hover is
+    /// deliberately separate from `selection`: the keyboard selection stays
+    /// where it is until the user picks something else.
+    @Published private(set) var hoverItem: HistoryItem?
+    private var hoverWork: DispatchWorkItem?
+
+    /// Show the preview after a short dwell so it doesn't flash while the
+    /// pointer travels across the list.
+    func beginHover(_ item: HistoryItem) {
+        hoverWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.hoverItem = item }
+        hoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    func endHover(_ item: HistoryItem) {
+        hoverWork?.cancel()
+        if hoverItem?.id == item.id { hoverItem = nil }
+    }
+
+    /// Text excerpt for the preview card: the clip's own text, or the bytes of
+    /// a single text-like document.
+    static func previewText(_ item: HistoryItem) -> String? {
+        if let t = item.snapshot.plainText, !t.isEmpty { return String(t.prefix(600)) }
+        if item.snapshot.files.count == 1, let f = item.snapshot.files.first,
+           ClipSnapshot.textLikeExtensions.contains((f.name as NSString).pathExtension.lowercased()),
+           let s = String(data: f.data.prefix(4096), encoding: .utf8) {
+            return String(s.prefix(600))
+        }
+        return nil
+    }
+
+    /// File list for the preview card (name + individual size).
+    static func previewFiles(_ item: HistoryItem) -> [(name: String, size: Int)] {
+        item.snapshot.files.map { ($0.name, $0.data.count) }
+    }
 
     /// Unit separator keeps composite keys unambiguous even if a Mac's name
     /// contains punctuation.
@@ -243,6 +429,7 @@ final class PickerModel: ObservableObject {
     func refresh(history: [HistoryItem], peers: [(id: String, clip: PeerClip)], showCount: Int, clipUsage: String) {
         let newItems = Array(history.prefix(max(showCount, 1)))
         if !Self.sameItems(newItems, items) { items = newItems }
+        if let h = hoverItem, !items.contains(where: { $0.hash == h.hash }) { hoverItem = nil }
         let newPeers = peers.filter { $0.clip.online }
         if !Self.samePeers(newPeers, self.peers) { self.peers = newPeers }
         if clipUsage != self.clipUsage { self.clipUsage = clipUsage }
@@ -291,7 +478,10 @@ final class PickerModel: ObservableObject {
         switch item.category {
         case .text, .richText: return (0, "Text")
         case .image:           return (1, "Images")
-        case .file:            return (2, "Files")
+        case .document:        return (2, "Documents")
+        case .audio:           return (3, "Audio")
+        case .video:           return (4, "Video")
+        case .file:            return (5, "Files")
         }
     }
 
@@ -392,7 +582,10 @@ final class PickerModel: ObservableObject {
             ("text.alignleft", .text),
             ("textformat",     .richText),
             ("photo",          .image),
-            ("doc",            .file),
+            ("doc.text",       .document),
+            ("waveform",       .audio),
+            ("film",           .video),
+            ("shippingbox",    .file),
         ]
         return kinds.compactMap { kind in
             let n = items.filter { $0.category == kind.category }.count
@@ -430,11 +623,17 @@ struct KeyCatcher: NSViewRepresentable {
     let model: PickerModel
     func makeNSView(context: Context) -> NSView {
         let v = CatcherView(); v.model = model
-        DispatchQueue.main.async { v.window?.makeFirstResponder(v) }
+        DispatchQueue.main.async { if !model.composing { v.window?.makeFirstResponder(v) } }
         return v
     }
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
+            // Compose mode needs a real text editor: stop stealing focus, and
+            // hand it back if we currently hold it.
+            if model.composing {
+                if nsView.window?.firstResponder === nsView { nsView.window?.makeFirstResponder(nil) }
+                return
+            }
             guard let w = nsView.window, w.firstResponder !== nsView else { return }
             w.makeFirstResponder(nsView)
         }
@@ -497,6 +696,9 @@ struct PickerView: View {
             .onHover { inside in if inside { NSCursor.iBeam.push() } else { NSCursor.pop() } }
             Divider()
 
+            if model.composing {
+                composeView
+            } else {
             ScrollViewReader { proxy in
              ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
@@ -525,9 +727,15 @@ struct PickerView: View {
                                 }
                                 ForEach(section.entries, id: \.item.id) { e in
                                     HistoryRow(item: e.item, index: e.index, selected: e.index == model.selection,
-                                               onDelete: { model.onDeleteHistory(e.item.hash) })
+                                               onDelete: { model.onDeleteHistory(e.item.hash) },
+                                               onCleanup: model.aiConfigured
+                                                   && (e.item.category == .text || e.item.category == .richText)
+                                                   ? { model.cleanUpItem(e.item) } : nil)
                                         .contentShape(Rectangle())
                                         .onTapGesture { model.onPickHistory(e.item.hash) }
+                                        .onHover { inside in
+                                            if inside { model.beginHover(e.item) } else { model.endHover(e.item) }
+                                        }
                                         .handCursorOnHover()
                                 }
                             }
@@ -542,6 +750,7 @@ struct PickerView: View {
                  withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(f[sel].id, anchor: .center) }
              }
             }
+            }
 
             Divider()
             HStack(spacing: 9) {
@@ -554,6 +763,10 @@ struct PickerView: View {
                     }
                     .foregroundColor(.secondary)
                     .layoutPriority(-1)   // first to give way when the panel is narrow
+                }
+                footerToggle("square.and.pencil", active: model.composing,
+                             help: "Compose: write or paste text, clean it up with AI, then copy") {
+                    model.composing ? model.endCompose() : model.startCompose()
                 }
                 footerToggle("hand.raised" + (model.privacyHold ? ".fill" : ""),
                              active: model.privacyHold,
@@ -578,8 +791,91 @@ struct PickerView: View {
         }
         .overlay { if dropTargeted { dropOverlay } }
         .overlay(alignment: .bottom) { if let msg = model.dropMessage { dropToast(msg) } }
+        .overlay(alignment: .bottomTrailing) {
+            if let item = model.hoverItem { PreviewCard(item: item) }
+        }
         .animation(.easeOut(duration: 0.15), value: dropTargeted)
         .animation(.easeOut(duration: 0.15), value: model.dropMessage)
+        .animation(.easeOut(duration: 0.12), value: model.hoverItem?.id)
+    }
+
+    /// Compose mode: write/paste text, optionally AI-clean it, copy the result.
+    private var composeView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button { model.endCompose() } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "chevron.left").font(.system(size: 9, weight: .semibold))
+                        Text("Back").font(.system(size: 11.5))
+                    }
+                }
+                .buttonStyle(.plain).foregroundColor(.secondary)
+                Text("COMPOSE").font(.system(size: 10.5, weight: .semibold)).tracking(0.6)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if model.composeBusy { ProgressView().controlSize(.small) }
+            }
+            TextEditor(text: $model.composeText)
+                .font(.system(size: 12.5))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5))
+                .disabled(model.composeBusy)
+            if let err = model.composeError {
+                Text(err).font(.system(size: 10.5)).foregroundColor(.red).lineLimit(2)
+            }
+            if let changes = model.composeChanges {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles").font(.system(size: 9))
+                    Text("Changed: \(changes)").font(.system(size: 10.5)).lineLimit(2)
+                }
+                .foregroundColor(.secondary)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    model.runCleanup()
+                } label: {
+                    Label(model.composeBusy ? "Working…" : model.selectedPreset.name,
+                          systemImage: "sparkles")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .disabled(model.composeBusy || model.composeText.isEmpty)
+                // Tone preset switcher: the button above runs whichever is checked.
+                Menu {
+                    ForEach(model.presets) { p in
+                        Button {
+                            model.selectPreset(p.id)
+                        } label: {
+                            if p.id == model.selectedPresetID {
+                                Label(p.name, systemImage: "checkmark")
+                            } else {
+                                Text(p.name)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 24)
+                .disabled(model.composeBusy)
+                if model.composeOriginal != nil, !model.composeBusy {
+                    Button("Undo") { model.undoCleanup() }.font(.system(size: 11.5))
+                }
+                Spacer()
+                Button {
+                    model.copyCompose()
+                } label: {
+                    Label("Copy", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.composeText.isEmpty || model.composeBusy)
+            }
+        }
+        .padding(12)
     }
 
     /// Full-panel affordance shown while files are dragged over the picker.
@@ -739,6 +1035,8 @@ private struct HistoryRow: View {
     let index: Int
     let selected: Bool
     let onDelete: () -> Void
+    /// AI cleanup action — nil hides the ✨ (non-text clip or AI unconfigured).
+    var onCleanup: (() -> Void)?
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
@@ -756,6 +1054,15 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
+                if let onCleanup {
+                    Button(action: onCleanup) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clean up with AI (opens in compose)")
+                }
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13))
@@ -768,7 +1075,17 @@ private struct HistoryRow: View {
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 7)
-        .background(selected ? Color.accentColor.opacity(0.22) : Color.clear)
+        // Selection (keyboard/⌘n target) is the solid accent fill and stays put
+        // until the user picks elsewhere; hover is its own lighter state — a
+        // faint wash + hairline accent outline — so the two never fight.
+        .background(selected ? Color.accentColor.opacity(0.22)
+                    : hovering ? Color.secondary.opacity(0.07) : Color.clear)
+        .overlay {
+            if hovering && !selected {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+            }
+        }
         .cornerRadius(6).padding(.horizontal, 6)
         .onHover { hovering = $0 }
     }
@@ -780,6 +1097,77 @@ private struct HistoryRow: View {
             Image(systemName: icon(item.category)).frame(width: 30, height: 30)
                 .background(Color.secondary.opacity(0.12)).cornerRadius(5).foregroundColor(.secondary)
         }
+    }
+}
+
+/// Hover preview: enough content to know what a clip is without applying it.
+/// Fixed to the panel's bottom-trailing corner (stable — no flicker chasing
+/// the pointer). Text/rich clips show an excerpt; images a larger thumbnail;
+/// documents/files their file list, plus an excerpt for a text-like document
+/// or a first-page render for a PDF.
+private struct PreviewCard: View {
+    let item: HistoryItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: icon(item.category)).font(.system(size: 10))
+                Text(item.kindLabel).font(.system(size: 10.5, weight: .semibold))
+                Text("·").foregroundColor(.secondary)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(item.snapshot.totalBytes), countStyle: .file))
+                    .font(.system(size: 10.5))
+                Spacer(minLength: 0)
+                Text(exactTime(item.timestamp)).font(.system(size: 10)).foregroundColor(.secondary)
+            }
+            Divider()
+            content
+        }
+        .padding(10)
+        .frame(width: 250, alignment: .leading)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
+        .padding(.trailing, 12).padding(.bottom, 44)
+        .allowsHitTesting(false)   // never steal the pointer from the list
+    }
+
+    @ViewBuilder private var content: some View {
+        if let data = item.imageData, let img = NSImage(data: data) {
+            Image(nsImage: img).resizable().aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 230, maxHeight: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+            Text("\(Int(img.size.width)) × \(Int(img.size.height))")
+                .font(.system(size: 9.5)).foregroundColor(.secondary)
+        } else if !item.snapshot.files.isEmpty {
+            ForEach(PickerModel.previewFiles(item).prefix(6), id: \.name) { f in
+                HStack(spacing: 5) {
+                    Image(systemName: "doc").font(.system(size: 9)).foregroundColor(.secondary)
+                    Text(f.name).font(.system(size: 10.5)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file))
+                        .font(.system(size: 9.5)).foregroundColor(.secondary)
+                }
+            }
+            if item.snapshot.files.count > 6 {
+                Text("+\(item.snapshot.files.count - 6) more").font(.system(size: 9.5)).foregroundColor(.secondary)
+            }
+            if let excerpt = PickerModel.previewText(item) {
+                Divider()
+                Text(excerpt).font(.system(size: 10, design: .monospaced))
+                    .lineLimit(8).foregroundColor(.secondary)
+            }
+        } else if let excerpt = PickerModel.previewText(item) {
+            Text(excerpt).font(.system(size: 11))
+                .lineLimit(10).fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("No preview").font(.system(size: 10.5)).foregroundColor(.secondary)
+        }
+    }
+
+    private func exactTime(_ ts: Double) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .none; f.timeStyle = .short
+        return f.string(from: Date(timeIntervalSince1970: ts))
     }
 }
 
@@ -803,7 +1191,10 @@ private func icon(_ category: ClipCategory) -> String {
     switch category {
     case .image:    return "photo"
     case .richText: return "textformat"
-    case .file:     return "doc"
+    case .document: return "doc.text"
+    case .audio:    return "waveform"
+    case .video:    return "film"
+    case .file:     return "shippingbox"
     case .text:     return "text.alignleft"
     }
 }

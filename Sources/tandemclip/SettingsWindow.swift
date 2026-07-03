@@ -31,6 +31,78 @@ final class SettingsModel: ObservableObject {
         cacheUsage = engine.watcher.receivedCacheUsage()
     }
 
+    // MARK: AI settings
+
+    @Published var aiEnabled: Bool = false { didSet { config.aiEnabled = aiEnabled } }
+    @Published var aiEndpoint: String = "" { didSet { config.aiEndpoint = aiEndpoint } }
+    @Published var aiModel: String = "" { didSet { config.aiModel = aiModel } }
+    @Published var aiKey: String = "" { didSet { config.aiAPIKey = aiKey } }   // Keychain-backed
+    @Published var aiAutoTone: Bool = true { didSet { config.aiAutoTone = aiAutoTone } }
+    @Published var aiFallbackEndpoint: String = "" { didSet { config.aiFallbackEndpoint = aiFallbackEndpoint } }
+    @Published var aiFallbackModel: String = "" { didSet { config.aiFallbackModel = aiFallbackModel } }
+    @Published var aiFallbackKey: String = "" { didSet { config.aiFallbackAPIKey = aiFallbackKey } }
+    /// Result of the last "Test connection" probe (nil = not run yet).
+    @Published var aiProbe: (ok: Bool, message: String)?
+    @Published var aiProbing = false
+
+    // Tone presets: the whole list persists on every edit; `aiEditingID`
+    // selects which one the editor fields show.
+    @Published var aiPresets: [AIPreset] = [] { didSet { if !aiPresets.isEmpty { config.aiPresets = aiPresets } } }
+    @Published var aiEditingID: String = "cleanup"
+
+    var aiEditingIndex: Int? { aiPresets.firstIndex { $0.id == aiEditingID } }
+
+    func addAIPreset() {
+        let p = AIPreset(id: UUID().uuidString, name: "New preset",
+                         prompt: "Rewrite this text… Output only the rewritten text.")
+        aiPresets.append(p)
+        aiEditingID = p.id
+    }
+
+    func deleteAIPreset() {
+        guard aiPresets.count > 1, let i = aiEditingIndex else { return }   // keep at least one
+        aiPresets.remove(at: i)
+        aiEditingID = aiPresets.first!.id
+    }
+
+    func restoreBundledPresets() {
+        aiPresets = AIPreset.bundled
+        aiEditingID = "cleanup"
+    }
+
+    func applyPreset(_ p: AIProviderPreset) {
+        aiEndpoint = p.endpoint
+        aiModel = p.model
+        aiProbe = nil
+    }
+
+    /// Real end-to-end probe, tonebox-style: tiny request, report latency.
+    func testAIConnection() {
+        guard let client = AIClient.fromConfig(config) ?? forcedClient() else {
+            aiProbe = (false, "Enter an endpoint URL and model first.")
+            return
+        }
+        aiProbing = true; aiProbe = nil
+        let start = Date()
+        Task { @MainActor in
+            do {
+                let reply = try await client.complete(
+                    [.init(role: .user, content: "Reply with the single word OK.")])
+                let ms = Int(Date().timeIntervalSince(start) * 1000)
+                aiProbe = (true, "OK · \(ms) ms · \(reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))")
+            } catch {
+                aiProbe = (false, AIClient.friendlyMessage(for: error))
+            }
+            aiProbing = false
+        }
+    }
+
+    /// The probe should work even while the feature toggle is still off.
+    private func forcedClient() -> AIClient? {
+        guard let url = URL(string: aiEndpoint), url.scheme != nil, !aiModel.isEmpty else { return nil }
+        return AIClient(endpoint: url, model: aiModel, apiKey: aiKey)
+    }
+
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
@@ -58,6 +130,16 @@ final class SettingsModel: ObservableObject {
         syncFiles = config.syncFiles
         receivedCacheMB = config.receivedCacheCap / 1_000_000
         cacheUsage = engine.watcher.receivedCacheUsage()
+        aiEnabled = config.aiEnabled
+        aiEndpoint = config.aiEndpoint
+        aiModel = config.aiModel
+        aiKey = config.aiAPIKey
+        aiAutoTone = config.aiAutoTone
+        aiFallbackEndpoint = config.aiFallbackEndpoint
+        aiFallbackModel = config.aiFallbackModel
+        aiFallbackKey = config.aiFallbackAPIKey
+        aiPresets = config.aiPresets
+        aiEditingID = config.aiPresets.first?.id ?? "cleanup"
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
@@ -170,7 +252,7 @@ struct SettingsView: View {
     @State private var tab: Tab = .general
 
     enum Tab: String, CaseIterable, Identifiable {
-        case general = "General", sync = "Sync", content = "Content", security = "Security"
+        case general = "General", sync = "Sync", content = "Content", ai = "AI", security = "Security"
         var id: String { rawValue }
     }
 
@@ -183,6 +265,7 @@ struct SettingsView: View {
                 case .general:  generalTab
                 case .sync:     syncTab
                 case .content:  contentTab
+                case .ai:       aiTab
                 case .security: securityTab
                 }
             }
@@ -313,6 +396,100 @@ struct SettingsView: View {
                 Text("History")
             } footer: {
                 Text("History is in-memory for this session only. Open the picker with ⇧⌘V.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: AI — bring-your-own-LLM text cleanup (tonebox pattern)
+
+    private var aiTab: some View {
+        Form {
+            Section {
+                Toggle("Enable AI text cleanup", isOn: $model.aiEnabled)
+            } footer: {
+                Text("Adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below — there is no middleman.")
+            }
+            Section {
+                // A menu that *applies* a preset (fills the fields below) —
+                // the fields are the state, not the menu selection.
+                HStack {
+                    Text("Provider preset")
+                    Spacer()
+                    Menu("Apply…") {
+                        ForEach(AIProviderPreset.all) { p in
+                            Button(p.name) { model.applyPreset(p) }
+                        }
+                    }
+                    .frame(width: 150)
+                }
+                TextField("Endpoint URL", text: $model.aiEndpoint,
+                          prompt: Text("https://api…/v1/chat/completions"))
+                    .autocorrectionDisabled()
+                TextField("Model", text: $model.aiModel, prompt: Text("e.g. claude-haiku-4-5-20251001"))
+                    .autocorrectionDisabled()
+                SecureField("API key", text: $model.aiKey,
+                            prompt: Text("empty is fine for local servers"))
+                HStack {
+                    Button(model.aiProbing ? "Testing…" : "Test Connection") { model.testAIConnection() }
+                        .disabled(model.aiProbing)
+                    if let probe = model.aiProbe {
+                        Image(systemName: probe.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(probe.ok ? .green : .red)
+                        Text(probe.message).font(.system(size: 11)).foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            } header: {
+                Text("Endpoint")
+            } footer: {
+                Text("Any OpenAI-compatible chat-completions server works: Anthropic, OpenAI, OpenRouter, Groq, or a local Ollama / LM Studio — the local options keep text entirely on your machine. The API key is stored in the Keychain, never in preferences.")
+            }
+            Section {
+                Picker("Preset", selection: $model.aiEditingID) {
+                    ForEach(model.aiPresets) { p in Text(p.name).tag(p.id) }
+                }
+                if let i = model.aiEditingIndex {
+                    TextField("Name", text: Binding(
+                        get: { model.aiPresets[i].name },
+                        set: { model.aiPresets[i].name = $0 }))
+                    TextEditor(text: Binding(
+                        get: { model.aiPresets[i].prompt },
+                        set: { model.aiPresets[i].prompt = $0 }))
+                        .font(.system(size: 11.5))
+                        .frame(minHeight: 96)
+                        .scrollContentBackground(.hidden)
+                        .padding(4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.06)))
+                }
+                HStack {
+                    Button("Add Preset") { model.addAIPreset() }
+                    Button("Delete") { model.deleteAIPreset() }
+                        .disabled(model.aiPresets.count <= 1)
+                    Spacer()
+                    Button("Restore Bundled Presets") { model.restoreBundledPresets() }
+                }
+            } header: {
+                Text("Tone presets")
+            } footer: {
+                Text("Each preset is a system prompt the compose area can apply (Clean up, Email reply, Summarize, Translate, …). Input is capped at \(Config.aiMaxInputChars / 1000)k characters per run.")
+            }
+            Section {
+                Toggle("Adapt tone to the destination app", isOn: $model.aiAutoTone)
+            } footer: {
+                Text("When on, the rewrite is steered by the app you opened the picker over — professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.")
+            }
+            Section {
+                TextField("Fallback endpoint URL", text: $model.aiFallbackEndpoint,
+                          prompt: Text("optional — e.g. a cloud endpoint behind local Ollama"))
+                    .autocorrectionDisabled()
+                TextField("Fallback model", text: $model.aiFallbackModel)
+                    .autocorrectionDisabled()
+                SecureField("Fallback API key", text: $model.aiFallbackKey)
+            } header: {
+                Text("Fallback")
+            } footer: {
+                Text("Tried once when the primary endpoint fails with a rate limit, server error, or network problem before producing any output. Config mistakes (bad key, wrong model) don't fail over.")
             }
         }
         .formStyle(.grouped)
