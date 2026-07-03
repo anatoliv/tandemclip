@@ -191,11 +191,15 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.21.0", date: "July 3, 2026",
+              highlight: "A record of how we got here.",
+              changes: [
+                .init(.added, "This What's New page — every version of TandemClip, newest first."),
+              ]),
         .init(version: "0.20.0", date: "July 3, 2026",
-              highlight: "A help center you can actually navigate — and a record of how we got here.",
+              highlight: "A help center you can actually navigate.",
               changes: [
                 .init(.added, "Two-pane Help with left-hand navigation and search-by-meaning."),
-                .init(.added, "This What's New page — every version, newest first."),
                 .init(.improved, "Expanded and corrected articles: appearance, the menu-bar menu, the full AI provider list, ChatGPT sign-in, and secret guard."),
               ]),
         .init(version: "0.19.0", date: "July 3, 2026",
