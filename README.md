@@ -226,6 +226,14 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Drop-to-share — drag files onto the picker to send them to your Macs now
 - [x] Delete everywhere — remove a clip from the picker and it disappears from history, clipboards, and received files on every Mac (signed, relayed like a clip)
 - [x] Clipboard history — in-memory, opt-in (Settings), browsed/re-copied via the picker
+- [x] Folders — sync as `.zip` archives (⌘C a folder or drop it on the picker)
+- [x] Picker organization — per-Mac collapsible groups with per-type sub-sections (Text / Images / Documents / Audio / Video / Files), count badges, hover previews (QuickLook: PDF pages, Office docs, video frames, media duration), per-item sizes
+- [x] Privacy hold (✋) — one click stops anything leaving this Mac (broadcasts, pulls, previews, AI calls); pin (📌) keeps the picker open
+- [x] Auto-apply incoming clips — receive hands-free even in Manual mode (Settings → Sync)
+- [x] AI text cleanup — bring-your-own-LLM compose area (OpenAI-compatible endpoints incl. local Ollama/LM Studio; editable tone presets, auto-tone by destination app, changelog provenance, fallback endpoint; key in Keychain; https enforced off-LAN)
+- [x] Storage limit — configurable received-files cache (10 MB–1 GB) with pasteboard-safe oldest-first eviction
+- [x] Settings — sidebar navigation, plain-English bullet descriptions on every section
+- [x] Help — every settings tab documented with worked examples; on-device semantic search
 - [ ] Drag-out — drag a received file from the picker to Finder/an app (single-file first)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 ```
