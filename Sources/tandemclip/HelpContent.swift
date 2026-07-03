@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.0", date: "July 3, 2026",
+              highlight: "Settings that explain themselves.",
+              changes: [
+                .init(.added, "Every setting name in Settings is now a link — click it to jump straight to the exact spot in Help that explains it, not just the right page."),
+              ]),
         .init(version: "0.21.4", date: "July 3, 2026",
               highlight: "Consistency, all the way down.",
               changes: [

@@ -55,6 +55,12 @@ final class AppController: NSObject, NSApplicationDelegate {
             AppTheme.apply(config.theme)
         }
 
+        // A "learn more" link in Settings → open the Help window (it reads the
+        // requested topic/anchor from UserDefaults and jumps there itself).
+        NotificationCenter.default.addObserver(forName: .tandemOpenHelp, object: nil, queue: .main) { [weak self] _ in
+            self?.infoWindows.showHelp()
+        }
+
         engine.start()
     }
 
