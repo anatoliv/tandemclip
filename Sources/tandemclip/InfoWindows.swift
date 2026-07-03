@@ -595,6 +595,11 @@ struct HelpMarkdown: View {
     private struct AnchorHighlight: ViewModifier {
         let isTarget: Bool
         let flashed: Bool
+        @Environment(\.colorScheme) private var scheme
+        /// Peak flash opacity. A 0.16 accent wash reads clearly on light paper
+        /// but nearly vanishes over a dark surface — bump it in dark mode so the
+        /// terracotta comes through and the "here's your spot" cue stays legible.
+        private var peak: Double { scheme == .dark ? Tokens.HelpHighlight.dark : Tokens.HelpHighlight.light }
         func body(content: Content) -> some View {
             if isTarget {
                 content
@@ -602,7 +607,7 @@ struct HelpMarkdown: View {
                     .padding(.vertical, Tokens.Space.row6)
                     .background(
                         RoundedRectangle(cornerRadius: Tokens.Radius.card)
-                            .fill(Tokens.accent.opacity(flashed ? 0 : 0.16))
+                            .fill(Tokens.accent.opacity(flashed ? 0 : peak))
                     )
                     .padding(.horizontal, -Tokens.Space.tight)
                     .padding(.vertical, -Tokens.Space.row6)
