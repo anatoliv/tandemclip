@@ -94,12 +94,28 @@ else
     exit 1
 fi
 
-# 5. Publish DMG + appcast to web-01 (PUBLISH=1). Serves the exact SUFeedURL.
+# 5. Publish DMG + appcast + landing page to web-01 (PUBLISH=1). Serves the
+#    exact SUFeedURL. The landing page's download links are version-pinned, so
+#    render the current VERSION into a copy of web/site/index.html before
+#    publishing — otherwise the "Download" button rots to a DMG that 404s.
 if [[ "${PUBLISH:-}" == "1" ]]; then
     DEST="user@host:/srv/tandemclip/"
     echo "==> Publishing to web-01 ($DEST)"
     scp -q "$DMG" "$DEST"
     [[ -f "$DIST/appcast.xml" ]] && scp -q "$DIST/appcast.xml" "$DEST"
-    echo "    published: $(basename "$DMG") + appcast.xml"
+
+    SITE_SRC="web/site/index.html"
+    if [[ -f "$SITE_SRC" ]]; then
+        RENDERED="$DIST/index.html"
+        # Repoint every versioned DMG link and the "Version x.y.z" line at VERSION.
+        sed -E "s/TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg/TandemClip_${VERSION}_aarch64.dmg/g; \
+                s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
+            "$SITE_SRC" > "$RENDERED"
+        scp -q "$RENDERED" "$DEST"
+        echo "    published: $(basename "$DMG") + appcast.xml + index.html (v$VERSION)"
+    else
+        echo "    published: $(basename "$DMG") + appcast.xml"
+    fi
     echo "    verify: curl -fsSI https://tandemclip.com/appcast.xml"
+    echo "    verify: curl -fsSI https://tandemclip.com/TandemClip_${VERSION}_aarch64.dmg"
 fi
