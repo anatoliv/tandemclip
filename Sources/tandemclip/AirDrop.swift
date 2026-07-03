@@ -49,6 +49,51 @@ enum AirDropPayload {
     }
 }
 
+/// Stages clips for drag-out of the picker (files land wherever the user
+/// drops them; Finder copies from our staging dir). Staging can't be cleaned
+/// on drop (no callback), so old dirs are swept on each new drag.
+enum DragOutStager {
+    private static let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("tandemclip-dragout", isDirectory: true)
+
+    /// An NSItemProvider for dragging this clip out. Plain text drags as a
+    /// string; anything with bytes drags as file URL(s) — a single file
+    /// directly, multi-file clips as a folder named after the clip.
+    static func provider(for item: HistoryItem) -> NSItemProvider {
+        if item.snapshot.files.isEmpty, item.imageData == nil,
+           let text = item.snapshot.plainText {
+            return NSItemProvider(object: text as NSString)
+        }
+        sweep()
+        let dir = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let urls = AirDropPayload.urls(for: item, in: dir)
+        if urls.count == 1, let provider = NSItemProvider(contentsOf: urls[0]) { return provider }
+        if urls.count > 1 {
+            // Wrap the batch in a folder named after the clip so the drop
+            // lands as one tidy unit.
+            let named = dir.appendingPathComponent(AirDropPayload.fileStem(for: item), isDirectory: true)
+            try? FileManager.default.createDirectory(at: named, withIntermediateDirectories: true)
+            for u in urls {
+                try? FileManager.default.moveItem(
+                    at: u, to: named.appendingPathComponent(u.lastPathComponent))
+            }
+            if let provider = NSItemProvider(contentsOf: named) { return provider }
+        }
+        return NSItemProvider()
+    }
+
+    private static func sweep() {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        for url in entries {
+            let age = -(((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast).timeIntervalSinceNow)
+            if age > 3600 { try? fm.removeItem(at: url) }
+        }
+    }
+}
+
 /// Owns the AirDrop share lifecycle: stages files, keeps them alive until the
 /// transfer finishes (deleting too early aborts the send), then cleans up.
 /// Stale staging dirs (a cancelled sheet fires no delegate callback) are swept

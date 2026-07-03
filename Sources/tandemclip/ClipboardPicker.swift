@@ -928,6 +928,8 @@ struct PickerView: View {
                                                    ? { model.onAirDrop?(e.item) } : nil)
                                         .contentShape(Rectangle())
                                         .onTapGesture { model.onPickHistory(e.item.hash) }
+                                        // Drag a clip out to Finder or any app.
+                                        .onDrag { DragOutStager.provider(for: e.item) }
                                         .onHover { inside in
                                             if inside { model.beginHover(e.item) } else { model.endHover(e.item) }
                                         }
