@@ -196,6 +196,35 @@ final class ClipboardPickerController {
                            .init(role: .user, content: capped)])
         }
         m.onPresetSelect = { [weak self] id in self?.config.aiSelectedPresetID = id }
+        // Ask: retrieve the top semantic matches (plus recency fallback) and
+        // answer ONLY from them — a miniature of tonebox's Ask pane.
+        m.makeAskStream = { [weak self] question in
+            guard let self, let client = AIClient.fromConfig(self.config) else { return nil }
+            var items = ClipIndex.shared.topMatches(for: question, limit: 5)
+                .compactMap { match in self.engine.history.first { $0.hash == match.hash } }
+            if items.count < 3 {
+                for it in self.engine.history.prefix(6)
+                where !items.contains(where: { $0.hash == it.hash }) { items.append(it) }
+                items = Array(items.prefix(6))
+            }
+            guard !items.isEmpty else { return nil }
+            let context = items.enumerated().map { i, it -> String in
+                let body = it.snapshot.plainText ?? ClipIndex.shared.ocrText(for: it.hash) ?? it.label
+                return "[\(i + 1)] from \(it.source): \(String(body.prefix(1500)))"
+            }.joined(separator: "\n\n")
+            let system = """
+                You answer questions using ONLY the user's clipboard clips \
+                provided below. If the answer is not in the clips, say so \
+                plainly. Be brief and direct; cite clip numbers like [2] when \
+                helpful. No preamble.
+                """
+            let stream = AIClient.streamWithFallback(
+                primary: client, fallback: AIClient.fallbackFromConfig(self.config),
+                messages: [.init(role: .system, content: system),
+                           .init(role: .user, content: "QUESTION: \(question)\n\nCLIPS:\n\(context)")])
+            return (stream, items.map { String($0.label.prefix(28)) })
+        }
+
         // Preview-card summaries ride the Summarize preset (no auto-tone or
         // changelog — a summary is an annotation, not a rewrite).
         m.makeSummaryStream = { [weak self] text in
@@ -392,6 +421,7 @@ final class PickerModel: ObservableObject {
     /// panel does NOT come through here, so an accidental defocus keeps the
     /// draft.
     func endCompose() {
+        clearAsk()
         cleanupTask?.cancel()
         composeBusy = false
         composing = false
@@ -530,6 +560,58 @@ final class PickerModel: ObservableObject {
     var makeSummaryStream: ((String) -> AsyncThrowingStream<String, Error>?)?
     /// Engine-owned auto-translations of incoming clips, by hash.
     var translationLookup: ((String) -> String?)?
+
+    // MARK: Ask your clipboard (retrieval-grounded answers)
+
+    @Published private(set) var askAnswer: String?
+    @Published private(set) var askSources: [String] = []
+    @Published private(set) var askBusy = false
+    /// Controller-provided: builds the retrieval context + stream. Nil when AI
+    /// isn't configured.
+    var makeAskStream: ((String) -> (stream: AsyncThrowingStream<String, Error>, sources: [String])?)?
+    private var askTask: Task<Void, Never>?
+
+    /// Answer the composed question from clipboard history (+ pins), grounded
+    /// in the top semantic matches.
+    func askClipboard() {
+        guard !askBusy, !composeBusy else { return }
+        let question = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        guard !privacyHold else {
+            composeError = "Privacy hold is on (✋) — AI calls are paused."
+            return
+        }
+        guard let made = makeAskStream?(question) else {
+            composeError = "Set up AI in Settings → AI first."
+            return
+        }
+        askBusy = true
+        composeError = nil
+        askAnswer = ""
+        askSources = made.sources
+        askTask = Task { @MainActor [weak self] in
+            var acc = ""
+            do {
+                for try await delta in made.stream {
+                    guard let self, self.composing else { return }
+                    acc += delta
+                    self.askAnswer = acc
+                }
+            } catch {
+                self?.composeError = AIClient.friendlyMessage(for: error)
+                self?.askAnswer = nil
+                self?.askSources = []
+            }
+            self?.askBusy = false
+        }
+    }
+
+    func clearAsk() {
+        askTask?.cancel()
+        askAnswer = nil
+        askSources = []
+        askBusy = false
+    }
 
     func summarize(_ item: HistoryItem) {
         guard summarizingHash == nil, summaries[item.hash] == nil,
@@ -1075,6 +1157,31 @@ struct PickerView: View {
             if let err = model.composeError {
                 Text(err).font(.system(size: 10.5)).foregroundColor(.red).lineLimit(2)
             }
+            if let answer = model.askAnswer {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "questionmark.bubble").font(.system(size: 9))
+                        Text("From your clipboard").font(.system(size: 10, weight: .semibold))
+                        if model.askBusy { ProgressView().controlSize(.mini) }
+                        Spacer()
+                        Button { model.clearAsk() } label: {
+                            Image(systemName: "xmark.circle.fill").imageScale(.small)
+                                .foregroundStyle(.tertiary)
+                        }.buttonStyle(.plain)
+                    }
+                    ScrollView {
+                        Text(answer).font(.system(size: 11.5)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    if !model.askSources.isEmpty {
+                        Text("Clips used: " + model.askSources.joined(separator: " · "))
+                            .font(.system(size: 9.5)).foregroundColor(.secondary).lineLimit(2)
+                    }
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.07)))
+            }
             if let changes = model.composeChanges {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles").font(.system(size: 9))
@@ -1114,6 +1221,14 @@ struct PickerView: View {
                 if model.composeOriginal != nil, !model.composeBusy {
                     Button("Undo") { model.undoCleanup() }.font(.system(size: 11.5))
                 }
+                Button {
+                    model.askClipboard()
+                } label: {
+                    Label(model.askBusy ? "Asking…" : "Ask Clipboard", systemImage: "questionmark.bubble")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .disabled(model.askBusy || model.composeBusy || model.composeText.isEmpty)
+                .help("Answer this question from your clip history (retrieval + AI)")
                 Spacer()
                 Button("Cancel") { model.endCompose() }
                     .font(.system(size: 11.5))

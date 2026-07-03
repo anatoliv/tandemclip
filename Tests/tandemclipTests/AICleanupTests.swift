@@ -208,3 +208,39 @@ final class AICleanupTests: XCTestCase {
         XCTAssertEqual(model.composeError, "Set up AI cleanup in Settings → AI first.")
     }
 }
+
+extension AICleanupTests {
+    func testAskClipboardStreamsAnswerWithSources() {
+        let model = makeModel()
+        model.startCompose()
+        model.composeText = "what was the wifi password?"
+        model.makeAskStream = { question in
+            XCTAssertTrue(question.contains("wifi"))
+            return (AsyncThrowingStream { c in c.yield("It was "); c.yield("hunter2 [1]."); c.finish() },
+                    ["router setup notes"])
+        }
+        model.askClipboard()
+        let done = expectation(description: "answer")
+        Task { @MainActor in
+            while model.askBusy { try? await Task.sleep(nanoseconds: 20_000_000) }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(model.askAnswer, "It was hunter2 [1].")
+        XCTAssertEqual(model.askSources, ["router setup notes"])
+
+        model.clearAsk()
+        XCTAssertNil(model.askAnswer)
+
+        // Privacy hold gates Ask like every other AI call.
+        let held = makeModel()
+        held.privacyHold = true
+        held.startCompose()
+        held.composeText = "anything"
+        var called = false
+        held.makeAskStream = { _ in called = true; return nil }
+        held.askClipboard()
+        XCTAssertFalse(called)
+        XCTAssertTrue(held.composeError?.contains("Privacy hold") == true)
+    }
+}
