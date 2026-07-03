@@ -43,6 +43,7 @@ final class ClipboardPickerController {
         model.presets = config.aiPresets
         model.selectedPresetID = config.aiSelectedPresetID
         model.aiConfigured = AIClient.fromConfig(config) != nil
+        model.airDropAvailable = AirDropper.isAvailable
 
         if panel == nil {
             let p = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
@@ -141,6 +142,15 @@ final class ClipboardPickerController {
             self?.engine.onStatusChange?()   // menu state line + icon update
         }
         m.onPinnedChange = { [weak self] on in self?.config.pickerPinned = on }
+        // AirDrop: hand the clip to the system sheet, then step aside (the
+        // sheet is its own window; the picker closes unless pinned).
+        m.onAirDrop = { [weak self] item in
+            if AirDropper.shared.share(item) {
+                self?.hideUnlessPinned()
+            } else {
+                self?.model?.flashDrop("Nothing AirDrop-able in this clip", isError: true)
+            }
+        }
         // Compose + AI cleanup: the stream factory returns nil when AI isn't
         // configured, which the model surfaces as a pointer to Settings → AI.
         // System prompt = tone preset + destination-app steer + changelog ask.
@@ -288,6 +298,9 @@ final class PickerModel: ObservableObject {
     var onPresetSelect: ((String) -> Void)?
     /// Whether AI is configured — gates the ✨ row action.
     @Published var aiConfigured = false
+    /// AirDrop availability — gates the share row action.
+    @Published var airDropAvailable = false
+    var onAirDrop: ((HistoryItem) -> Void)?
 
     var selectedPreset: AIPreset {
         presets.first { $0.id == selectedPresetID } ?? presets.first ?? AIPreset.bundled[0]
@@ -795,7 +808,9 @@ struct PickerView: View {
                                                onDelete: { model.onDeleteHistory(e.item.hash) },
                                                onCleanup: model.aiConfigured
                                                    && (e.item.category == .text || e.item.category == .richText)
-                                                   ? { model.cleanUpItem(e.item) } : nil)
+                                                   ? { model.cleanUpItem(e.item) } : nil,
+                                               onAirDrop: model.airDropAvailable
+                                                   ? { model.onAirDrop?(e.item) } : nil)
                                         .contentShape(Rectangle())
                                         .onTapGesture { model.onPickHistory(e.item.hash) }
                                         .onHover { inside in
@@ -1106,6 +1121,8 @@ private struct HistoryRow: View {
     let onDelete: () -> Void
     /// AI cleanup action — nil hides the ✨ (non-text clip or AI unconfigured).
     var onCleanup: (() -> Void)?
+    /// AirDrop action — nil hides the share button (AirDrop unavailable).
+    var onAirDrop: (() -> Void)?
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 10) {
@@ -1123,6 +1140,15 @@ private struct HistoryRow: View {
             }
             Spacer()
             if hovering {
+                if let onAirDrop {
+                    Button(action: onAirDrop) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("AirDrop to a nearby device (iPhone, iPad, any Mac)")
+                }
                 if let onCleanup {
                     Button(action: onCleanup) {
                         Image(systemName: "sparkles")
