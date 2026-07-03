@@ -93,6 +93,47 @@ final class AICleanupTests: XCTestCase {
         XCTAssertNil(partial.changes)
     }
 
+    func testAuthFailurePredicateForDegradedLatch() {
+        XCTAssertTrue(AIClient.isAuthFailure(AIClient.AIError.notSignedIn))
+        XCTAssertTrue(AIClient.isAuthFailure(AIClient.AIError.httpStatus(401, "")))
+        XCTAssertTrue(AIClient.isAuthFailure(AIClient.AIError.httpStatus(403, "")))
+        // Retryable / transient failures are NOT auth failures — they don't latch.
+        XCTAssertFalse(AIClient.isAuthFailure(AIClient.AIError.httpStatus(429, "")))
+        XCTAssertFalse(AIClient.isAuthFailure(AIClient.AIError.httpStatus(500, "")))
+        XCTAssertFalse(AIClient.isAuthFailure(URLError(.timedOut)))
+    }
+
+    func testCodexDegradedReroutesToFallback() {
+        let config = Config()
+        let saved = (config.aiEnabled, config.aiAuthMode, config.aiModel,
+                     config.aiFallbackEndpoint, config.aiFallbackModel)
+        defer {
+            config.aiEnabled = saved.0; config.aiAuthMode = saved.1; config.aiModel = saved.2
+            config.aiFallbackEndpoint = saved.3; config.aiFallbackModel = saved.4
+            CodexDegradation.isDegraded = false
+        }
+        config.aiEnabled = true
+        config.aiAuthMode = .codexOAuth
+        config.aiModel = "gpt-5.4-mini"
+        config.aiFallbackEndpoint = "https://api.openai.com/v1/chat/completions"
+        config.aiFallbackModel = "gpt-4o-mini"
+
+        // Healthy → the real Codex endpoint on the OAuth strategy.
+        CodexDegradation.isDegraded = false
+        let healthy = AIClient.fromConfig(config)
+        XCTAssertEqual(healthy?.endpoint, CodexOAuth.codexResponsesURL)
+        XCTAssertEqual(healthy?.auth, .codexOAuth)
+
+        // Latched degraded → reroute to the configured API-key fallback.
+        CodexDegradation.isDegraded = true
+        let rerouted = AIClient.fromConfig(config)
+        XCTAssertEqual(rerouted?.endpoint.absoluteString, "https://api.openai.com/v1/chat/completions")
+        switch rerouted?.auth {
+        case .apiKey: break
+        default: XCTFail("degraded OAuth must reroute to the api-key fallback")
+        }
+    }
+
     func testRetryPredicateMatchesToneboxRules() {
         XCTAssertTrue(AIClient.isRetryable(AIClient.AIError.httpStatus(429, "")))
         XCTAssertTrue(AIClient.isRetryable(AIClient.AIError.httpStatus(503, "")))
