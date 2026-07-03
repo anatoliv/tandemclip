@@ -53,7 +53,10 @@ final class ClipboardPickerController {
                                 backing: .buffered, defer: false)
             p.titleVisibility = .hidden
             p.titlebarAppearsTransparent = true
-            p.isMovableByWindowBackground = true
+            // Movable by the transparent title-bar strip only. NOT by the whole
+            // background: that steals mouse-drag from the rows' .onDrag, breaking
+            // drag-out (the window would slide instead of the clip lifting).
+            p.isMovableByWindowBackground = false
             p.level = .floating
             // Appear over fullscreen apps and on every Space.
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
