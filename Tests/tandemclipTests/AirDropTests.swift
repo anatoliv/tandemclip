@@ -48,3 +48,18 @@ final class AirDropTests: XCTestCase {
         XCTAssertTrue(urls.isEmpty)
     }
 }
+
+extension AirDropTests {
+    func testDragOutProviderKinds() {
+        let text = HistoryItem(snapshot: ClipSnapshot(parts: [.text: Data("drag me".utf8)]),
+                               hash: "t", timestamp: 0, label: "drag me", source: "Home")
+        XCTAssertTrue(DragOutStager.provider(for: text)
+            .canLoadObject(ofClass: NSString.self), "text clips drag as strings")
+
+        let file = HistoryItem(snapshot: ClipSnapshot(parts: [:], files: [ClipFile(name: "r.pdf", data: Data([1]))]),
+                               hash: "f", timestamp: 0, label: "r.pdf", source: "Home")
+        let p = DragOutStager.provider(for: file)
+        XCTAssertTrue(p.registeredTypeIdentifiers.contains { $0.contains("pdf") || $0.contains("file-url") || $0.contains("item") },
+                      "file clips drag as file providers: \(p.registeredTypeIdentifiers)")
+    }
+}
