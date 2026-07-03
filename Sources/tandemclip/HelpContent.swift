@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.4", date: "July 3, 2026",
+              highlight: "Drag a clip out again.",
+              changes: [
+                .init(.fixed, "Dragging a clip out of the picker into Finder or another app works again — it used to just slide the whole window instead of lifting the clip."),
+              ]),
         .init(version: "0.22.3", date: "July 3, 2026",
               highlight: "Clearer in dark mode.",
               changes: [
