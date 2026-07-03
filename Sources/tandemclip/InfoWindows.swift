@@ -14,22 +14,31 @@ final class InfoWindowController {
     }
 
     func showHelp() {
-        if helpWindow == nil {
-            helpWindow = Self.panel(title: "TandemClip Help", view: HelpView())
+        let firstTime = helpWindow == nil
+        if firstTime {
+            let w = Self.panel(title: "TandemClip Help", view: HelpView())
+            // The Help window is a full two-pane reader — let people resize it.
+            // (About stays content-hugging and non-resizable.)
+            w.styleMask.insert(.resizable)
+            w.setContentSize(NSSize(width: 860, height: 640))
+            w.contentMinSize = NSSize(width: 620, height: 420)
+            helpWindow = w
         }
-        present(helpWindow)
+        present(helpWindow, center: firstTime)
     }
 
-    private func present(_ window: NSWindow?) {
+    private func present(_ window: NSWindow?, center: Bool = true) {
         NSApp.activate(ignoringOtherApps: true)
-        window?.center()
+        // Only center on first open, so a window the user has moved or resized
+        // reopens where they left it.
+        if center { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
     }
 
     private static func panel<V: View>(title: String, view: V) -> NSWindow {
         // Size the window to the SwiftUI view's own fitting size (the views
-        // declare fixed frames), so it hugs content instead of stretching.
+        // declare fixed or flexible frames).
         let hosting = NSHostingController(rootView: view)
         let w = NSWindow(contentViewController: hosting)
         w.title = title
@@ -105,7 +114,10 @@ struct HelpView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 860, height: 640)
+        // Flexible so the window is resizable: a fixed sidebar with a detail
+        // pane that grows, bounded by a sensible minimum. The window's own
+        // initial/min size is set in InfoWindowController.showHelp().
+        .frame(minWidth: 620, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
     }
 
     // MARK: Sidebar
