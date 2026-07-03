@@ -20,6 +20,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         // Reflect persisted settings that live outside Config's own storage.
         Log.verbose = Log.verbose || config.verboseLogging
+        AppTheme.apply(config.theme)   // light/dark/system, before any window shows
         LaunchAtLogin.set(config.launchAtLogin)
         engine.networkAllowed = { [config] in NetworkGuard.syncAllowed(config) }
 
@@ -47,9 +48,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             self?.picker.refreshIfVisible()   // live-update the picker if open
         }
 
-        // Settings changed from the window → refresh the menu/icon.
-        NotificationCenter.default.addObserver(forName: Config.didChange, object: nil, queue: .main) { [weak menuBar] _ in
+        // Settings changed from the window → refresh the menu/icon and re-apply
+        // the appearance (cheap + idempotent, so any theme edit takes effect).
+        NotificationCenter.default.addObserver(forName: Config.didChange, object: nil, queue: .main) { [weak menuBar, config] _ in
             menuBar?.refresh()
+            AppTheme.apply(config.theme)
         }
 
         engine.start()
