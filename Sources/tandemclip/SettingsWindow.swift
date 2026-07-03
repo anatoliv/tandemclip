@@ -111,6 +111,9 @@ final class SettingsModel: ObservableObject {
         return AIClient(endpoint: url, model: aiModel, apiKey: aiKey)
     }
 
+    /// Applied immediately (live preview) as well as persisted; Config.didChange
+    /// re-applies too, so this stays correct even if theme changes elsewhere.
+    @Published var theme: AppTheme { didSet { config.theme = theme; AppTheme.apply(theme) } }
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
@@ -152,6 +155,7 @@ final class SettingsModel: ObservableObject {
         aiFallbackKey = config.aiFallbackAPIKey
         aiPresets = config.aiPresets
         aiEditingID = config.aiPresets.first?.id ?? "cleanup"
+        theme = config.theme
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
@@ -387,6 +391,20 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
+            Section {
+                Picker("Theme", selection: $model.theme) {
+                    ForEach(AppTheme.allCases) { theme in
+                        Text(theme.label).tag(theme)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Appearance")
+            } footer: {
+                SettingsBullets(items: [
+                    ("Theme", "System follows your Mac's light/dark setting. Light or Dark pins TandemClip to that look regardless of the system."),
+                ])
+            }
             Section {
                 Toggle("Launch at login", isOn: $model.launchAtLogin)
                 Toggle("Start paused", isOn: $model.startPaused)

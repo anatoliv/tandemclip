@@ -376,6 +376,15 @@ final class Config {
         set { set("pickerShowCount", newValue) }
     }
 
+    // MARK: - Appearance
+
+    /// Light / dark / follow-system, mirroring tonebox. Applied app-wide via
+    /// `NSApp.appearance` (see AppTheme). Defaults to System when never set.
+    var theme: AppTheme {
+        get { AppTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system }
+        set { set("theme", newValue.rawValue) }
+    }
+
     // MARK: - Startup & behavior
 
     var startPaused: Bool {
