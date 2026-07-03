@@ -48,6 +48,6 @@ final class PrivacyHoldTests: XCTestCase {
         let f = dir.appendingPathComponent("hold-test.txt")
         try? Data("x".utf8).write(to: f)
         defer { try? FileManager.default.removeItem(at: f) }
-        XCTAssertEqual(engine.shareFiles([f]), 0)
+        XCTAssertEqual(engine.shareFiles([f]).sent, 0)
     }
 }

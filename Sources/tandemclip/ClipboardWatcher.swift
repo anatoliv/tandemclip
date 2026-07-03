@@ -83,7 +83,7 @@ final class ClipboardWatcher {
         var files: [ClipFile] = []
         if isFileCopy {
             let used = parts.values.reduce(0) { $0 + $1.count }
-            files = ClipboardWatcher.collectFiles(fileURLs, maxBytes: maxBytes, initialUsed: used)
+            files = ClipboardWatcher.collectFiles(fileURLs, maxBytes: maxBytes, initialUsed: used).files
         }
 
         guard !parts.isEmpty || !files.isEmpty else { return }
@@ -254,29 +254,75 @@ final class ClipboardWatcher {
         }
     }
 
-    /// Read file URLs into `ClipFile`s (transfer-by-content), skipping folders and
-    /// anything that would push the running byte total past `maxBytes`. Sizes are
-    /// read from metadata *before* the bytes, so an oversize file is rejected
-    /// without ever being slurped into memory. Shared by clipboard capture (poll)
-    /// and drag-to-send (SyncEngine.shareFiles). `initialUsed` seeds the total
-    /// with bytes already accounted for (e.g. accompanying text on a copy).
-    static func collectFiles(_ urls: [URL], maxBytes: Int, initialUsed: Int = 0) -> [ClipFile] {
+    /// Read file URLs into `ClipFile`s (transfer-by-content). Folders are sent
+    /// as zip archives; anything that would push the running byte total past
+    /// `maxBytes` is skipped and counted. Sizes are read from metadata *before*
+    /// the bytes, so an oversize file is rejected without ever being slurped
+    /// into memory. Shared by clipboard capture (poll) and drag-to-send
+    /// (SyncEngine.shareFiles). `initialUsed` seeds the total with bytes
+    /// already accounted for (e.g. accompanying text on a copy).
+    static func collectFiles(_ urls: [URL], maxBytes: Int,
+                             initialUsed: Int = 0) -> (files: [ClipFile], skipped: Int) {
         var used = initialUsed
         var files: [ClipFile] = []
+        var skipped = 0
         for url in urls where url.isFileURL {
             var isDir: ObjCBool = false
             FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-            if isDir.boolValue { continue }
+            if isDir.boolValue {
+                if let zipped = zipFolder(url, cap: maxBytes - used) {
+                    used += zipped.data.count
+                    files.append(zipped)
+                } else {
+                    Log.trace("clip", "folder \(url.lastPathComponent) over cap/unzippable — skipped")
+                    skipped += 1
+                }
+                continue
+            }
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
             if used + size > maxBytes {
                 Log.trace("clip", "file \(url.lastPathComponent) (\(size)B) over cap — skipped")
+                skipped += 1
                 continue
             }
-            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let data = try? Data(contentsOf: url) else { skipped += 1; continue }
             used += data.count
             files.append(ClipFile(name: url.lastPathComponent, data: data))
         }
-        return files
+        return (files, skipped)
+    }
+
+    /// Zip a copied folder so it can travel by content (`ditto -c -k`, the same
+    /// archive Finder's Compress makes). A cheap uncompressed-size walk runs
+    /// first so a huge folder is rejected before any zipping work; the zip
+    /// itself must also fit the remaining byte budget.
+    static func zipFolder(_ url: URL, cap: Int) -> ClipFile? {
+        guard cap > 0 else { return nil }
+        let fm = FileManager.default
+        // Pre-flight: if the *uncompressed* contents already exceed 4x the cap,
+        // no realistic compression saves it — bail before spending CPU.
+        if let e = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) {
+            var total = 0
+            for case let f as URL in e {
+                total += (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                if total > cap * 4 { return nil }
+            }
+        }
+        let tmp = fm.temporaryDirectory
+            .appendingPathComponent("tandemclip-zip-\(UUID().uuidString).zip")
+        defer { try? fm.removeItem(at: tmp) }
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = ["-c", "-k", "--keepParent", url.path, tmp.path]
+        ditto.standardOutput = FileHandle.nullDevice
+        ditto.standardError = FileHandle.nullDevice
+        guard (try? ditto.run()) != nil else { return nil }
+        ditto.waitUntilExit()
+        guard ditto.terminationStatus == 0,
+              let size = try? tmp.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= cap,
+              let data = try? Data(contentsOf: tmp)
+        else { return nil }
+        return ClipFile(name: url.lastPathComponent + ".zip", data: data)
     }
 
     static func hash(_ data: Data) -> String {

@@ -38,9 +38,28 @@ struct AIClient {
     /// Built from config; nil until the user has configured an endpoint+model.
     static func fromConfig(_ config: Config) -> AIClient? {
         guard config.aiEnabled,
-              let url = URL(string: config.aiEndpoint), url.scheme != nil,
+              let url = URL(string: config.aiEndpoint), isAcceptableEndpoint(url),
               !config.aiModel.isEmpty else { return nil }
         return AIClient(endpoint: url, model: config.aiModel, apiKey: config.aiAPIKey)
+    }
+
+    /// HTTPS is required except for endpoints that never leave the machine or
+    /// LAN (localhost, .local, RFC-1918 addresses) — otherwise the Bearer key
+    /// and the clipboard text would cross the internet in the clear.
+    static func isAcceptableEndpoint(_ url: URL) -> Bool {
+        switch url.scheme?.lowercased() {
+        case "https": return true
+        case "http":
+            guard let host = url.host?.lowercased() else { return false }
+            if host == "localhost" || host == "127.0.0.1" || host == "::1" { return true }
+            if host.hasSuffix(".local") { return true }
+            if host.hasPrefix("10.") || host.hasPrefix("192.168.") { return true }
+            if host.hasPrefix("172."),
+               let second = host.split(separator: ".").dropFirst().first.flatMap({ Int($0) }),
+               (16...31).contains(second) { return true }
+            return false
+        default: return false
+        }
     }
 
     // Generous per-token gap for cold local models; hard cap on the whole call.
@@ -164,7 +183,7 @@ extension AIClient {
     /// fails with a *retryable* error before producing any output. Mid-stream
     /// failover is deliberately avoided — it would splice two answers.
     static func fallbackFromConfig(_ config: Config) -> AIClient? {
-        guard let url = URL(string: config.aiFallbackEndpoint), url.scheme != nil,
+        guard let url = URL(string: config.aiFallbackEndpoint), isAcceptableEndpoint(url),
               !config.aiFallbackModel.isEmpty else { return nil }
         return AIClient(endpoint: url, model: config.aiFallbackModel, apiKey: config.aiFallbackAPIKey)
     }

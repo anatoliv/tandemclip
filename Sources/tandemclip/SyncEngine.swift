@@ -167,11 +167,19 @@ final class SyncEngine {
     ///
     /// Note: like any Mirror broadcast, only peers in Mirror mode auto-apply it;
     /// a Manual-mode peer would still pull it on demand.
+    struct ShareOutcome {
+        var sent = 0      // files actually broadcast
+        var skipped = 0   // dropped items that couldn't travel (over cap, unreadable)
+        var peers = 0     // synced Macs it went to
+    }
+
     @discardableResult
-    func shareFiles(_ urls: [URL]) -> Int {
-        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else { return 0 }
-        let files = ClipboardWatcher.collectFiles(urls, maxBytes: config.maxClipBytes)
-        guard !files.isEmpty else { return 0 }
+    func shareFiles(_ urls: [URL]) -> ShareOutcome {
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed() else {
+            return ShareOutcome(sent: 0, skipped: urls.count, peers: peerCount)
+        }
+        let (files, skipped) = ClipboardWatcher.collectFiles(urls, maxBytes: config.maxClipBytes)
+        guard !files.isEmpty else { return ShareOutcome(sent: 0, skipped: skipped, peers: peerCount) }
         let snap = ClipSnapshot(parts: [:], files: files)
         var m = Message(type: .clip, deviceID: config.deviceID, deviceName: config.deviceName)
         m.timestamp = now()
@@ -185,7 +193,7 @@ final class SyncEngine {
         transport.broadcast(m)
         lastSyncSource = "\(config.deviceName) (shared)"
         onStatusChange?()
-        return peerCount
+        return ShareOutcome(sent: files.count, skipped: skipped, peers: peerCount)
     }
 
     /// Delete a history item on every Mac. Removes it locally right away, then
