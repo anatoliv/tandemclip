@@ -55,20 +55,21 @@ struct AboutView: View {
     private var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?" }
 
     var body: some View {
-        VStack(spacing: 11) {
+        VStack(spacing: Tokens.Space.snug) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 88, height: 88)
-            Text("TandemClip").font(.system(size: 21, weight: .semibold, design: .rounded))
-            Text("Version \(version) (\(build))").font(.callout).foregroundColor(.secondary)
+            Text("TandemClip").font(Tokens.FontScale.display)
+            Text("Version \(version) (\(build))").font(Tokens.FontScale.small).foregroundColor(.secondary)
             Text("Shares your clipboard between your Macs over your local network — copy on one, paste on another. End-to-end encrypted with a code only you hold. No cloud, no account.")
-                .font(.callout).foregroundColor(.secondary)
+                .font(Tokens.FontScale.body).foregroundColor(.secondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Link("Website", destination: URL(string: "https://tandemclip.com")!)
-                .font(.callout)
+                .font(Tokens.FontScale.small)
+                .tint(Tokens.accent)   // links use the accent, not system blue (DESIGN_SYSTEM.md §2)
             Text("TandemClip — LAN clipboard sync for Macs")
-                .font(.caption2).foregroundColor(.secondary).padding(.top, 2)
+                .font(Tokens.FontScale.tiny).foregroundColor(.secondary).padding(.top, Tokens.Space.row)
         }
-        .padding(.horizontal, 26).padding(.vertical, 24)
+        .padding(.horizontal, Tokens.Space.wide).padding(.vertical, Tokens.Space.wide)
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -125,7 +126,7 @@ struct HelpView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             searchField
-                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 10)
+                .padding(.horizontal, Tokens.Space.snug).padding(.top, Tokens.Space.snug).padding(.bottom, Tokens.Space.medium)
             Divider()
             List(selection: $selection) {
                 if isSearching {
@@ -153,8 +154,8 @@ struct HelpView: View {
     /// Search over every topic — instant keywords plus on-device semantic
     /// matching, so "stop sharing my clipboard" finds Privacy hold.
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundColor(.secondary)
+        HStack(spacing: Tokens.Space.row6) {
+            Image(systemName: "magnifyingglass").font(Tokens.FontScale.small).foregroundColor(.secondary)
             TextField("Search help", text: $query)
                 .textFieldStyle(.plain)
                 .onChange(of: query) { q in search.update(q) }
@@ -166,24 +167,24 @@ struct HelpView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+        .padding(.horizontal, Tokens.Space.medium).padding(.vertical, Tokens.Space.row6)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: Tokens.Radius.card))
     }
 
     @ViewBuilder private var searchResultRows: some View {
         if search.results.isEmpty {
             Text("No results for “\(trimmedQuery)”")
-                .font(.system(size: 12)).foregroundColor(.secondary)
+                .font(Tokens.FontScale.small).foregroundColor(.secondary)
         } else {
             Section(search.results.count == 1 ? "1 result" : "\(search.results.count) results") {
                 ForEach(search.results) { topic in
-                    HStack(spacing: 8) {
+                    HStack(spacing: Tokens.Space.tight) {
                         Image(systemName: symbol(for: topic.category))
-                            .font(.system(size: 12)).foregroundColor(.secondary)
+                            .font(Tokens.FontScale.small).foregroundColor(.secondary)
                             .frame(width: 16)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(topic.title).font(.system(size: 12.5))
-                            Text(topic.category).font(.system(size: 10.5)).foregroundColor(.secondary)
+                            Text(topic.title).font(Tokens.FontScale.small)
+                            Text(topic.category).font(Tokens.FontScale.tiny).foregroundColor(.secondary)
                         }
                     }
                     .tag(topic.id)
@@ -232,12 +233,12 @@ struct HelpView: View {
             symbol: "hand.wave",
             badge: "Overview"
         ) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 13) {
+            VStack(alignment: .leading, spacing: Tokens.Space.regular) {
+                HStack(spacing: Tokens.Space.snug) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable().frame(width: 56, height: 56)
                     Text("Copy on one Mac, paste on another — end-to-end encrypted over your own network, with no cloud and no account.")
-                        .font(.system(size: 13.5)).foregroundColor(.secondary)
+                        .font(Tokens.FontScale.body).foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HelpMarkdown("""
@@ -262,7 +263,7 @@ struct HelpView: View {
             symbol: "command.square",
             badge: "Reference"
         ) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Tokens.Space.regular) {
                 shortcutGroup("The clipboard picker", [
                     (["⇧", "⌘", "V"], "Open the picker (works in any app)"),
                     (["↑", "↓"], "Move the selection"),
@@ -278,7 +279,7 @@ struct HelpView: View {
                     (["⌘", "⏎"], "Use the composed / rewritten text"),
                 ])
                 Text("The picker's hotkey (⇧⌘V) is fixed. Everything else — pause, pull, privacy hold, Check for Updates — lives in the menu-bar menu.")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
+                    .font(Tokens.FontScale.small).foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -290,9 +291,9 @@ struct HelpView: View {
             symbol: "sparkles",
             badge: "Release notes"
         ) {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Tokens.Space.regular) {
                 Text("Every version of TandemClip, newest first.")
-                    .font(.system(size: 12.5)).foregroundColor(.secondary)
+                    .font(Tokens.FontScale.small).foregroundColor(.secondary)
                 ForEach(Array(HelpCatalog.releases.enumerated()), id: \.element.id) { index, release in
                     releaseCard(release, isLatest: index == 0)
                 }
@@ -302,66 +303,68 @@ struct HelpView: View {
     }
 
     private func releaseCard(_ release: HelpRelease, isLatest: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 8) {
-                Text("Version \(release.version)").font(.system(size: 15, weight: .bold))
+        VStack(alignment: .leading, spacing: Tokens.Space.snug) {
+            HStack(spacing: Tokens.Space.tight) {
+                Text("Version \(release.version)").font(Tokens.FontScale.sectionHeader)
                 if isLatest {
                     Text("LATEST")
-                        .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                        .font(Tokens.FontScale.micro).tracking(0.5)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .padding(.horizontal, Tokens.ChipPadding.h).padding(.vertical, Tokens.ChipPadding.v)
                         .background(Tokens.positive, in: Capsule())
                 }
                 Spacer()
-                Text(release.date).font(.system(size: 12)).foregroundColor(.secondary)
+                Text(release.date).font(Tokens.FontScale.small).foregroundColor(.secondary)
             }
             Text(release.highlight)
-                .font(.system(size: 12.5)).foregroundColor(.secondary)
+                .font(Tokens.FontScale.small).foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Divider()
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: Tokens.Space.tight) {
                 ForEach(release.changes) { change in
-                    HStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: Tokens.Space.medium) {
                         Text(change.kind.label.uppercased())
-                            .font(.system(size: 9, weight: .bold)).tracking(0.4)
+                            .font(Tokens.FontScale.micro).tracking(0.4)
                             .foregroundColor(tint(for: change.kind))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .padding(.horizontal, Tokens.ChipPadding.h).padding(.vertical, Tokens.ChipPadding.v)
                             .background(tint(for: change.kind).opacity(0.14), in: Capsule())
                             .frame(width: 68, alignment: .leading)
                             .padding(.top, 1)
                         Text(change.text)
-                            .font(.system(size: 12.5))
+                            .font(Tokens.FontScale.small)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                     }
                 }
             }
         }
-        .padding(16)
+        .padding(Tokens.Space.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11))
-        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.secondary.opacity(0.12)))
+        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: Tokens.Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.card).strokeBorder(Color.secondary.opacity(0.12)))
     }
 
+    /// Semantic color per change kind — added = positive (moss), improved =
+    /// accent (terracotta), fixed = warning (amber). See DESIGN_SYSTEM.md §2.
     private func tint(for kind: ReleaseChangeKind) -> Color {
         switch kind {
         case .added:    return Tokens.positive
         case .improved: return accent
-        case .fixed:    return .orange
+        case .fixed:    return Tokens.warning
         }
     }
 
     private func shortcutGroup(_ title: String, _ items: [(keys: [String], label: String)]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Tokens.Space.tight) {
             Text(title.uppercased())
-                .font(.system(size: 10.5, weight: .bold)).foregroundColor(.secondary)
+                .font(Tokens.FontScale.tiny.weight(.bold)).foregroundColor(.secondary)
                 .tracking(0.4)
-            VStack(spacing: 7) {
+            VStack(spacing: Tokens.Space.row6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(spacing: 10) {
-                        HStack(spacing: 4) { ForEach(item.keys, id: \.self) { keyCap($0) } }
+                    HStack(spacing: Tokens.Space.medium) {
+                        HStack(spacing: Tokens.Space.row) { ForEach(item.keys, id: \.self) { keyCap($0) } }
                             .frame(width: 104, alignment: .leading)
-                        Text(item.label).font(.system(size: 12.5)).foregroundColor(.secondary)
+                        Text(item.label).font(Tokens.FontScale.small).foregroundColor(.secondary)
                         Spacer(minLength: 0)
                     }
                 }
@@ -370,11 +373,13 @@ struct HelpView: View {
     }
 
     private func keyCap(_ text: String) -> some View {
+        // Rounded face is deliberate for keycaps — the one place SF Rounded
+        // is used outside brand moments (DESIGN_SYSTEM.md §8).
         Text(text)
             .font(.system(size: 11, weight: .medium, design: .rounded))
-            .padding(.horizontal, 6).padding(.vertical, 3)
+            .padding(.horizontal, Tokens.ChipPadding.h).padding(.vertical, 3)
             .background(Color.secondary.opacity(0.14))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .clipShape(RoundedRectangle(cornerRadius: Tokens.Radius.control))
     }
 
     /// Shared detail chrome: a pinned header (symbol + title + category badge)
@@ -384,26 +389,26 @@ struct HelpView: View {
         @ViewBuilder _ content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: Tokens.Space.tight) {
+                HStack(spacing: Tokens.Space.medium) {
                     Image(systemName: symbol)
-                        .font(.system(size: 18, weight: .medium)).foregroundColor(accent)
-                    Text(title).font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: Tokens.IconSize.regular, weight: .medium)).foregroundColor(accent)
+                    Text(title).font(Tokens.FontScale.title)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(badge.uppercased())
-                    .font(.system(size: 10, weight: .bold)).foregroundColor(.secondary)
+                    .font(Tokens.FontScale.micro).foregroundColor(.secondary)
                     .tracking(0.5)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .padding(.horizontal, Tokens.Space.tight).padding(.vertical, 3)
                     .background(Color.secondary.opacity(0.10), in: Capsule())
             }
-            .padding(.horizontal, 28).padding(.top, 22).padding(.bottom, 16)
+            .padding(.horizontal, Tokens.Space.pane).padding(.top, Tokens.Space.wide).padding(.bottom, Tokens.Space.regular)
             Divider()
             ScrollView {
                 content()
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 28).padding(.vertical, 22)
+                    .padding(.horizontal, Tokens.Space.pane).padding(.vertical, Tokens.Space.wide)
             }
         }
     }
@@ -432,20 +437,20 @@ struct HelpMarkdown: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Tokens.Space.snug) {
             ForEach(blocks) { block in
                 switch block {
                 case .paragraph(let text):
                     styled(text)
-                        .font(.system(size: 13.5)).lineSpacing(3)
+                        .font(Tokens.FontScale.body).lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 case .bullets(let items):
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: Tokens.Space.row6) {
                         ForEach(items, id: \.self) { item in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text("•").font(.system(size: 13.5)).foregroundColor(.secondary)
+                            HStack(alignment: .firstTextBaseline, spacing: Tokens.Space.tight) {
+                                Text("•").font(Tokens.FontScale.body).foregroundColor(.secondary)
                                 styled(item)
-                                    .font(.system(size: 13.5)).lineSpacing(3)
+                                    .font(Tokens.FontScale.body).lineSpacing(3)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
