@@ -254,6 +254,24 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+/// Bullet-list section footer: one line per setting — bold setting name, plain
+/// explanation, hanging indent — instead of a wall of prose.
+struct SettingsBullets: View {
+    let items: [(term: String, text: String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(items, id: \.term) { item in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•")
+                    (Text(item.term).fontWeight(.semibold) + Text(" — ") + Text(item.text))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
 /// The house dropdown for Settings rows: a compact menu button pinned to the
 /// row's trailing edge whose label always reads the current selection (with a
 /// checkmark on it inside the menu). Replaces Form's default Picker so every
@@ -365,7 +383,10 @@ struct SettingsView: View {
             } header: {
                 Text("Startup")
             } footer: {
-                Text("Open TandemClip automatically when you log in. \"Start paused\" launches it with syncing off until you hit Resume in the menu — useful if you don't want anything shared right after boot.")
+                SettingsBullets(items: [
+                    ("Launch at login", "open TandemClip automatically when you log in."),
+                    ("Start paused", "launch with syncing off until you hit Resume in the menu — nothing is shared right after boot."),
+                ])
             }
             Section {
                 TextField("Display name", text: $model.deviceDisplayName,
@@ -373,14 +394,18 @@ struct SettingsView: View {
             } header: {
                 Text("This Mac")
             } footer: {
-                Text("The name other Macs see for this computer.")
+                SettingsBullets(items: [
+                    ("Display name", "the name your other Macs see for this computer."),
+                ])
             }
             Section {
                 Toggle("Verbose logging", isOn: $model.verboseLogging)
             } header: {
                 Text("Diagnostics")
             } footer: {
-                Text("Detailed logs are written to /tmp/tandemclip.err.log.")
+                SettingsBullets(items: [
+                    ("Verbose logging", "records detailed activity (connections, syncs) to /tmp/tandemclip.err.log — useful when chasing a problem, otherwise leave it off."),
+                ])
             }
         }
         .formStyle(.grouped)
@@ -410,7 +435,12 @@ struct SettingsView: View {
             } header: {
                 Text("Behavior")
             } footer: {
-                Text("Mirror sends every copy to your other Macs the moment you copy it; Manual shares only when a Mac explicitly pulls. The role limits direction — a receive-only Mac never sends anything. Peer preview controls how much other Macs can see about your current clip before pulling it. \"Apply incoming clips automatically\" makes clips copied on other Macs land on this clipboard without you clicking anything, even in Manual mode (Mirror always applies automatically).")
+                SettingsBullets(items: [
+                    ("Mode", "Mirror sends every copy to your other Macs the moment you copy it. Manual keeps your copies here until another Mac asks for them."),
+                    ("This Mac's role", "limits direction. Receive only never sends anything from this Mac; Send only never takes anything in."),
+                    ("Peer preview", "what other Macs can see about your current clip before pulling it: just its age and size, a snippet of the text, or nothing at all."),
+                    ("Apply incoming clips automatically", "clips copied on your other Macs land on this clipboard by themselves. Mirror always does this; turn it on to get the same in Manual mode."),
+                ])
             }
             Section {
                 SettingsDropdown(title: "Max clipboard size",
@@ -419,7 +449,9 @@ struct SettingsView: View {
             } header: {
                 Text("Limits")
             } footer: {
-                Text("Content larger than this falls back to plain text, or is skipped if there's no text.")
+                SettingsBullets(items: [
+                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text."),
+                ])
             }
         }
         .formStyle(.grouped)
@@ -436,7 +468,11 @@ struct SettingsView: View {
             } header: {
                 Text("What to sync")
             } footer: {
-                Text("Plain text always syncs. Each copy carries every enabled representation so paste keeps full fidelity. Copied files always appear in your history and can be pulled or drop-shared either way — the Files toggle only controls whether their content is sent to your Macs automatically.")
+                SettingsBullets(items: [
+                    ("Plain text", "always syncs — it can't be turned off."),
+                    ("Rich text / Images", "each copy carries every enabled representation, so pasting on the other Mac keeps full formatting."),
+                    ("Files (by content)", "whether copied files are sent to your Macs automatically. Even when off, file copies land in your history and can still be pulled or drop-shared."),
+                ])
             }
             Section {
                 SettingsDropdown(title: "Received-files limit",
@@ -447,7 +483,9 @@ struct SettingsView: View {
             } header: {
                 Text("Storage")
             } footer: {
-                Text("Files received from your Macs are cached on disk so paste keeps working: currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically — picking them from history brings them back.")
+                SettingsBullets(items: [
+                    ("Received-files limit", "files from your Macs are cached on disk so paste keeps working — currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically; picking them from history brings them back."),
+                ])
             }
             Section {
                 Toggle("Keep clipboard history", isOn: $model.historyEnabled)
@@ -463,7 +501,11 @@ struct SettingsView: View {
             } header: {
                 Text("History")
             } footer: {
-                Text("History is in-memory for this session only. Open the picker with ⇧⌘V.")
+                SettingsBullets(items: [
+                    ("Keep clipboard history", "remember recent clips for this session (in memory only — cleared when the app quits). Browse them in the picker with ⇧⌘V."),
+                    ("Keep in history / Show in picker", "how many clips are remembered, and how many of those the picker lists."),
+                    ("Clear History Now", "wipes the session history and the received-files cache from disk."),
+                ])
             }
         }
         .formStyle(.grouped)
@@ -476,7 +518,9 @@ struct SettingsView: View {
             Section {
                 Toggle("Enable AI text cleanup", isOn: $model.aiEnabled)
             } footer: {
-                Text("Adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below — there is no middleman.")
+                SettingsBullets(items: [
+                    ("Enable AI text cleanup", "adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below — there is no middleman."),
+                ])
             }
             Section {
                 // Applying a preset fills the fields below; the label reflects
@@ -517,7 +561,12 @@ struct SettingsView: View {
             } header: {
                 Text("Endpoint")
             } footer: {
-                Text("Any OpenAI-compatible chat-completions server works: Anthropic, OpenAI, OpenRouter, Groq, or a local Ollama / LM Studio — the local options keep text entirely on your machine. The API key is stored in the Keychain, never in preferences.")
+                SettingsBullets(items: [
+                    ("Provider preset", "fills the fields below for a known provider. Any OpenAI-compatible server works — a local Ollama / LM Studio keeps text entirely on your machine."),
+                    ("Endpoint URL / Model", "where requests go and which model handles them."),
+                    ("API key", "stored in the Keychain, never in preferences. Local servers usually need none."),
+                    ("Test Connection", "sends a tiny real request and reports the round-trip time."),
+                ])
             }
             Section {
                 SettingsDropdown(title: "Preset",
@@ -546,12 +595,17 @@ struct SettingsView: View {
             } header: {
                 Text("Tone presets")
             } footer: {
-                Text("Each preset is a system prompt the compose area can apply (Clean up, Email reply, Summarize, Translate, …). Input is capped at \(Config.aiMaxInputChars / 1000)k characters per run.")
+                SettingsBullets(items: [
+                    ("Tone presets", "each is a rewrite instruction the compose area can apply — Clean up, Email reply, Summarize, Translate, or your own. Edit the prompt here; pick which to run from the compose area."),
+                    ("Input cap", "at most \(Config.aiMaxInputChars / 1000)k characters are sent per run, so a giant clip can't become a giant bill."),
+                ])
             }
             Section {
                 Toggle("Adapt tone to the destination app", isOn: $model.aiAutoTone)
             } footer: {
-                Text("When on, the rewrite is steered by the app you opened the picker over — professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.")
+                SettingsBullets(items: [
+                    ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over — professional for email, casual for chat, literal for code editors and terminals, structured prose for notes."),
+                ])
             }
             Section {
                 TextField("Fallback endpoint URL", text: $model.aiFallbackEndpoint,
@@ -563,7 +617,9 @@ struct SettingsView: View {
             } header: {
                 Text("Fallback")
             } footer: {
-                Text("Tried once when the primary endpoint fails with a rate limit, server error, or network problem before producing any output. Config mistakes (bad key, wrong model) don't fail over.")
+                SettingsBullets(items: [
+                    ("Fallback endpoint", "tried once when the primary fails with a rate limit, server error, or network problem before producing any output. Config mistakes (bad key, wrong model) don't fail over — they'd fail everywhere."),
+                ])
             }
         }
         .formStyle(.grouped)
@@ -588,7 +644,11 @@ struct SettingsView: View {
             } header: {
                 Text("Pairing code")
             } footer: {
-                Text("Enter the same code on every Mac. Applying re-keys the connection immediately — peers reconnect once they share the new code (no relaunch).")
+                SettingsBullets(items: [
+                    ("Pairing code", "the shared secret that encrypts everything. Enter the same code on every Mac you want in the group."),
+                    ("Apply", "re-keys the connection immediately — peers drop until they also have the new code (no relaunch needed)."),
+                    ("Regenerate", "makes a fresh strong code; copy it to your other Macs afterwards."),
+                ])
             }
 
             Section {
@@ -615,9 +675,11 @@ struct SettingsView: View {
             } header: {
                 Text("Trusted devices")
             } footer: {
-                Text(model.allowlistEnabled
-                     ? "Only the devices you check can sync. Unchecking a device revokes it immediately, even if it still knows the pairing code — the safe way to cut off a Mac you've stopped using."
-                     : "Off: any Mac with the pairing code can sync. Turn this on to pin specific devices and to be able to revoke one without changing the code everywhere.")
+                SettingsBullets(items: [
+                    ("Only sync with trusted devices", model.allowlistEnabled
+                        ? "on — only the devices you check can sync. Unchecking one revokes it immediately, even if it still knows the pairing code: the safe way to cut off a Mac you've stopped using."
+                        : "off — any Mac with the pairing code can sync. Turn this on to pin specific devices and revoke one without changing the code everywhere."),
+                ])
             }
 
             Section {
@@ -674,7 +736,10 @@ struct SettingsView: View {
             } header: {
                 Text("Wi-Fi networks")
             } footer: {
-                Text("Sync runs only on the Wi-Fi networks listed above. On Ethernet/VPN (no Wi-Fi to match), sync pauses by default — turn on the option above to allow it instead.")
+                SettingsBullets(items: [
+                    ("Wi-Fi networks", "when the list is on, sync runs only on these networks — nothing is shared on coffee-shop Wi-Fi you haven't listed."),
+                    ("Allow sync when Wi-Fi can't be verified", "on Ethernet or VPN there's no network name to match, so sync pauses by default; turn this on to allow it there instead."),
+                ])
             }
         }
         .formStyle(.grouped)
