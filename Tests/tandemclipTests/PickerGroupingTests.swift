@@ -75,6 +75,10 @@ final class PickerGroupingTests: XCTestCase {
         XCTAssertEqual(archive.category, .file)
         XCTAssertEqual(archive.contentLabel, "file")
 
+        // Dragged emails (Outlook/Mail file promises → .eml/.msg) are documents.
+        let email = ClipSnapshot(parts: [:], files: [ClipFile(name: "Quarterly Update.eml", data: Data([1]))])
+        XCTAssertEqual(email.category, .document)
+
         let mixed = ClipSnapshot(parts: [:], files: [ClipFile(name: "a.pdf", data: Data([1])),
                                                      ClipFile(name: "b.zip", data: Data([2]))])
         XCTAssertEqual(mixed.category, .file)
