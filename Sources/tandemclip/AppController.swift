@@ -41,7 +41,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             onCheckForUpdates: { [weak self] in self?.updater.checkForUpdates() },
             onOpenPicker: { [weak self] in self?.picker.show() },
             onOpenAbout: { [weak self] in self?.infoWindows.showAbout() },
-            onOpenHelp: { [weak self] in self?.infoWindows.showHelp() })
+            onOpenHelp: { [weak self] in self?.infoWindows.showHelp() },
+            onOpenWelcome: { [weak self] in self?.showWelcome() })
         self.menuBar = menuBar
         engine.onStatusChange = { [weak self, weak menuBar] in
             menuBar?.refresh()
@@ -62,6 +63,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         engine.start()
+
+        // First launch: show the Welcome window once (flag flips so it won't
+        // reappear; still reopenable from the menu ▸ Getting Started). Skipped
+        // under the picker test hook so automated launches stay clean.
+        if !config.hasSeenWelcome, ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_PICKER"] == nil {
+            config.hasSeenWelcome = true
+            showWelcome()
+        }
+    }
+
+    /// Present the Welcome window, wiring its buttons to Settings tabs / Help.
+    private func showWelcome() {
+        infoWindows.showWelcome(
+            openSettings: { [weak self] tab in self?.settingsWindow.show(selecting: tab) },
+            openHelp: { [weak self] in self?.infoWindows.showHelp() })
     }
 
     func applicationWillTerminate(_ notification: Notification) {
