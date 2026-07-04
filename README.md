@@ -1,13 +1,13 @@
 # TandemClip
 
 LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
-control — text, rich text, and images shared between machines you've paired
-with a shared code. Runs as a menu-bar-only background agent.
+control — text, rich text, images, files, and folders shared between machines
+you've paired with a shared code. Runs as a menu-bar-only background agent.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 
-**Status:** Shipping (text). Signed, notarized, auto-updating.
+**Status:** Shipping. Signed, notarized, auto-updating; open source (MIT).
 **Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
 
 ## Install
@@ -189,7 +189,8 @@ If these are MDM-managed machines, before relying on this:
 
 `Scripts/release.sh` cuts a full release in one command: builds → bundles the
 Sparkle framework → signs → notarizes the DMG → generates the EdDSA-signed
-`appcast.xml` → (with `PUBLISH=1` and a `PUBLISH_DEST`) uploads the DMG,
+`appcast.xml` → syncs the Homebrew cask (`Casks/tandemclip.rb`) to the new
+version + DMG hash → (with `PUBLISH=1` and a `PUBLISH_DEST`) uploads the DMG,
 appcast, and version-pinned landing page to your web host.
 
 ```sh
@@ -223,13 +224,14 @@ or user identifiers; crashes/errors only (no performance tracing).
 
 To enable: create a `tandemclip` Sentry project, paste its DSN into
 `Packaging/Info.plist` → `SentryDSN`, and rebuild. For symbolicated stack
-traces, set `SENTRY_AUTH_TOKEN` (+ `brew install getsentry/tools/sentry-cli`)
-and `release.sh` uploads dSYMs automatically.
+traces, set `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` (+ `brew install
+getsentry/tools/sentry-cli`) and `release.sh` uploads dSYMs automatically.
 
 ## Roadmap
 
-Text, rich text, and images sync today (each copy carries every enabled
-representation, so paste keeps full fidelity). Deferred:
+Text, rich text, images, files, and folders all sync today (each copy carries
+every enabled representation, so paste keeps full fidelity). The list below is
+the full feature history — shipped (checked) and still planned (unchecked):
 
 - [x] In-app pairing-code entry + Keychain storage; PBKDF2 key derivation
 - [x] Rich text (`public.rtf`)
