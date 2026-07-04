@@ -22,6 +22,19 @@ brew install --cask tandemclip
 macOS 13+ (Ventura) on Apple Silicon. The app is Developer ID signed, notarized,
 and auto-updates via Sparkle.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/picker.png" width="680" alt="The ⇧⌘V clipboard picker — a searchable, shared timeline of recent clips from every Mac, grouped per-device with quick-pick ⌘1–9" />
+  <br />
+  <em>The ⇧⌘V picker — one searchable timeline of clips from every Mac in your fleet.</em>
+</p>
+
+| Guided settings | Bring-your-own-LLM |
+| :---: | :---: |
+| <img src="docs/screenshots/settings.png" alt="Settings window with plain-English descriptions on every option" /> | <img src="docs/screenshots/compose.png" alt="Compose area: clean up text or ask your clipboard, using a local or hosted model" /> |
+| Plain-English options on every setting | Clean up or *ask* a clip with a local (Ollama/LM Studio) or hosted model |
+
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
