@@ -11,6 +11,18 @@ with a shared code. Runs as a menu-bar-only background agent.
 **Status:** Shipping (text). Signed, notarized, auto-updating.
 **Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
 
+## Install
+
+Download the signed DMG from [tandemclip.com](https://tandemclip.com), or use Homebrew:
+
+```sh
+brew tap anatoliv/tandemclip https://github.com/anatoliv/tandemclip
+brew install --cask tandemclip
+```
+
+macOS 13+ (Ventura) on Apple Silicon. The app is Developer ID signed, notarized,
+and auto-updates via Sparkle.
+
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is

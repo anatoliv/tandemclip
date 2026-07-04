@@ -9,3 +9,6 @@ dist/
 
 # Internal, not for publication (competitive/pricing strategy)
 docs/COMPETITIVE.md
+
+# Internal launch/credit playbook + marketing drafts (not for publication)
+docs/launch/

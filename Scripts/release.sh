@@ -96,6 +96,19 @@ else
     exit 1
 fi
 
+# 4b. Sync the Homebrew cask to this release. The cask pins version + sha256, so
+#     without this it rots to an old DMG (same failure mode the landing page had).
+#     Rewrites the committed Casks/tandemclip.rb in place; commit it with the bump.
+CASK="Casks/tandemclip.rb"
+if [[ -f "$CASK" ]]; then
+    /usr/bin/sed -i '' -E \
+        -e "s/^  version \"[0-9.]+\"/  version \"${VERSION}\"/" \
+        -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"${SHA}\"/" \
+        "$CASK"
+    echo "==> Cask synced: $CASK -> v$VERSION"
+    echo "    (commit Casks/tandemclip.rb alongside the version bump)"
+fi
+
 # 5. Publish DMG + appcast + landing page to the web host (PUBLISH=1). Serves
 #    the exact SUFeedURL. The landing page's download links are version-pinned,
 #    so render the current VERSION into a copy of web/site/index.html before
