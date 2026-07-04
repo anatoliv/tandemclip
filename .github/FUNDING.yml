@@ -1,8 +1,8 @@
-# Shows a "Sponsor" button on the GitHub repo. Enable GitHub Sponsors on the
-# anatoliv account for this to activate, or swap in another platform below.
-github: [anatoliv]
+# GitHub reads this to show a "Sponsor" button on the repo. No funding platform
+# is enabled right now — uncomment and fill in one of the lines below to turn
+# the button on.
 
-# Alternatives (uncomment and fill in if you prefer these instead of / alongside):
+# github: [anatoliv]            # requires GitHub Sponsors set up on the account
 # buy_me_a_coffee: your-handle
 # ko_fi: your-handle
 # custom: ["https://tandemclip.com/"]
