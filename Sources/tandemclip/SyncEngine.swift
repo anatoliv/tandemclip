@@ -663,8 +663,8 @@ final class SyncEngine {
         what it is. Output only the title - no quotes, no trailing punctuation.
         """
 
-    /// Generate a 3–7 word title for a long text clip (tonebox's title
-    /// pattern), then relabel the history entry. Opt-in; never runs during
+    /// Generate a 3–7 word title for a long text clip, then relabel the
+    /// history entry. Opt-in; never runs during
     /// privacy hold or on a secret-guard-held clip.
     private func maybeSmartLabel(_ snap: ClipSnapshot, _ hash: String) {
         guard config.aiSmartLabels, !config.privacyHold, heldSecret?.hash != hash,

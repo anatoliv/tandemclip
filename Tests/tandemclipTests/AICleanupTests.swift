@@ -21,7 +21,7 @@ final class AICleanupTests: XCTestCase {
         let messages = body?["messages"] as? [[String: String]]
         XCTAssertEqual(messages?.count, 2)
         XCTAssertEqual(messages?.first?["role"], "system")
-        // Deliberately minimal, like tonebox: no temperature / max_tokens.
+        // Deliberately minimal: no temperature / max_tokens.
         XCTAssertNil(body?["temperature"])
         XCTAssertNil(body?["max_tokens"])
     }
@@ -134,7 +134,7 @@ final class AICleanupTests: XCTestCase {
         }
     }
 
-    func testRetryPredicateMatchesToneboxRules() {
+    func testRetryPredicateMatchesFallbackRules() {
         XCTAssertTrue(AIClient.isRetryable(AIClient.AIError.httpStatus(429, "")))
         XCTAssertTrue(AIClient.isRetryable(AIClient.AIError.httpStatus(503, "")))
         XCTAssertTrue(AIClient.isRetryable(URLError(.timedOut)))

@@ -244,8 +244,7 @@ struct WelcomeView: View {
 
 /// Two-pane help center: a left sidebar for navigation (search + category
 /// sections + topic rows) and a right detail pane that renders the selected
-/// article. Modeled on tonebox's HelpView so the two apps share a shape, but
-/// with tandemclip's leaner plain-text topic model rendered through a small
+/// article. A lean plain-text topic model rendered through a small
 /// inline Markdown formatter (no MarkdownUI dependency).
 struct HelpView: View {
     /// Sidebar-selection id for the Welcome / overview landing panel.

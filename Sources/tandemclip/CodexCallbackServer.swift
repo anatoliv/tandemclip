@@ -5,7 +5,7 @@ import Network
 /// `127.0.0.1:1455` (the only port OpenAI's Hydra allow-list accepts for the
 /// Codex client), parses `?code=…&state=…` out of the browser's GET, returns
 /// a small "you can close this window" page, and resolves the awaiting async
-/// call. Ported from tonebox.
+/// call.
 ///
 /// **Design.** All mutable state is touched exclusively on the dedicated
 /// `queue`, which is why the class is `@unchecked Sendable` — the contract is

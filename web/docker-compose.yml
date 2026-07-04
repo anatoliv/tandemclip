@@ -1,3 +1,8 @@
+# Static landing + download site for tandemclip.com. The origin nginx serves
+# plain HTTP; put it behind a reverse proxy that terminates TLS and redirects
+# HTTP -> HTTPS (the appcast feed must be served over HTTPS). `proxy_net` is an
+# external Docker network shared with that proxy — create it once with
+# `docker network create proxy_net`, or swap in your own published `ports:`.
 services:
   web:
     image: nginx:1.27-alpine

@@ -6,7 +6,7 @@
 #   Scripts/make-app.sh                     # build + ad-hoc sign (local use)
 #   IDENTITY="Developer ID Application: Name (TEAMID)" Scripts/make-app.sh
 #                                           # build + Developer ID sign (distributable)
-#   IDENTITY="Developer ID Application: ..." NOTARY_PROFILE=tonebox-notarize \
+#   IDENTITY="Developer ID Application: ..." NOTARY_PROFILE=your-notary-profile \
 #     Scripts/make-app.sh                   # ...and notarize + staple
 #
 # NOTARY_PROFILE is a notarytool keychain profile created once with:

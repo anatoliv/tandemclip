@@ -1,10 +1,10 @@
 import Foundation
 
-/// Minimal LLM client for the AI text-cleanup feature, modeled on tonebox's
-/// LLMClient: hand-rolled URLSession against the OpenAI-compatible
+/// Minimal LLM client for the AI text-cleanup feature: a hand-rolled
+/// URLSession against the OpenAI-compatible
 /// `/v1/chat/completions` wire format so one client serves OpenAI, Anthropic
 /// (compat shim), OpenRouter, Groq, Ollama, LM Studio, … No vendor SDK, no
-/// temperature/max_tokens — defaults + prompt engineering, like tonebox.
+/// temperature/max_tokens — defaults + prompt engineering.
 /// Calls go straight from this Mac to the configured endpoint; nothing is
 /// proxied.
 struct AIClient {
@@ -34,7 +34,7 @@ struct AIClient {
         }
     }
 
-    /// Which credential the request carries. Mirrors tonebox's AuthStrategy:
+    /// Which credential the request carries:
     /// the API-key/local path (`Authorization: Bearer`), Azure OpenAI (the key
     /// in an `api-key:` header instead), and the ChatGPT-subscription Codex
     /// path (an OAuth bearer fetched per call so refresh-on-expiry is
@@ -114,7 +114,6 @@ struct AIClient {
     }
 
     // Generous per-token gap for cold local models; hard cap on the whole call.
-    // (Same budgets as tonebox.)
     private static let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 120
@@ -271,7 +270,7 @@ struct AIClient {
         return event.type == "response.output_text.delta" ? event.delta : nil
     }
 
-    /// Map failures to actionable text (tonebox's friendlyMessage, condensed).
+    /// Map failures to actionable text.
     static func friendlyMessage(for error: Error) -> String {
         if let e = error as? AIError { return e.errorDescription ?? "AI request failed." }
         if let e = error as? URLError {
@@ -309,7 +308,7 @@ struct AIClient {
 }
 
 extension AIClient {
-    /// Fallback endpoint (tonebox pattern): retried once when the primary
+    /// Fallback endpoint: retried once when the primary
     /// fails with a *retryable* error before producing any output. Mid-stream
     /// failover is deliberately avoided — it would splice two answers.
     static func fallbackFromConfig(_ config: Config) -> AIClient? {
@@ -333,7 +332,7 @@ extension AIClient {
 
     /// Retry on rate limits, server errors, and network trouble; never on
     /// config problems (bad key, wrong model/URL) — those fail the same way
-    /// everywhere. Same predicate as tonebox's shouldFallback.
+    /// everywhere.
     static func isRetryable(_ error: Error) -> Bool {
         if let e = error as? AIError, case let .httpStatus(code, _) = e {
             return code == 429 || (500...599).contains(code)
@@ -372,7 +371,7 @@ extension AIClient {
         }
     }
 
-    // MARK: Changelog sentinel (tonebox's §§CHANGES§§ provenance trick)
+    // MARK: Changelog sentinel (§§CHANGES§§ provenance)
 
     /// Appended to every cleanup system prompt: the model emits the rewrite,
     /// then a sentinel line, then a one-sentence changelog the UI shows
@@ -397,7 +396,7 @@ extension AIClient {
     }
 }
 
-/// A named prompt preset for the compose area (tonebox's VoiceMode pattern):
+/// A named prompt preset for the compose area:
 /// user-editable, persisted as JSON, seeded with a bundled set.
 struct AIPreset: Codable, Identifiable, Equatable {
     var id: String
@@ -420,7 +419,7 @@ struct AIPreset: Codable, Identifiable, Equatable {
 }
 
 /// Classify the app the user was in when they opened the picker and steer the
-/// rewrite's tone accordingly — tonebox's auto-tone-by-destination pattern.
+/// rewrite's tone accordingly — auto-tone by destination app.
 enum AIAutoTone {
     enum Destination { case email, chat, codeOrTerminal, notes }
 
@@ -462,7 +461,7 @@ enum AIAutoTone {
     }
 }
 
-/// How the active LLM request authenticates. Mirrors tonebox's LLMAuthMode:
+/// How the active LLM request authenticates:
 /// the classic API-key/local path, Azure (api-key header), and the ChatGPT
 /// subscription via the Codex OAuth backend.
 enum LLMAuthMode: String, CaseIterable, Identifiable {
@@ -482,7 +481,7 @@ enum LLMAuthMode: String, CaseIterable, Identifiable {
 }
 
 /// Provider presets (endpoint + a sensible cheap default model + implied auth
-/// mode), mirroring tonebox's curated LLMProviderPreset list. Picking one fills
+/// mode), a curated provider-preset list. Picking one fills
 /// the endpoint/model fields and switches the auth mode; the key (or ChatGPT
 /// sign-in) always comes from the user. Curated cost-first: OpenAI is here
 /// because most people start there; everything else is a way to spend less.

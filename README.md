@@ -4,6 +4,10 @@ LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
 control — text, rich text, and images shared between machines you've paired
 with a shared code. Runs as a menu-bar-only background agent.
 
+[![CI](https://github.com/anatoliv/tandemclip/actions/workflows/ci.yml/badge.svg)](https://github.com/anatoliv/tandemclip/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
+
 **Status:** Shipping (text). Signed, notarized, auto-updating.
 **Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
 
@@ -143,7 +147,12 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tandemclip.plist
 (Alternatively, just add `TandemClip.app` to **System Settings → General →
 Login Items**.)
 
-Logs: `/tmp/tandemclip.out.log`, `/tmp/tandemclip.err.log`.
+Logs go to the unified logging system (not world-readable files). Enable
+**verbose** in Settings, then read them with Console.app or:
+
+```sh
+log stream --predicate 'process == "tandemclip"'
+```
 
 ### Bare-binary install (no bundle)
 
@@ -169,13 +178,14 @@ If these are MDM-managed machines, before relying on this:
 
 `Scripts/release.sh` cuts a full release in one command: builds → bundles the
 Sparkle framework → signs → notarizes the DMG → generates the EdDSA-signed
-`appcast.xml` → (with `PUBLISH=1`) publishes both to the web-01 site dir behind
-`https://tandemclip.com`.
+`appcast.xml` → (with `PUBLISH=1` and a `PUBLISH_DEST`) uploads the DMG,
+appcast, and version-pinned landing page to your web host.
 
 ```sh
 # bump CFBundleShortVersionString / CFBundleVersion in Packaging/Info.plist first
 IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-NOTARY_PROFILE="your-notary-profile" PUBLISH=1 \
+NOTARY_PROFILE="your-notary-profile" \
+PUBLISH=1 PUBLISH_DEST="user@host:/srv/tandemclip/" \
 Scripts/release.sh
 ```
 
@@ -187,14 +197,15 @@ Every installed copy then auto-updates via Sparkle (feed: `SUFeedURL` in
 > ~20s). If you build by hand, pass that flag.
 
 The public landing + download site is a static `nginx` container
-(`web/docker-compose.yml`) fronted by nginx-proxy-manager with a Let's Encrypt
-cert — the same pattern as its sibling apps on web-01. The origin `nginx` listens
-on plain HTTP (`web/nginx/default.conf`); **the fronting proxy must enforce HTTPS
-and redirect HTTP → HTTPS** for the `SUFeedURL` host. Update *integrity* does not
-depend on this — every build is EdDSA-signed (`SUPublicEDKey`) and Sparkle refuses
-an unsigned or version-regressed appcast — but serving the feed over plain HTTP
-would let a network MITM stall or withhold security updates. Verify with
-`curl -sSI http://tandemclip.com/appcast.xml` (expect a 301/308 to `https://`).
+(`web/docker-compose.yml`) meant to sit behind a reverse proxy that terminates
+TLS (e.g. nginx-proxy-manager or Caddy with Let's Encrypt). The origin `nginx`
+listens on plain HTTP (`web/nginx/default.conf`); **the fronting proxy must
+enforce HTTPS and redirect HTTP → HTTPS** for the `SUFeedURL` host. Update
+*integrity* does not depend on this — every build is EdDSA-signed
+(`SUPublicEDKey`) and Sparkle refuses an unsigned or version-regressed appcast —
+but serving the feed over plain HTTP would let a network MITM stall or withhold
+security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`
+(expect a 301/308 to `https://`).
 
 ## Crash reporting (Sentry)
 
@@ -206,13 +217,6 @@ To enable: create a `tandemclip` Sentry project, paste its DSN into
 `Packaging/Info.plist` → `SentryDSN`, and rebuild. For symbolicated stack
 traces, set `SENTRY_AUTH_TOKEN` (+ `brew install getsentry/tools/sentry-cli`)
 and `release.sh` uploads dSYMs automatically.
-
-## Uptime
-
-The public site is probed every 30s by the web-01 monitoring stack
-(`blackbox` → prometheus), with a `tandemclip-down` Grafana rule that pages
-`#critical-alerts` on Discord if `https://tandemclip.com/` stops returning 200
-for >2 min.
 
 ## Roadmap
 
@@ -245,4 +249,26 @@ representation, so paste keeps full fidelity). Deferred:
 - [x] Chunked transfers — clips up to 100 MB travel as signed 1 MB slices
 - [ ] Share-sheet extension (NSExtension appex — needs an Xcode target; Services covers the use case today)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
+
+## Contributing
+
+Issues and pull requests are welcome. To build and test locally:
+
+```sh
+swift build --build-system native   # native engine; the default hangs on Sparkle
+swift test  --build-system native   # runs the test suite
 ```
+
+Please keep changes focused, run the tests, and match the existing style. The
+design system (`docs/design/DESIGN_SYSTEM.md`) is enforced by a drift lint in
+`Scripts/check-release.sh` — views draw from `Tokens`, not raw numbers.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the threat model and how to report a
+vulnerability. In short: LAN-only, PSK-TLS 1.3, signed device identity, no
+cloud or relay.
+
+## License
+
+Released under the [MIT License](LICENSE).

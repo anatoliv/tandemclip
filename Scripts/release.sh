@@ -2,16 +2,18 @@
 #
 # Build a distributable TandemClip release: signed + notarized .app, packaged
 # into a signed + notarized + stapled DMG, plus (when a Sparkle key is present)
-# an ed25519-signed appcast <item> for auto-update. Mirrors tonebox's flow.
+# an ed25519-signed appcast <item> for auto-update.
 #
 # Usage:
 #   IDENTITY="Developer ID Application: Name (TEAMID)" \
-#   NOTARY_PROFILE="tonebox-notarize" \
+#   NOTARY_PROFILE="your-notary-profile" \
 #   Scripts/release.sh
 #
 # Optional:
-#   SPARKLE_BIN=/path/to/sign_update   (else auto-located)
+#   SPARKLE_BIN=/path/to/sign_update      (else auto-located)
 #   APPCAST_BASE=https://tandemclip.com   (enclosure URL base; default below)
+#   PUBLISH=1 PUBLISH_DEST=user@host:/path (rsync/scp the DMG + appcast + page)
+#   SENTRY_ORG / SENTRY_PROJECT           (dSYM upload; skipped if org unset)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -43,13 +45,13 @@ if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
     SENTRY_AUTH_TOKEN="$(security find-generic-password -s tandemclip-sentry -w 2>/dev/null || true)"
     export SENTRY_AUTH_TOKEN
 fi
-if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
+if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
     echo "==> Uploading dSYMs to Sentry"
-    sentry-cli debug-files upload --org "${SENTRY_ORG:-your-sentry-org}" \
+    sentry-cli debug-files upload --org "${SENTRY_ORG}" \
         --project "${SENTRY_PROJECT:-tandemclip}" .build 2>&1 | tail -3 || \
         echo "    dSYM upload failed (non-fatal)"
 else
-    echo "WARNING: no SENTRY_AUTH_TOKEN (env or Keychain 'tandemclip-sentry') — shipping without symbolicated crash reports" >&2
+    echo "WARNING: no SENTRY_AUTH_TOKEN + SENTRY_ORG — shipping without symbolicated crash reports" >&2
 fi
 
 # 2. Stage the DMG (app + /Applications drop target) and build it.
@@ -94,13 +96,18 @@ else
     exit 1
 fi
 
-# 5. Publish DMG + appcast + landing page to web-01 (PUBLISH=1). Serves the
-#    exact SUFeedURL. The landing page's download links are version-pinned, so
-#    render the current VERSION into a copy of web/site/index.html before
+# 5. Publish DMG + appcast + landing page to the web host (PUBLISH=1). Serves
+#    the exact SUFeedURL. The landing page's download links are version-pinned,
+#    so render the current VERSION into a copy of web/site/index.html before
 #    publishing — otherwise the "Download" button rots to a DMG that 404s.
+#    Set PUBLISH_DEST to your own scp/rsync target, e.g. user@host:/srv/site/.
 if [[ "${PUBLISH:-}" == "1" ]]; then
-    DEST="user@host:/srv/tandemclip/"
-    echo "==> Publishing to web-01 ($DEST)"
+    DEST="${PUBLISH_DEST:-}"
+    if [[ -z "$DEST" ]]; then
+        echo "error: PUBLISH=1 but PUBLISH_DEST is unset (e.g. user@host:/srv/tandemclip/)" >&2
+        exit 1
+    fi
+    echo "==> Publishing to $DEST"
     scp -q "$DMG" "$DEST"
     [[ -f "$DIST/appcast.xml" ]] && scp -q "$DIST/appcast.xml" "$DEST"
 

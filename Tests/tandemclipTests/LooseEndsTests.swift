@@ -53,7 +53,7 @@ final class LooseEndsTests: XCTestCase {
         XCTAssertTrue(ok("http://localhost:11434/v1/chat/completions"))
         XCTAssertTrue(ok("http://127.0.0.1:1234/v1/chat/completions"))
         XCTAssertTrue(ok("http://mini.local:11434/v1/chat/completions"))
-        XCTAssertTrue(ok("http://192.168.3.20:11434/v1/chat/completions"))
+        XCTAssertTrue(ok("http://192.168.1.10:11434/v1/chat/completions"))
         XCTAssertTrue(ok("http://172.20.1.9:8080/v1/chat/completions"))
         XCTAssertFalse(ok("http://api.example.com/v1/chat/completions"), "key would cross the internet in the clear")
         XCTAssertFalse(ok("http://172.10.1.9:8080/x"), "172.10.x is public space")
