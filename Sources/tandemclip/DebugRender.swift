@@ -30,6 +30,12 @@ enum DebugRender {
         let out = env["TANDEMCLIP_RENDER_OUT"] ?? "/tmp/tandemclip-render.png"
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+        // Unbundled debug binaries have no app icon, so surfaces that show
+        // `NSApp.applicationIconImage` (Welcome, About) render a generic one.
+        // Point TANDEMCLIP_RENDER_ICON at Packaging/AppIcon.icns for a faithful shot.
+        if let iconPath = env["TANDEMCLIP_RENDER_ICON"], let icon = NSImage(contentsOfFile: iconPath) {
+            app.applicationIconImage = icon
+        }
         if let state = env["TANDEMCLIP_RENDER_PICKER"] {
             renderDelegate = PickerRenderDelegate(state: state, out: out)
         } else if env["TANDEMCLIP_RENDER_SETTINGS"] != nil {

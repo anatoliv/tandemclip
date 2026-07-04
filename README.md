@@ -25,15 +25,15 @@ and auto-updates via Sparkle.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/picker.png" width="680" alt="The ⇧⌘V clipboard picker — a searchable, shared timeline of recent clips from every Mac, grouped per-device with quick-pick ⌘1–9" />
+  <img src="docs/screenshots/picker-demo.gif" width="680" alt="The ⇧⌘V picker: browse the shared fleet timeline, preview a clip, then clean it up or ask it with a local or hosted model" />
   <br />
-  <em>The ⇧⌘V picker — one searchable timeline of clips from every Mac in your fleet.</em>
+  <em>The ⇧⌘V picker — browse every Mac's clips, preview them, and clean up or ask a clip with AI.</em>
 </p>
 
-| Guided settings | Bring-your-own-LLM |
+| First run | Guided settings |
 | :---: | :---: |
-| <img src="docs/screenshots/settings.png" alt="Settings window with plain-English descriptions on every option" /> | <img src="docs/screenshots/compose.png" alt="Compose area: clean up text or ask your clipboard, using a local or hosted model" /> |
-| Plain-English options on every setting | Clean up or *ask* a clip with a local (Ollama/LM Studio) or hosted model |
+| <img src="docs/screenshots/welcome.png" alt="First-run Welcome window: it already works, pair your Macs, lock it down" /> | <img src="docs/screenshots/settings.png" alt="Settings window with plain-English descriptions on every option" /> |
+| Works immediately — one pairing code and you're synced | Plain-English options on every setting |
 
 ## Why this exists
 
