@@ -4,7 +4,6 @@ LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
 control — text, rich text, and images shared between machines you've paired
 with a shared code. Runs as a menu-bar-only background agent.
 
-[![CI](https://github.com/anatoliv/tandemclip/actions/workflows/ci.yml/badge.svg)](https://github.com/anatoliv/tandemclip/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 
