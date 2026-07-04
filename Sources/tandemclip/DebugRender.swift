@@ -20,20 +20,26 @@ enum DebugRender {
     /// Returns true (and never actually returns — the app terminates after the
     /// screenshot) when the env var requested a render; false otherwise so the
     /// normal app launch proceeds.
+    /// Strong reference to the app delegate: `NSApplication.delegate` is weak,
+    /// so a freshly-created delegate would be deallocated immediately without
+    /// this. Held for the process lifetime of a render run.
+    private static var renderDelegate: NSApplicationDelegate?
+
     static func runIfRequested() -> Bool {
         let env = ProcessInfo.processInfo.environment
         let out = env["TANDEMCLIP_RENDER_OUT"] ?? "/tmp/tandemclip-render.png"
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         if let state = env["TANDEMCLIP_RENDER_PICKER"] {
-            app.delegate = PickerRenderDelegate(state: state, out: out)
+            renderDelegate = PickerRenderDelegate(state: state, out: out)
         } else if env["TANDEMCLIP_RENDER_SETTINGS"] != nil {
-            app.delegate = SettingsRenderDelegate(tab: env["TANDEMCLIP_RENDER_SETTINGS"] ?? "sync", out: out)
+            renderDelegate = SettingsRenderDelegate(tab: env["TANDEMCLIP_RENDER_SETTINGS"] ?? "sync", out: out)
         } else if env["TANDEMCLIP_RENDER_WELCOME"] != nil {
-            app.delegate = WelcomeRenderDelegate(out: out)
+            renderDelegate = WelcomeRenderDelegate(out: out)
         } else {
             return false
         }
+        app.delegate = renderDelegate
         app.run()
         return true
     }

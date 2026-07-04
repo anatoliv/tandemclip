@@ -20,7 +20,7 @@ final class GlobalHotKey {
         GlobalHotKey.handlers[id] = action
         GlobalHotKey.installHandlerOnce()
 
-        var hkID = EventHotKeyID(signature: OSType(0x54434C50 /* 'TCLP' */), id: id)
+        let hkID = EventHotKeyID(signature: OSType(0x54434C50 /* 'TCLP' */), id: id)
         let status = RegisterEventHotKey(keyCode, modifiers, hkID,
                                          GetApplicationEventTarget(), 0, &ref)
         if status != noErr { GlobalHotKey.handlers[id] = nil; return nil }
