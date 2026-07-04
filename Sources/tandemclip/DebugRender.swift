@@ -29,6 +29,8 @@ enum DebugRender {
             app.delegate = PickerRenderDelegate(state: state, out: out)
         } else if env["TANDEMCLIP_RENDER_SETTINGS"] != nil {
             app.delegate = SettingsRenderDelegate(tab: env["TANDEMCLIP_RENDER_SETTINGS"] ?? "sync", out: out)
+        } else if env["TANDEMCLIP_RENDER_WELCOME"] != nil {
+            app.delegate = WelcomeRenderDelegate(out: out)
         } else {
             return false
         }
@@ -57,6 +59,32 @@ private final class SettingsRenderDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
         )
         window.contentView = NSHostingView(rootView: SettingsView(model: model))
+        window.center(); window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+            let p = Process()
+            p.launchPath = "/usr/sbin/screencapture"
+            p.arguments = ["-l", String(window.windowNumber), "-o", "-x", out]
+            try? p.run(); p.waitUntilExit()
+            NSApp.terminate(nil)
+        }
+    }
+}
+
+/// Renders the first-run Welcome window (env `TANDEMCLIP_RENDER_WELCOME=1`) so
+/// the onboarding layout/copy can be checked without a fresh install.
+private final class WelcomeRenderDelegate: NSObject, NSApplicationDelegate {
+    let out: String
+    var window: NSWindow!
+    init(out: String) { self.out = out }
+
+    func applicationDidFinishLaunching(_: Notification) {
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 660),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false
+        )
+        window.contentView = NSHostingView(rootView: WelcomeView(
+            openSettings: { _ in }, openHelp: {}, dismiss: {}))
         window.center(); window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
