@@ -410,6 +410,14 @@ final class Config {
         set { set("verboseLogging", newValue) }
     }
 
+    /// Whether the first-run Welcome window has been shown. False until the app
+    /// presents it once; flipped true so it doesn't reappear every launch. The
+    /// window stays reopenable from the menu bar ▸ Getting Started.
+    var hasSeenWelcome: Bool {
+        get { defaults.bool(forKey: "hasSeenWelcome") }
+        set { set("hasSeenWelcome", newValue) }
+    }
+
     // MARK: - Security
 
     /// Opt-in device pinning. Off by default: the pairing-code-derived PSK is

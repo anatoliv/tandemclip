@@ -261,7 +261,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         model = SettingsModel(config: config, engine: engine)
     }
 
-    func show() {
+    /// Open Settings, optionally jumping to a specific tab (a `Tab` rawValue
+    /// like "Security" / "AI"). Writing the persisted key handles the
+    /// not-yet-opened case (SettingsView reads it in `onAppear`); the
+    /// notification handles the already-open case.
+    func show(selecting tab: String? = nil) {
+        if let tab { UserDefaults.standard.set(tab, forKey: "settingsSelectedTab") }
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(model: model))
             let w = NSWindow(contentViewController: hosting)
@@ -282,6 +287,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window?.frameAutosaveName.isEmpty ?? true { window?.center() }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
+        if let tab { NotificationCenter.default.post(name: .tandemSelectSettingsTab, object: tab) }
     }
 }
 
@@ -421,6 +427,11 @@ struct SettingsView: View {
         }
         .onChange(of: tab) { t in
             UserDefaults.standard.set(t.rawValue, forKey: "settingsSelectedTab")
+        }
+        // A deep-link (e.g. the Welcome window) asked to jump to a tab while the
+        // window was already open — honor it live.
+        .onReceive(NotificationCenter.default.publisher(for: .tandemSelectSettingsTab)) { note in
+            if let raw = note.object as? String, let t = Tab(rawValue: raw) { tab = t }
         }
     }
 
