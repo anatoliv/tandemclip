@@ -2,8 +2,8 @@ import CryptoKit
 import Foundation
 
 /// Pure functions implementing the OAuth-PKCE flow against
-/// `auth.openai.com` exactly the way the first-party Codex CLI does — ported
-/// verbatim from tonebox so tandemclip's "Sign in with ChatGPT" path speaks
+/// `auth.openai.com` exactly the way the first-party Codex CLI does, so
+/// tandemclip's "Sign in with ChatGPT" path speaks
 /// the same protocol. No I/O state lives here; callers run the flow via
 /// `CodexAuthManager`, this module just produces URLs, hashes, and payloads.
 ///

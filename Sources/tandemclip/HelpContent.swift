@@ -111,7 +111,7 @@ enum HelpCatalog {
         .init(id: "general-appearance", category: "Settings — General", title: "Appearance (light / dark)",
               body: "Sets how TandemClip looks: **System** follows your Mac's light/dark setting and switches with it; **Light** and **Dark** pin the app to that look no matter what the system does. The change applies instantly to the picker, Settings, and these windows, and is remembered. Default is System."),
         .init(id: "general-diagnostics", category: "Settings — General", title: "Verbose logging",
-              body: "Records detailed activity (connections, syncs) to `/tmp/tandemclip.err.log`. Turn it on when chasing a problem, off otherwise."),
+              body: "Records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). Turn it on when chasing a problem, off otherwise."),
 
         // MARK: Settings — Sync (with worked examples for every combination)
         .init(id: "sync-mirror", category: "Settings — Sync", title: "Mode: Mirror",
@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.8", date: "July 3, 2026",
+              highlight: "Now open source.",
+              changes: [
+                .init(.improved, "TandemClip is now open source under the MIT license. No user-facing changes in this release — internal cleanup and project housekeeping."),
+              ]),
         .init(version: "0.22.7", date: "July 3, 2026",
               highlight: "A friendly first run.",
               changes: [
@@ -290,7 +295,7 @@ enum HelpCatalog {
         .init(version: "0.15.0", date: "July 3, 2026",
               highlight: "A warmer look and richer drag-and-drop.",
               changes: [
-                .init(.improved, "Adopted tonebox's design system — terracotta accent, tuned motion, honest toasts."),
+                .init(.improved, "Refreshed the design system — terracotta accent, tuned motion, honest toasts."),
                 .init(.added, "Drag emails from Outlook/Mail, photos from Photos, and images from a browser straight onto the picker."),
               ]),
         .init(version: "0.14.0", date: "July 3, 2026",

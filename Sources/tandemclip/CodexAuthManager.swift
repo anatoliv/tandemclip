@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// Single source of truth for ChatGPT-OAuth sign-in state (ported from
-/// tonebox). The Settings UI observes this; `AIClient`'s OAuth code path calls
+/// Single source of truth for ChatGPT-OAuth sign-in state. The Settings UI
+/// observes this; `AIClient`'s OAuth code path calls
 /// `currentAccessToken()` before every request so a stale access token gets
 /// refreshed transparently.
 ///

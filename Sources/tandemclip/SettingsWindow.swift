@@ -82,7 +82,7 @@ final class SettingsModel: ObservableObject {
         aiProbe = nil
     }
 
-    /// Real end-to-end probe, tonebox-style: tiny request, report latency.
+    /// Real end-to-end probe: tiny request, report latency.
     func testAIConnection() {
         // On the OAuth path always exercise the *real* subscription (via
         // forcedClient), never the degraded-reroute fallback — a success then
@@ -271,7 +271,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let hosting = NSHostingController(rootView: SettingsView(model: model))
             let w = NSWindow(contentViewController: hosting)
             w.title = "TandemClip Settings"
-            // Resizable, tonebox-style: sidebar + roomy detail pane; the
+            // Resizable: sidebar + roomy detail pane; the
             // user can size it to taste and the frame is remembered.
             w.styleMask = [.titled, .closable, .resizable]
             w.minSize = NSSize(width: 680, height: 480)
@@ -395,7 +395,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Sidebar navigation (tonebox's Settings layout): categories on the left,
+    /// Sidebar navigation: categories on the left,
     /// detail pane on the right, both growing with the resizable window. The
     /// selected pane persists across closes.
     var body: some View {
@@ -491,7 +491,7 @@ struct SettingsView: View {
                 Text("Diagnostics")
             } footer: {
                 SettingsBullets(items: [
-                    ("Verbose logging", "records detailed activity (connections, syncs) to /tmp/tandemclip.err.log — useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
+                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app) — useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
                 ])
             }
         }
@@ -598,7 +598,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    // MARK: AI — bring-your-own-LLM text cleanup (tonebox pattern)
+    // MARK: AI — bring-your-own-LLM text cleanup
 
     /// Sign-in status + action for the ChatGPT-OAuth auth mode. Reads the
     /// shared CodexAuthManager so the row reflects live sign-in state.

@@ -1,10 +1,8 @@
 # TandemClip Design System
 
-TandemClip shares one visual family with **Tonebox** (warm paper + terracotta),
-based on **Tonebox Design System v1** (`~/Projects/tonebox/docs/design/DESIGN_SYSTEM.md`).
-This document is the tandemclip-specific adaptation — same language and scale,
-its own domain semantics (clipboard / sync / security instead of
-recording / transcript).
+A small, semantic design system for a menu-bar utility: warm surfaces (paper,
+not system grey), a terracotta accent, a fixed type/space/radius scale, and
+flat, dense, typography-first layout.
 
 **Source of truth for values:** `Sources/tandemclip/Theme.swift` (`Tokens`).
 This doc explains intent; the code enforces it. When they disagree, fix the doc
@@ -17,8 +15,8 @@ numbers appear in a view.
 
 - **Warm surfaces**, not system grey — the app rides paper, not blue.
 - **Crisp, minimal corner radius** — cards are `6`, controls `4`, chips `3`.
-  Never rounded/pill for containers. (Tonebox tried a soft 12–24 scale in app
-  and rejected it: large radii balloon small controls and waste space.)
+  Never rounded/pill for containers. (A soft 12–24 scale was tried and
+  rejected: large radii balloon small controls and waste space.)
 - **Flat** — no skeuomorphic depth, no drop shadows, no hover *lift*. Hover may
   **tint**, never elevate.
 - **Dense, functional** — space is information, not decoration.

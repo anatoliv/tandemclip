@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Light / dark / follow-the-system appearance, mirroring tonebox's `AppTheme`.
+/// Light / dark / follow-the-system appearance.
 /// tandemclip is a menu-bar accessory app whose surfaces (picker, settings,
 /// About/Help) are AppKit-hosted, so the lever is `NSApp.appearance` — setting
 /// it cascades to every window and menu at once, the AppKit-native equivalent
@@ -37,24 +37,23 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
-/// Design tokens, adopted from tonebox's Theme/Tokens.swift so the two apps
-/// share one visual family (warm paper + terracotta) instead of tandemclip
-/// riding the system blue.
+/// Design tokens giving the app one visual family (warm paper + terracotta)
+/// instead of riding the system blue.
 ///
-/// Source of truth: `docs/design/DESIGN_SYSTEM.md` (TandemClip Design System),
-/// itself based on Tonebox Design System v1. The visual language is crisp,
-/// dense and functional: warm surfaces, minimal corner radii (not rounded),
-/// flat (no elevation), typography-first, subtle ease-out motion.
+/// Source of truth: `docs/design/DESIGN_SYSTEM.md` (TandemClip Design System).
+/// The visual language is crisp, dense and functional: warm surfaces, minimal
+/// corner radii (not rounded), flat (no elevation), typography-first, subtle
+/// ease-out motion.
 enum Tokens {
     // MARK: Colors
 
-    /// Primary accent — selection, active controls, positive toasts. This is
-    /// tonebox's WCAG-AA-safe rendering of the brand terracotta (~#C7693D,
+    /// Primary accent — selection, active controls, positive toasts. A
+    /// WCAG-AA-safe rendering of the brand terracotta (~#C7693D,
     /// 3.5:1 on warm paper): safe for small fills, strokes, and text chips.
     static let accent = Color(red: 0.78, green: 0.41, blue: 0.24)
 
     /// Pure brand terracotta (#F26B3A) — large fills and brand moments only,
-    /// never small text/strokes (fails AA there; see tonebox's contrast audit).
+    /// never small text/strokes (fails AA there).
     static let brandAccent = Color(red: 0.949, green: 0.420, blue: 0.227)
 
     /// Muted positive (moss/sage) — success states that shouldn't shout:
@@ -77,10 +76,9 @@ enum Tokens {
 
     // MARK: Radius — crisp scale (never rounded/pill for containers)
 
-    /// Corner-radius tokens. tonebox evaluated a soft 12/16/20/24 scale in
-    /// app and rejected it (large radii ballooned small controls); the
-    /// shipped language is crisp. Match it so the two apps feel the same.
-    /// Do NOT set a window/sheet radius — macOS owns that curve.
+    /// Corner-radius tokens. A soft 12/16/20/24 scale was evaluated and
+    /// rejected (large radii ballooned small controls); the shipped language
+    /// is crisp. Do NOT set a window/sheet radius — macOS owns that curve.
     enum Radius {
         static let chip: CGFloat = 3     // status pills, badges
         static let control: CGFloat = 4  // buttons, text fields, key caps

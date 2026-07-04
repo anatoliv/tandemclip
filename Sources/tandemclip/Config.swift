@@ -213,7 +213,7 @@ final class Config {
         set { set("syncFiles", newValue) }
     }
 
-    // MARK: - AI text cleanup (bring-your-own-LLM, tonebox pattern)
+    // MARK: - AI text cleanup (bring-your-own-LLM)
 
     /// Master switch for the AI cleanup feature (off until configured).
     var aiEnabled: Bool {
@@ -249,8 +249,8 @@ final class Config {
         }
     }
 
-    /// Default system prompt for the "Clean up" preset — adapted from
-    /// tonebox's dictation-cleanup prompt to general written/pasted text.
+    /// Default system prompt for the "Clean up" preset — tuned for general
+    /// written/pasted text.
     static let defaultAICleanupPrompt = """
         You are cleaning up a piece of text the user wrote or pasted. Rewrite \
         it into clean, correct, readable text that preserves the meaning, \
@@ -261,7 +261,7 @@ final class Config {
         nothing else.
         """
 
-    /// Tone presets (tonebox's VoiceMode pattern): user-editable, seeded with
+    /// Tone presets: user-editable, seeded with
     /// the bundled set on first read.
     var aiPresets: [AIPreset] {
         get {
@@ -282,7 +282,7 @@ final class Config {
     }
 
     /// Adapt the rewrite's tone to the app the picker was opened over
-    /// (email / chat / code / notes — tonebox's auto-tone pattern).
+    /// (email / chat / code / notes — auto-tone by destination app).
     var aiAutoTone: Bool {
         get { defaults.object(forKey: "aiAutoTone") == nil ? true : defaults.bool(forKey: "aiAutoTone") }
         set { set("aiAutoTone", newValue) }
@@ -385,7 +385,7 @@ final class Config {
 
     // MARK: - Appearance
 
-    /// Light / dark / follow-system, mirroring tonebox. Applied app-wide via
+    /// Light / dark / follow-system. Applied app-wide via
     /// `NSApp.appearance` (see AppTheme). Defaults to System when never set.
     var theme: AppTheme {
         get { AppTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .system }
