@@ -191,6 +191,11 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.22.7", date: "July 3, 2026",
+              highlight: "A friendly first run.",
+              changes: [
+                .init(.added, "New Macs get a Welcome window on first launch — a plain-English guide to what already works out of the box, the one pairing step to sync, and optional next steps to lock down security and turn on AI. Its buttons jump straight to the right Settings. Reopen it anytime from the menu bar ▸ Getting Started, or read the same guide in Help."),
+              ]),
         .init(version: "0.22.6", date: "July 3, 2026",
               highlight: "A clearer smart-title mark.",
               changes: [
