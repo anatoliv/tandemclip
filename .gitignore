@@ -12,3 +12,6 @@ docs/COMPETITIVE.md
 
 # Internal launch/credit playbook + marketing drafts (not for publication)
 docs/launch/
+
+# Deployment/marketing site + nginx/compose — infra, not the app (kept local; release.sh deploys it)
+web/
