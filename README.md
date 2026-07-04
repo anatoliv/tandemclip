@@ -207,16 +207,13 @@ Every installed copy then auto-updates via Sparkle (feed: `SUFeedURL` in
 > build; the scripts use `swift build -c release --build-system native` (llbuild,
 > ~20s). If you build by hand, pass that flag.
 
-The public landing + download site is a static `nginx` container
-(`web/docker-compose.yml`) meant to sit behind a reverse proxy that terminates
-TLS (e.g. nginx-proxy-manager or Caddy with Let's Encrypt). The origin `nginx`
-listens on plain HTTP (`web/nginx/default.conf`); **the fronting proxy must
-enforce HTTPS and redirect HTTP → HTTPS** for the `SUFeedURL` host. Update
-*integrity* does not depend on this — every build is EdDSA-signed
-(`SUPublicEDKey`) and Sparkle refuses an unsigned or version-regressed appcast —
-but serving the feed over plain HTTP would let a network MITM stall or withhold
-security updates. Verify with `curl -sSI http://tandemclip.com/appcast.xml`
-(expect a 301/308 to `https://`).
+`release.sh` publishes the DMG + `appcast.xml` to whatever `PUBLISH_DEST` points
+at (any static host works). Wherever you serve them, **the `SUFeedURL` host must
+enforce HTTPS and redirect HTTP → HTTPS.** Update *integrity* does not depend on
+this — every build is EdDSA-signed (`SUPublicEDKey`) and Sparkle refuses an
+unsigned or version-regressed appcast — but serving the feed over plain HTTP
+would let a network MITM stall or withhold security updates. Verify with
+`curl -sSI http://tandemclip.com/appcast.xml` (expect a 301/308 to `https://`).
 
 ## Crash reporting (Sentry)
 
