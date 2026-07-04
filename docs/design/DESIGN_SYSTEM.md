@@ -107,7 +107,7 @@ No hover elevation (flat language). Respect Reduce Motion where practical.
 | `Theme.swift` tokens | ✅ full scale (colors, radius, space, type, icons, motion) |
 | Help / About (`InfoWindows.swift`) | ✅ tokenized — the reference implementation |
 | `SettingsWindow.swift` | ✅ tokenized; controls accent-tinted |
-| `ClipboardPicker.swift` | ✅ tokenized (radii, accent, and compact type via `CompactSize`) |
+| Picker (`PickerView.swift`, `PickerRows.swift`) | ✅ tokenized (radii, accent, and compact type via `CompactSize`) |
 
 **The whole app now draws from `Tokens`.** The design-drift lint in
 `Scripts/check-release.sh` enforces it: no raw `cornerRadius: <n>` or
