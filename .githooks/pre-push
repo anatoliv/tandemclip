@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Enable with:  git config core.hooksPath .githooks
+# Blocks a push to the public repo if the tracked tree contains secrets.
+exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh"

@@ -1,0 +1,6 @@
+# Copy this file to Packaging/sentry-dsn.local (gitignored) and paste your
+# Sentry DSN on one line. make-app.sh injects it into the bundled Info.plist
+# at package time; the tracked Packaging/Info.plist keeps SentryDSN empty.
+# Alternatively, set the TANDEMCLIP_SENTRY_DSN environment variable.
+#
+# https://examplePublicKey@o0.ingest.sentry.io/0

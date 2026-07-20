@@ -133,6 +133,7 @@ final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
+    @Published var crashReportingEnabled: Bool { didSet { config.crashReportingEnabled = crashReportingEnabled; CrashReporting.apply(enabled: crashReportingEnabled) } }
     @Published var historyEnabled: Bool { didSet { config.historyEnabled = historyEnabled } }
     @Published var historyKeep: Int { didSet { config.historyLimit = historyKeep } }
     @Published var pickerShow: Int { didSet { config.pickerShowCount = pickerShow } }
@@ -176,6 +177,7 @@ final class SettingsModel: ObservableObject {
         launchAtLogin = config.launchAtLogin
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
+        crashReportingEnabled = config.crashReportingEnabled
         historyEnabled = config.historyEnabled
         historyKeep = config.historyLimit
         pickerShow = config.pickerShowCount
@@ -487,11 +489,16 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Verbose logging", isOn: $model.verboseLogging)
+                Toggle("Send crash & error reports", isOn: $model.crashReportingEnabled)
+                    .disabled(!CrashReporting.isConfigured)
             } header: {
                 Text("Diagnostics")
             } footer: {
                 SettingsBullets(items: [
                     ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app) — useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
+                    ("Send crash & error reports", CrashReporting.isConfigured
+                        ? "off by default; when on, sends crash and error reports to the developer to help fix bugs — never your clipboard content, no IP or identifiers."
+                        : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
                 ])
             }
         }
