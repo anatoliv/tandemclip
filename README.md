@@ -57,6 +57,9 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   ⌘1–9 quick-pick. Shared fleet timeline (Mirror mode) so every Mac sees the
   same recent clips.
 - **Auto-update** via Sparkle (menu → Check for Updates…).
+- **Reconnect** — a menu-bar action that rebuilds LAN discovery and peer
+  connections when sync goes quiet after sleep/wake, a Wi-Fi roam, or a long
+  idle period.
 
 ## How it works
 
@@ -291,6 +294,17 @@ swift test  --build-system native   # runs the test suite
 Please keep changes focused, run the tests, and match the existing style. The
 design system (`docs/design/DESIGN_SYSTEM.md`) is enforced by a drift lint in
 `Scripts/check-release.sh` — views draw from `Tokens`, not raw numbers.
+
+This repo is published directly (there's no sanitizing mirror), so enable the
+secret-scan **pre-push guard** once after cloning:
+
+```sh
+git config core.hooksPath .githooks   # blocks pushing LAN IPs, tokens, DSNs, private keys
+```
+
+The real Sentry DSN belongs in the gitignored `Packaging/sentry-dsn.local` (or
+the `TANDEMCLIP_SENTRY_DSN` env var), never in a tracked file — `make-app.sh`
+injects it at package time.
 
 ## Security
 
