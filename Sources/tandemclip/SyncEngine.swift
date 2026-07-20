@@ -145,6 +145,24 @@ final class SyncEngine {
         onStatusChange?()
     }
 
+    /// User-triggered reconnect. Tears down and rebuilds the whole LAN transport
+    /// (Bonjour listener + browser + connections), which recovers sync when
+    /// discovery has gone stale after sleep/wake, a Wi-Fi roam, or a long idle
+    /// period — cases the 5s reconnect timer can't fix, because it only re-dials
+    /// peers that are still being advertised. If networking was never up (no
+    /// pairing code), this just brings it up.
+    func resync() {
+        Log.trace("engine", "manual reconnect requested")
+        peers.removeAll()
+        guard config.hasPairingSecret else {
+            start()          // never started; bring networking up if now possible
+            onStatusChange?()
+            return
+        }
+        transport.restart()
+        onStatusChange?()
+    }
+
     // MARK: - Peer list (for the menu)
 
     /// Peers sorted by name, for display.

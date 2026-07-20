@@ -129,6 +129,7 @@ final class MenuBarController: NSObject {
 
         menu.addItem(action: config.paused ? "Resume" : "Pause",
                      selector: #selector(togglePause), target: self)
+        menu.addItem(action: "Reconnect", selector: #selector(reconnect), target: self)
 
         menu.addItem(.separator())
         menu.addItem(action: "Settings…", selector: #selector(openSettings), target: self, key: ",")
@@ -189,6 +190,13 @@ final class MenuBarController: NSObject {
 
     @objc private func togglePause() {
         config.setPaused(!config.paused)
+        refresh()
+    }
+
+    /// Rebuild the LAN transport to re-establish peer connections when sync has
+    /// gone quiet (sleep/wake, Wi-Fi roam, long idle). See SyncEngine.resync().
+    @objc private func reconnect() {
+        engine.resync()
         refresh()
     }
 
