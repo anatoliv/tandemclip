@@ -231,14 +231,20 @@ would let a network MITM stall or withhold security updates. Verify with
 
 ## Crash reporting (Sentry)
 
-Integrated via the Sentry Cocoa SDK, **off by default** — it only starts when a
-DSN is present, so dev/self-built copies never phone home. Privacy: no PII, IP,
-or user identifiers; crashes/errors only (no performance tracing).
+Integrated via the Sentry Cocoa SDK, **opt-in and off by default**. It starts
+only when the user turns it on (Settings, Diagnostics) **and** a DSN is baked
+into the build, so dev/self-built copies and un-consented users never phone
+home. Privacy: no PII, IP, or user identifiers; a `beforeSend` scrubber drops
+user/server/request and redacts home-directory paths; crashes/errors only (no
+performance tracing).
 
-To enable: create a `tandemclip` Sentry project, paste its DSN into
-`Packaging/Info.plist` → `SentryDSN`, and rebuild. For symbolicated stack
-traces, set `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` (+ `brew install
-getsentry/tools/sentry-cli`) and `release.sh` uploads dSYMs automatically.
+To enable: create a `tandemclip` Sentry project, then put its DSN in the
+**gitignored** `Packaging/sentry-dsn.local` (or set the `TANDEMCLIP_SENTRY_DSN`
+environment variable). `make-app.sh` injects it into the bundle at package
+time; the tracked `Packaging/Info.plist` always keeps `SentryDSN` empty, so a
+DSN is never committed. For symbolicated stack traces, set `SENTRY_AUTH_TOKEN`
++ `SENTRY_ORG` (+ `brew install getsentry/tools/sentry-cli`) and `release.sh`
+uploads dSYMs automatically.
 
 ## Roadmap
 

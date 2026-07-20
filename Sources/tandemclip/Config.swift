@@ -410,6 +410,13 @@ final class Config {
         set { set("verboseLogging", newValue) }
     }
 
+    /// Opt-in remote crash & error reporting (Sentry). Off by default. See
+    /// `CrashReporting`; also requires a DSN baked into the build.
+    var crashReportingEnabled: Bool {
+        get { defaults.bool(forKey: CrashReporting.enabledKey) }
+        set { set(CrashReporting.enabledKey, newValue) }
+    }
+
     /// Whether the first-run Welcome window has been shown. False until the app
     /// presents it once; flipped true so it doesn't reappear every launch. The
     /// window stays reopenable from the menu bar ▸ Getting Started.

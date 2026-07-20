@@ -15,3 +15,7 @@ docs/launch/
 
 # Deployment/marketing site + nginx/compose — infra, not the app (kept local; release.sh deploys it)
 web/
+
+# Real Sentry DSN, injected into the bundle at package time by make-app.sh.
+# The tracked Packaging/Info.plist keeps SentryDSN empty; never commit the DSN.
+Packaging/sentry-dsn.local

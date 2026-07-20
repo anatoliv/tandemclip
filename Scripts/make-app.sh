@@ -39,6 +39,19 @@ cp "${BIN_PATH}" "${BUNDLE}/Contents/MacOS/${EXE_NAME}"
 cp "Packaging/Info.plist" "${BUNDLE}/Contents/Info.plist"
 [[ -f Packaging/AppIcon.icns ]] && cp "Packaging/AppIcon.icns" "${BUNDLE}/Contents/Resources/AppIcon.icns"
 
+# Inject the Sentry DSN from a gitignored source (never committed). The tracked
+# Packaging/Info.plist keeps SentryDSN empty; the real DSN comes from the env
+# var TANDEMCLIP_SENTRY_DSN, or the gitignored file Packaging/sentry-dsn.local.
+# No source means an empty DSN, so crash reporting stays off in the shipped build.
+SENTRY_DSN_VALUE="${TANDEMCLIP_SENTRY_DSN:-}"
+if [[ -z "${SENTRY_DSN_VALUE}" && -f Packaging/sentry-dsn.local ]]; then
+    SENTRY_DSN_VALUE="$(tr -d ' \t\r\n' < Packaging/sentry-dsn.local)"
+fi
+if [[ -n "${SENTRY_DSN_VALUE}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :SentryDSN ${SENTRY_DSN_VALUE}" "${BUNDLE}/Contents/Info.plist"
+    echo "==> Injected Sentry DSN into bundle Info.plist"
+fi
+
 # Bundle Sparkle.framework (auto-update) if the app links it.
 SPARKLE_FW="$(find .build -type d -name 'Sparkle.framework' -path '*macos*' 2>/dev/null | head -1)"
 if [[ -n "${SPARKLE_FW}" ]]; then
