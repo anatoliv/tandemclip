@@ -1,6 +1,6 @@
 cask "tandemclip" do
-  version "0.22.9"
-  sha256 "d284fdc25bb77fa9fcd349b1c017f5db0b28c0544e384a23654c01dc1ecc8726"
+  version "0.23.0"
+  sha256 "3e1cd832378f68dd3a436d450e061d6f47da0fffbcff2689de7fd19aa8a32a0c"
 
   url "https://tandemclip.com/TandemClip_#{version}_aarch64.dmg",
       verified: "tandemclip.com/"
