@@ -29,19 +29,33 @@ DIST="dist"
 APP="build/${APP_NAME}.app"
 DMG="${DIST}/${APP_NAME}_${VERSION}_aarch64.dmg"
 
+# One Sentry *organization* token covers every project in the org, so it is
+# stored once under a shared Keychain item rather than copied per project —
+# otherwise rotating it means updating N items and silently missing one. The
+# older per-project item is still honored so existing setups keep working.
+SENTRY_KEYCHAIN_ITEMS=(sentry-release-token tandemclip-sentry)
+sentry_token_from_keychain() {
+    local item
+    for item in "${SENTRY_KEYCHAIN_ITEMS[@]}"; do
+        if security find-generic-password -s "$item" -w 2>/dev/null; then return 0; fi
+    done
+    return 1
+}
+
 # 0. Preflight: catch a missing symbolication token BEFORE the long build and
 #    notarization, not as a warning partway down a log nobody re-reads. 0.23.0
 #    shipped unsymbolicated exactly that way. Set ALLOW_NO_SYMBOLS=1 to ship
 #    anyway (a deliberate choice, rather than one made by not noticing).
 if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]] \
-   && ! security find-generic-password -s tandemclip-sentry -w >/dev/null 2>&1; then
+   && ! sentry_token_from_keychain >/dev/null 2>&1; then
     if [[ "${ALLOW_NO_SYMBOLS:-}" != "1" ]]; then
         cat >&2 <<'MSG'
 error: no Sentry auth token — this release would ship without symbolicated
        crash reports (stack traces with no function names or line numbers).
 
   Store one once (needs the project:releases scope):
-      security add-generic-password -s tandemclip-sentry -a sentry -w <token>
+      security add-generic-password -U -s sentry-release-token -a sentry -w
+      (bare -w prompts hidden, so the token stays out of shell history)
 
   Or ship without symbols deliberately:
       ALLOW_NO_SYMBOLS=1 Scripts/release.sh ...
@@ -58,13 +72,14 @@ mkdir -p "$DIST"
 rm -f "$DMG"
 
 # 1b. Upload dSYMs to Sentry for symbolicated crash reports. Token comes from
-#     the environment or, failing that, the Keychain item "tandemclip-sentry"
+#     the environment or, failing that, the shared Keychain item (see above)
 #     (create once with:
-#       security add-generic-password -s tandemclip-sentry -a sentry -w <token>
+#       security add-generic-password -U -s sentry-release-token -a sentry -w
+#       — bare -w prompts hidden, keeping the token out of shell history —
 #     token needs project:releases scope). Missing token WARNS — a release
 #     without dSYMs means unsymbolicated crash reports, which you want to know.
 if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
-    SENTRY_AUTH_TOKEN="$(security find-generic-password -s tandemclip-sentry -w 2>/dev/null || true)"
+    SENTRY_AUTH_TOKEN="$(sentry_token_from_keychain || true)"
     export SENTRY_AUTH_TOKEN
 fi
 if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
