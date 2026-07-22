@@ -29,6 +29,28 @@ DIST="dist"
 APP="build/${APP_NAME}.app"
 DMG="${DIST}/${APP_NAME}_${VERSION}_aarch64.dmg"
 
+# 0. Preflight: catch a missing symbolication token BEFORE the long build and
+#    notarization, not as a warning partway down a log nobody re-reads. 0.23.0
+#    shipped unsymbolicated exactly that way. Set ALLOW_NO_SYMBOLS=1 to ship
+#    anyway (a deliberate choice, rather than one made by not noticing).
+if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]] \
+   && ! security find-generic-password -s tandemclip-sentry -w >/dev/null 2>&1; then
+    if [[ "${ALLOW_NO_SYMBOLS:-}" != "1" ]]; then
+        cat >&2 <<'MSG'
+error: no Sentry auth token — this release would ship without symbolicated
+       crash reports (stack traces with no function names or line numbers).
+
+  Store one once (needs the project:releases scope):
+      security add-generic-password -s tandemclip-sentry -a sentry -w <token>
+
+  Or ship without symbols deliberately:
+      ALLOW_NO_SYMBOLS=1 Scripts/release.sh ...
+MSG
+        exit 1
+    fi
+    echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without symbolicated crash reports" >&2
+fi
+
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
 IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 
