@@ -4,7 +4,22 @@ import Security
 /// Minimal login-Keychain store for the pairing secret. Generic-password items
 /// under the app's service; created and read by the app itself, so no prompt.
 enum KeychainStore {
+#if DEBUG
+    /// Tests and dev builds must not read the *installed* app's items. Those were
+    /// created by a differently-signed binary, so macOS raises an ACL prompt and
+    /// blocks `SecItemCopyMatching` until someone clicks it — which hangs the
+    /// whole test run. Pointing tests at their own service keeps them hermetic:
+    /// the test binary creates the item, so it can always read it back, and the
+    /// real identity signing key is never touched (deleting or rotating it would
+    /// invalidate every peer's trusted-device entry).
+    ///
+    /// Compiled out of release builds, so a shipped app always uses the real
+    /// service no matter what the environment says.
+    private static let service = ProcessInfo.processInfo.environment["TANDEMCLIP_KEYCHAIN_SERVICE"]
+        ?? "com.tandemclip"
+#else
     private static let service = "com.tandemclip"
+#endif
 
     static func get(_ account: String) -> String? { getStatus(account).value }
     static func getData(_ account: String) -> Data? { getDataStatus(account).value }
