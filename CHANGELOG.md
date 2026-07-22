@@ -4,6 +4,35 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.23.0] — 2026-07-22
+- Automatic reconnect: the LAN transport is rebuilt after the Mac wakes from
+  sleep and when the network path changes (Wi-Fi roam or SSID change, Ethernet,
+  VPN, network returning). Manual Reconnect stays as the escape hatch.
+- Fix a permanent dead end in discovery: `NWBrowser` had no state handler, so a
+  failed browser was never rebuilt and the 5s reconcile timer — which only dials
+  endpoints the browser reported — silently found nothing for the rest of the
+  session. The browser and listener now self-heal on `.failed` with capped
+  backoff, without disturbing healthy peer connections.
+- Add a conservative watchdog that rebuilds the transport when no peer has been
+  connected for a growing interval (60s → 15m). It only ever fires on a Mac that
+  has synced at least once, so a solo Mac never churns its transport.
+- Cancel outbound dials stuck in `.preparing` past 15s; their key previously
+  stayed reserved forever, so that peer could never be re-dialed.
+- Refresh the menu-bar status on network change, so the Wi-Fi allowlist verdict
+  no longer stays stale until the next copy.
+- Manual Reconnect no longer clears cached peer clipboard metadata, so the
+  picker doesn't blank while peers re-announce.
+- Internal: tests no longer read the installed app's Keychain items. A
+  `DEBUG`-only `TANDEMCLIP_KEYCHAIN_SERVICE` override lets the test binary use
+  its own service, so `SecItemCopyMatching` can't block the suite on an ACL
+  prompt. Release builds always use the real service.
+
+## [0.22.9] — 2026-07-19
+- Add a Reconnect menu-bar item that rebuilds the LAN transport to re-establish
+  peer sync after sleep/wake, a Wi-Fi roam, or a long idle period.
+- Harden the public release path: opt-in Sentry with the DSN kept out of the
+  tree, plus a pre-push guard.
+
 ## [0.22.8] — 2026-07-03
 - TandemClip is now open source under the MIT license.
 - Internal: split the clipboard picker into focused files, reworded comments to

@@ -191,6 +191,19 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.23.0", date: "July 22, 2026",
+              highlight: "Sync repairs itself.",
+              changes: [
+                .init(.added, "TandemClip now reconnects on its own. It rebuilds the connection after your Mac wakes from sleep, and when the network changes underneath it — moving to another Wi-Fi network, plugging in Ethernet, or coming back after the connection dropped. You should need the Reconnect menu item far less often; it's still there when you want it."),
+                .init(.fixed, "Fixed the longest-standing cause of \"no Macs found\" that only a relaunch could clear: if the part of TandemClip that discovers other Macs failed, it stayed dead for the rest of the session with nothing to show it. It now repairs itself."),
+                .init(.improved, "A last-resort check watches for sync going quiet and re-establishes it, backing off so it never churns a healthy connection. It only ever acts on a Mac that has synced before, so a Mac on its own is left alone."),
+                .init(.improved, "The menu bar now updates its Wi-Fi status as soon as you change networks, instead of waiting until the next copy."),
+              ]),
+        .init(version: "0.22.9", date: "July 19, 2026",
+              highlight: "Reconnect on demand.",
+              changes: [
+                .init(.added, "A Reconnect item in the menu bar re-establishes sync when it has gone quiet — after sleep, a Wi-Fi change, or a long idle stretch. (As of 0.23.0 this mostly happens automatically.)"),
+              ]),
         .init(version: "0.22.8", date: "July 3, 2026",
               highlight: "Now open source.",
               changes: [

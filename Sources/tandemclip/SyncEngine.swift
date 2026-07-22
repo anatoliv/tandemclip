@@ -76,6 +76,14 @@ final class SyncEngine {
     /// Returns whether sync is currently allowed on this network (SSID guard).
     var networkAllowed: () -> Bool = { true }
 
+    // Automatic reconnect state (main thread). The fire/hold decision and its
+    // backoff live in ReconnectWatchdog so they're testable without real timers.
+    private var wakeObserver: NSObjectProtocol?
+    private var watchdogTimer: Timer?
+    private var watchdog = ReconnectWatchdog(backoff: [60, 120, 300, 900])
+    private let watchdogInterval: Double = 30
+    private let wakeResyncDelay: Double = 3
+
     var onStatusChange: (() -> Void)?
 
     /// A peer counts as "connected" only if it's both linked AND allowed to sync
@@ -115,10 +123,24 @@ final class SyncEngine {
         transport.onMessage = { [weak self] msg, verifiedKey in self?.handleRemote(msg, verifiedKey: verifiedKey) }
         transport.helloProvider = { [weak self] in self?.makeAnnounce() }
         transport.onConnectedPeersChanged = { [weak self] dict in self?.updateConnected(dict) }
+        // A network change can flip the Wi-Fi allowlist verdict; refresh the
+        // status UI so the menu bar doesn't keep showing the old network's state
+        // until something happens to try to send.
+        transport.onPathChange = { [weak self] in self?.onStatusChange?() }
+    }
+
+    deinit {
+        watchdogTimer?.invalidate()
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
     }
 
     func start() {
         watcher.start()
+        observeWake()
+        watchdog.noteStarted(at: now())
+        startWatchdog()
         guard config.hasPairingSecret else {
             // No readable pairing secret → derivePSK would fall back to a fixed,
             // publicly-known key. Do not advertise or accept connections; wait for
@@ -141,7 +163,7 @@ final class SyncEngine {
     /// the new PSK immediately. Peers drop until they also have the new code.
     func reloadPairing() {
         peers.removeAll()
-        if config.hasPairingSecret { transport.restart() }
+        if config.hasPairingSecret { transport.restart(reason: "pairing code changed") }
         onStatusChange?()
     }
 
@@ -153,14 +175,84 @@ final class SyncEngine {
     /// pairing code), this just brings it up.
     func resync() {
         Log.trace("engine", "manual reconnect requested")
-        peers.removeAll()
+        // Give the user's own attempt the same grace the watchdog gives its own,
+        // so the watchdog doesn't spend a ladder step rebuilding again a moment
+        // later. It still escalates normally if this attempt doesn't take.
+        watchdog.noteAttempt(at: now())
         guard config.hasPairingSecret else {
-            start()          // never started; bring networking up if now possible
+            peers.removeAll()   // networking was never up; nothing known is still true
+            start()             // bring it up if a code has since been set
             onStatusChange?()
             return
         }
-        transport.restart()
+        // Deliberately not `peers.removeAll()`: restart() publishes an empty
+        // connected set, so everything reads offline within a moment anyway,
+        // while dropping the dictionary also discards each peer's cached
+        // clipboard metadata and blanks the picker until they re-announce.
+        transport.restart(reason: "manual reconnect")
         onStatusChange?()
+    }
+
+    // MARK: - Automatic reconnect
+
+    /// Automatic transport rebuild (wake, watchdog). Unlike the user-triggered
+    /// `resync()` this does NOT clear `peers`: restart() publishes an empty
+    /// connected set anyway (so everything reads offline within a moment), while
+    /// dropping the dictionary would also discard each peer's cached clipboard
+    /// metadata and blank the picker until they re-announce.
+    private func autoResync(reason: String) {
+        guard config.hasPairingSecret else { return }
+        Log.trace("engine", "auto reconnect (\(reason))")
+        transport.restart(reason: reason, coalescing: true)
+        onStatusChange?()
+    }
+
+    /// After the Mac wakes, Bonjour is frequently stale: the browser still holds
+    /// pre-sleep results, and our own service may no longer be registered. The
+    /// 5s reconcile timer can't fix that — it only re-dials endpoints the browser
+    /// reported — so rebuild the transport once the interfaces are back. Waking
+    /// is not itself a path change, so NWPathMonitor doesn't always cover this.
+    private func observeWake() {
+        guard wakeObserver == nil else { return }
+        let wakeResyncDelay = self.wakeResyncDelay
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Log.trace("engine", "system woke — rebuilding transport shortly")
+            // Wi-Fi typically isn't associated yet at wake; give it a moment so
+            // the rebuilt listener registers on a live interface.
+            DispatchQueue.main.asyncAfter(deadline: .now() + wakeResyncDelay) { [weak self] in
+                self?.autoResync(reason: "woke from sleep")
+            }
+        }
+    }
+
+    /// Last-resort watchdog for a transport that looks healthy but has no peers —
+    /// the state manual Reconnect was added for. Deliberately conservative: it
+    /// only fires when this Mac has actually synced with someone at some point
+    /// (so a genuinely solo Mac never churns its transport), only when sync is
+    /// supposed to be working, and with growing backoff between attempts.
+    private func startWatchdog() {
+        guard watchdogTimer == nil else { return }
+        let timer = Timer(timeInterval: watchdogInterval, repeats: true) { [weak self] _ in
+            self?.watchdogTick()
+        }
+        // Jitter, so two Macs that lost each other don't rebuild in lockstep and
+        // keep missing each other's advertisements.
+        timer.tolerance = watchdogInterval / 3
+        RunLoop.main.add(timer, forMode: .common)
+        watchdogTimer = timer
+    }
+
+    private func watchdogTick() {
+        // Cheap environment gates first — `networkAllowed()` may shell out to
+        // read the SSID, so it runs last, only once the policy already says the
+        // transport looks broken.
+        guard config.hasPairingSecret, !config.paused else { return }
+        let anyOnline = peers.values.contains { $0.online }
+        guard let delay = watchdog.shouldRebuild(at: now(), anyPeerOnline: anyOnline) else { return }
+        guard networkAllowed() else { return }   // allowlist says don't sync here — not a fault
+        autoResync(reason: "watchdog: no peer for \(Int(delay))s")
     }
 
     // MARK: - Peer list (for the menu)
@@ -860,6 +952,9 @@ final class SyncEngine {
 
     private func updateConnected(_ dict: [String: PeerConnectionInfo]) {
         let online = Set(dict.keys)
+        // Peers are here: the transport is provably working, so arm the watchdog
+        // for the future and clear any accumulated backoff.
+        if !online.isEmpty { watchdog.notePeerOnline(at: now()) }
         for (id, info) in dict {
             var p = peers[id] ?? PeerClip(name: info.name)
             p.name = info.name
