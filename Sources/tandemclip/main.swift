@@ -35,6 +35,16 @@ if CommandLine.arguments.contains("--no-menubar") {
         }
     }
 
+    // Test hook: fake a wake-from-sleep to exercise the automatic transport
+    // rebuild without actually sleeping the Mac.
+    if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_WAKE"] != nil {
+        Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { _ in
+            Log.trace("app", "test-wake: posting didWakeNotification")
+            NSWorkspace.shared.notificationCenter.post(
+                name: NSWorkspace.didWakeNotification, object: nil)
+        }
+    }
+
     RunLoop.main.run()
 } else {
     // Run as an "accessory" app: no Dock icon, menu-bar only. This is the
