@@ -65,6 +65,25 @@ MSG
     echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without symbolicated crash reports" >&2
 fi
 
+# 0b. Never clobber an already-built DMG for this version. `rm -f "$DMG"` below
+#     would otherwise destroy a *released*, notarized artifact — and since step 4
+#     regenerates the appcast from every DMG in dist/, the replacement gets
+#     EdDSA-signed as that version, breaking auto-update for everyone already on
+#     it. This also catches the plain mistake of forgetting to bump the version.
+if [[ -f "$DMG" && "${FORCE_REBUILD:-}" != "1" ]]; then
+    cat >&2 <<MSG
+error: ${DMG} already exists — refusing to overwrite it.
+
+  Version ${VERSION} (build ${BUILD_NUM}) looks already built/released. If this
+  is a new release, bump CFBundleShortVersionString/CFBundleVersion in
+  Packaging/Info.plist first.
+
+  To rebuild this exact version on purpose:
+      FORCE_REBUILD=1 Scripts/release.sh ...
+MSG
+    exit 1
+fi
+
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
 IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 
