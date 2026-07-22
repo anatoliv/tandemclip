@@ -84,8 +84,16 @@ if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
 fi
 if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
     echo "==> Uploading dSYMs to Sentry"
+    # Upload the shipped bundle (app + Sparkle, i.e. everything a user can crash
+    # in) and the matching release dSYM — NOT all of .build, which also holds the
+    # SwiftPM artifacts cache: Sentry-cocoa's iOS/visionOS/simulator slices and
+    # debug-build copies, none of which this macOS app can ever crash in. They
+    # just burn upload time and Sentry storage.
+    SENTRY_UPLOAD_PATHS=("$APP")
+    RELEASE_DSYM="$(swift build -c release --build-system native --show-bin-path 2>/dev/null)/tandemclip.dSYM"
+    [[ -d "$RELEASE_DSYM" ]] && SENTRY_UPLOAD_PATHS+=("$RELEASE_DSYM")
     sentry-cli debug-files upload --org "${SENTRY_ORG}" \
-        --project "${SENTRY_PROJECT:-tandemclip}" .build 2>&1 | tail -3 || \
+        --project "${SENTRY_PROJECT:-tandemclip}" "${SENTRY_UPLOAD_PATHS[@]}" 2>&1 | tail -3 || \
         echo "    dSYM upload failed (non-fatal)"
 else
     echo "WARNING: no SENTRY_AUTH_TOKEN + SENTRY_ORG — shipping without symbolicated crash reports" >&2
