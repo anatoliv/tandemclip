@@ -23,8 +23,20 @@ IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 
 echo "==> Building release binary"
-swift build -c release --build-system native
+# -Xswiftc -g emits DWARF so dsymutil can produce a real dSYM. Without it the
+# binary carries only symtab+unwind, and Sentry can resolve function names but
+# never file/line — which is most of the value of a crash report.
+swift build -c release --build-system native -Xswiftc -g
 BIN_PATH="$(swift build -c release --build-system native --show-bin-path)/${EXE_NAME}"
+
+# Build the dSYM next to the binary inside .build, which is exactly where
+# release.sh points `sentry-cli debug-files upload`. The dSYM is deliberately
+# NOT copied into the .app: it would double the download for no user benefit.
+if command -v dsymutil >/dev/null 2>&1; then
+    echo "==> Generating dSYM for crash symbolication"
+    dsymutil "${BIN_PATH}" -o "${BIN_PATH}.dSYM" 2>/dev/null \
+        || echo "    dsymutil failed (non-fatal; crash reports lose file/line)"
+fi
 
 # Regenerate the app icon if the source is present but the .icns is stale/missing.
 if [[ ! -f Packaging/AppIcon.icns && -x Scripts/make-icon.sh ]]; then
