@@ -42,7 +42,32 @@ final class Transport {
     private var visibleEndpoints: [String: NWEndpoint] = [:]  // key -> currently-advertised peer
     private var activeOutbound: Set<String> = []              // keys with a live/pending outbound dial
     private var outboundKey: [ObjectIdentifier: String] = [:] // conn -> its outbound endpoint key
+    private var dialStartedAt: [ObjectIdentifier: Double] = [:] // outbound conn -> dial time
+    private let dialDeadline: Double = 15                     // give up on a dial that never readies
     private var reconnectTimer: DispatchSourceTimer?
+
+    // Self-heal state for the listener/browser (touched only on `queue`). A
+    // Network.framework object that reaches `.failed` is terminal — it never
+    // recovers on its own — so each is rebuilt with capped exponential backoff.
+    // `epoch` is bumped by restart() so a rebuild scheduled before the restart
+    // can't fire afterwards and orphan the object restart() just created.
+    private var epoch = 0
+    private var listenerRebuildDelay: Double = 1
+    private var browserRebuildDelay: Double = 1
+    private var listenerRebuildScheduled = false
+    private var browserRebuildScheduled = false
+    private let maxRebuildDelay: Double = 30
+
+    // Network path watching (touched only on `queue`).
+    private var pathMonitor: NWPathMonitor?
+    private var lastPathKey: String?
+    private var pathChangeWork: DispatchWorkItem?
+
+    // Waking the Mac also re-associates Wi-Fi, so the wake trigger and the path
+    // trigger routinely fire seconds apart for the same underlying event. The
+    // automatic paths coalesce against this so one wake costs one rebuild.
+    private var lastRestartAt: Double = 0
+    private let restartCoalesceWindow: Double = 8
 
     /// Delivered messages, with the identity public key already verified on the
     /// transport queue (nil if unsigned/invalid) so the app layer needn't re-verify.
@@ -52,36 +77,143 @@ final class Transport {
     /// Called for each newly-ready connection to obtain the identity/announce
     /// frame to send immediately (so both ends learn each other right away).
     var helloProvider: (() -> Message?)?
+    /// Fired on the main thread whenever the network path changes, so the app can
+    /// re-evaluate the Wi-Fi allowlist and refresh its status UI.
+    var onPathChange: (() -> Void)?
 
     init(config: Config) {
         self.config = config
     }
 
     func start() {
-        Log.trace("transport", "starting as \"\(config.deviceName)\", service \(config.serviceType)")
-        startListener()
-        startBrowser()
-        startReconnectTimer()
-    }
-
-    /// Tear everything down and start fresh — used when the pairing code changes
-    /// so the new PSK takes effect immediately (no relaunch). tlsParameters()
-    /// reads config.psk lazily, so the rebuilt listener/dials use the new key.
-    func restart() {
         queue.async { [weak self] in
             guard let self = self else { return }
-            Log.trace("transport", "restarting (pairing code changed)")
+            Log.trace("transport", "starting as \"\(self.config.deviceName)\", service \(self.config.serviceType)")
+            self.startListener()
+            self.startBrowser()
+            self.startReconnectTimer()
+            self.startPathMonitor()
+        }
+    }
+
+    /// Tear everything down and start fresh. Used when the pairing code changes
+    /// (so the new PSK takes effect immediately, no relaunch) and by the
+    /// automatic recovery paths — wake, network path change, watchdog.
+    /// tlsParameters() reads config.psk lazily, so the rebuilt listener/dials
+    /// use the current key.
+    ///
+    /// `coalescing` is for the automatic recovery paths, which can be triggered
+    /// twice by one real-world event: it skips the rebuild if another just
+    /// happened. The pairing-code change and the user's Reconnect must never be
+    /// dropped, so they leave it off.
+    func restart(reason: String, coalescing: Bool = false) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+            let now = Date().timeIntervalSince1970
+            if coalescing, now - self.lastRestartAt < self.restartCoalesceWindow {
+                Log.trace("transport", "skipping restart (\(reason)) — already rebuilt "
+                    + "\(String(format: "%.1f", now - self.lastRestartAt))s ago")
+                return
+            }
+            self.lastRestartAt = now
+            Log.trace("transport", "restarting (\(reason))")
+            self.epoch &+= 1   // invalidate any rebuild scheduled against the old generation
+            self.listenerRebuildScheduled = false; self.listenerRebuildDelay = 1
+            self.browserRebuildScheduled = false; self.browserRebuildDelay = 1
+            self.pathChangeWork?.cancel(); self.pathChangeWork = nil
             self.listener?.cancel(); self.listener = nil
             self.browser?.cancel(); self.browser = nil
             self.reconnectTimer?.cancel(); self.reconnectTimer = nil
             for conn in self.connections.values { conn.cancel() }
             self.connections.removeAll(); self.readyIDs.removeAll(); self.identity.removeAll()
             self.visibleEndpoints.removeAll(); self.activeOutbound.removeAll(); self.outboundKey.removeAll()
+            self.dialStartedAt.removeAll()
             self.notifyPeers()
             self.startListener()
             self.startBrowser()
             self.startReconnectTimer()
+            self.startPathMonitor()
         }
+    }
+
+    /// Rebuild just the listener or just the browser after a terminal `.failed`,
+    /// with capped exponential backoff. Targeted rather than a full restart(),
+    /// so healthy peer connections survive the repair.
+    private func scheduleRebuild(_ what: Component) {
+        let scheduled = what == .listener ? listenerRebuildScheduled : browserRebuildScheduled
+        guard !scheduled else { return }
+        let delay: Double
+        if what == .listener {
+            listenerRebuildScheduled = true
+            delay = listenerRebuildDelay
+            listenerRebuildDelay = min(maxRebuildDelay, listenerRebuildDelay * 2)
+        } else {
+            browserRebuildScheduled = true
+            delay = browserRebuildDelay
+            browserRebuildDelay = min(maxRebuildDelay, browserRebuildDelay * 2)
+        }
+        Log.trace("transport", "\(what.rawValue) failed — rebuilding in \(Int(delay))s")
+        let gen = epoch
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self, self.epoch == gen else { return }   // superseded by restart()
+            switch what {
+            case .listener:
+                self.listenerRebuildScheduled = false
+                self.listener?.cancel(); self.listener = nil
+                self.startListener()
+            case .browser:
+                self.browserRebuildScheduled = false
+                self.browser?.cancel(); self.browser = nil
+                self.startBrowser()
+            }
+        }
+    }
+
+    private enum Component: String { case listener, browser }
+
+    // MARK: - Network path
+
+    /// Watch for interface-level network changes: a Wi-Fi roam to another AP or
+    /// SSID, Ethernet plugged in, a VPN coming up, the network returning after
+    /// being down. Bonjour registrations do not reliably survive these — the
+    /// listener can keep reporting `.ready` while no longer being advertised on
+    /// the new interface, and the browser's results describe the old one — and
+    /// nothing in Network.framework reports that, so rebuild the transport.
+    ///
+    /// Only a real transition triggers a rebuild (reachability status or the set
+    /// of interfaces changed), and it's debounced, because one roam emits a burst
+    /// of updates. The very first callback is the baseline, not a change.
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }   // survives restart(); one is enough
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let key = "\(path.status)|"
+                + path.availableInterfaces.map(\.name).sorted().joined(separator: ",")
+            guard key != self.lastPathKey else { return }
+            let previous = self.lastPathKey
+            self.lastPathKey = key
+            // Let the app re-evaluate the SSID allowlist and refresh its status,
+            // including when the path goes away.
+            DispatchQueue.main.async { [weak self] in self?.onPathChange?() }
+            guard let previous = previous else {
+                Log.trace("net", "network path baseline: \(key)")
+                return
+            }
+            guard path.status == .satisfied else {
+                Log.trace("net", "network path lost (\(key)) — waiting for a usable route")
+                return
+            }
+            Log.trace("net", "network path changed (\(previous) -> \(key)) — rebuilding transport")
+            self.pathChangeWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.restart(reason: "network path change", coalescing: true)
+            }
+            self.pathChangeWork = work
+            self.queue.asyncAfter(deadline: .now() + 2, execute: work)
+        }
+        monitor.start(queue: queue)
+        pathMonitor = monitor
     }
 
     /// Periodically re-dial any advertised peer we have no live outbound
@@ -98,9 +230,24 @@ final class Transport {
     }
 
     private func reconcile() {
+        expireStalledDials()
         for (key, endpoint) in visibleEndpoints where !activeOutbound.contains(key) {
             Log.trace("tls", "reconnect: dialing \(endpoint)")
             dial(key: key, endpoint: endpoint)
+        }
+    }
+
+    /// Cancel outbound dials that never finished handshaking. `.waiting` cancels
+    /// itself, but a connection can sit in `.preparing` indefinitely (a stale
+    /// Bonjour record resolving to an address nobody answers). Its key stays in
+    /// `activeOutbound`, so reconcile() skips that peer forever and it can never
+    /// come back. Cancelling runs teardown(), which frees the key to be re-dialed.
+    private func expireStalledDials() {
+        let now = Date().timeIntervalSince1970
+        for (id, started) in dialStartedAt where !readyIDs.contains(id) {
+            guard now - started >= dialDeadline else { continue }
+            Log.trace("tls", "dial stalled >\(Int(dialDeadline))s — cancelling to re-resolve")
+            connections[id]?.cancel()   // .cancelled -> teardown() frees the outbound key
         }
     }
 
@@ -155,11 +302,18 @@ final class Transport {
                 Log.trace("discovery", "inbound connection from \(conn.endpoint)")
                 self?.setup(conn)
             }
-            l.stateUpdateHandler = { state in
+            l.stateUpdateHandler = { [weak self] state in
                 switch state {
-                case .ready:            Log.trace("transport", "listener ready, advertising")
-                case let .failed(err):  Log.error("listener failed: \(err)")
-                default:                break
+                case .ready:
+                    Log.trace("transport", "listener ready, advertising")
+                    self?.listenerRebuildDelay = 1   // healthy again; next failure retries fast
+                case let .failed(err):
+                    // Terminal: without a rebuild we stop advertising for the rest
+                    // of the session and peers can never find us again.
+                    Log.error("listener failed: \(err)")
+                    self?.scheduleRebuild(.listener)
+                default:
+                    break
                 }
             }
             l.start(queue: queue)
@@ -190,6 +344,22 @@ final class Transport {
             Log.trace("discovery", "peers advertised: \(visible.count)")
             self.reconcile()   // dial anything new immediately; timer handles retries
         }
+        b.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                Log.trace("discovery", "browser ready")
+                self?.browserRebuildDelay = 1
+            case let .failed(err):
+                // Terminal, and the worst silent failure in the transport:
+                // reconcile() only ever dials endpoints the browser reported, so
+                // a dead browser means zero peers forever with nothing visibly
+                // wrong. Rebuild it.
+                Log.error("browser failed: \(err)")
+                self?.scheduleRebuild(.browser)
+            default:
+                break
+            }
+        }
         b.start(queue: queue)
         browser = b
     }
@@ -214,7 +384,10 @@ final class Transport {
             return
         }
         let id = ObjectIdentifier(conn)
-        if let key = outKey { outboundKey[id] = key }
+        if let key = outKey {
+            outboundKey[id] = key
+            dialStartedAt[id] = Date().timeIntervalSince1970   // watched by expireStalledDials()
+        }
         conn.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
             switch state {
@@ -250,6 +423,7 @@ final class Transport {
         readyIDs.remove(id)
         identity[id] = nil
         inboundFrameTimes[id] = nil
+        dialStartedAt[id] = nil
         if let key = outboundKey[id] {
             activeOutbound.remove(key)
             outboundKey[id] = nil
