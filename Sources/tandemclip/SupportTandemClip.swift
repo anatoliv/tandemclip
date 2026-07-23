@@ -136,7 +136,7 @@ struct SupportTandemClipSection: View {
 
     var body: some View {
         Section {
-            Text("TandemClip is free and open source. If it earns a place in your workflow, a one-time tip helps keep it maintained — entirely optional, and it never unlocks anything.")
+            Text("TandemClip is free and open source. If it earns a place in your workflow, a one-time tip helps keep it maintained. It's entirely optional, and it never unlocks anything.")
                 .font(.callout).foregroundStyle(.secondary)
 
             if !options.isEmpty {
