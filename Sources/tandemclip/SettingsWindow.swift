@@ -501,6 +501,7 @@ struct SettingsView: View {
                         : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
                 ])
             }
+            SupportTandemClipSection()
         }
         .formStyle(.grouped)
     }

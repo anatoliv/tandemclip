@@ -1,8 +1,5 @@
-# GitHub reads this to show a "Sponsor" button on the repo. No funding platform
-# is enabled right now — uncomment and fill in one of the lines below to turn
-# the button on.
-
-# github: [anatoliv]            # requires GitHub Sponsors set up on the account
-# buy_me_a_coffee: your-handle
-# ko_fi: your-handle
-# custom: ["https://tandemclip.com/"]
+# GitHub reads this to show a "Sponsor" button on the repo. Keep these handles in
+# sync with TandemSupportLinks in Sources/tandemclip/SupportTandemClip.swift.
+github: [anatoliv]        # shows once GitHub Sponsors is enabled for the account
+ko_fi: anatolivishnyakov
+custom: ["https://paypal.me/anatolivishnyakov"]
