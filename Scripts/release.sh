@@ -187,6 +187,8 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
     echo "==> Publishing to $DEST"
     scp -q "$DMG" "$DEST"
     [[ -f "$DIST/appcast.xml" ]] && scp -q "$DIST/appcast.xml" "$DEST"
+    # Opt-in supporter list shown in the app + site footer (Support links). Not versioned.
+    [[ -f "web/site/supporters.json" ]] && scp -q "web/site/supporters.json" "$DEST"
 
     SITE_SRC="web/site/index.html"
     if [[ -f "$SITE_SRC" ]]; then
