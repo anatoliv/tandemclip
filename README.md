@@ -312,6 +312,16 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report a
 vulnerability. In short: LAN-only, PSK-TLS 1.3, signed device identity, no
 cloud or relay.
 
+## Support
+
+TandemClip is free and MIT-licensed, and always will be — tips never unlock
+anything. If it earns a place in your workflow, a one-time tip helps keep it
+maintained:
+
+**[❤ GitHub Sponsors](https://github.com/sponsors/anatoliv)** · **[☕ Ko-fi](https://ko-fi.com/anatolivishnyakov)** · **[PayPal](https://paypal.me/anatolivishnyakov)**
+
+Or **[vote on what's next](https://github.com/anatoliv/tandemclip/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)** — 👍 the features you want most.
+
 ## License
 
 Released under the [MIT License](LICENSE).
