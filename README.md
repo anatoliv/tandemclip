@@ -1,7 +1,7 @@
 # TandemClip
 
 Copy something on one Mac, paste it on another. TandemClip keeps the clipboard in sync
-across the Macs you own — text, rich text, images, files, and folders — over your local
+across the Macs you own (text, rich text, images, files, and folders) over your local
 network. No cloud, no relay, no account, no remote control. Any Macs that share a pairing
 code find each other on the LAN and stay in sync, and nothing ever leaves it. It runs
 quietly as a menu-bar background agent.
@@ -9,7 +9,7 @@ quietly as a menu-bar background agent.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 
-It's shipping today — signed, notarized, and self-updating. Grab it from
+It's shipping today, signed, notarized, and self-updating. Grab it from
 [tandemclip.com](https://tandemclip.com), or see what's coming in the [roadmap](#roadmap).
 
 ## Install
@@ -29,37 +29,37 @@ and auto-updates via Sparkle.
 <p align="center">
   <img src="docs/screenshots/picker-demo.gif" width="680" alt="The ⇧⌘V picker: browse the shared fleet timeline, preview a clip, then clean it up or ask it with a local or hosted model" />
   <br />
-  <em>The ⇧⌘V picker — browse every Mac's clips, preview them, and clean up or ask a clip with AI.</em>
+  <em>The ⇧⌘V picker, browse every Mac's clips, preview them, and clean up or ask a clip with AI.</em>
 </p>
 
 | First run | Guided settings |
 | :---: | :---: |
 | <img src="docs/screenshots/welcome.png" alt="First-run Welcome window: it already works, pair your Macs, lock it down" /> | <img src="docs/screenshots/settings.png" alt="Settings window with plain-English descriptions on every option" /> |
-| Works immediately — one pairing code and you're synced | Plain-English options on every setting |
+| Works immediately, one pairing code and you're synced | Plain-English options on every setting |
 
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
-often disabled on managed machines. TandemClip needs neither — any Macs on the same
+often disabled on managed machines. TandemClip needs neither: any Macs on the same
 LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
 
 ## Features
 
-- **Mirror mode** — copy anywhere, it appears everywhere (deduped, loop-safe,
+- **Mirror mode**: copy anywhere, it appears everywhere (deduped, loop-safe,
   and **relayed** so a partial mesh still fully syncs).
-- **Manual mode** — nothing auto-applies; pull a specific Mac's clipboard from
+- **Manual mode**: nothing auto-applies; pull a specific Mac's clipboard from
   the menu on demand.
-- **Per-Mac role** — Send + Receive, Receive-only, or Send-only.
-- **Settings window** — mode, role, preview level, max size, device name,
+- **Per-Mac role**: Send + Receive, Receive-only, or Send-only.
+- **Settings window**: mode, role, preview level, max size, device name,
   pairing code, trusted-device allowlist, Wi-Fi network guard, launch-at-login.
-- **Private** — PSK-TLS keyed by your pairing code; password-manager/concealed
+- **Private**: PSK-TLS keyed by your pairing code; password-manager/concealed
   content is never synced.
-- **Clipboard picker** (⇧⌘V) — a visual browser: search + preview recent clips
+- **Clipboard picker** (⇧⌘V): a visual browser: search + preview recent clips
   (text/image/file), grab any Mac's current clipboard, keyboard-navigate,
   ⌘1–9 quick-pick. Shared fleet timeline (Mirror mode) so every Mac sees the
   same recent clips.
 - **Auto-update** via Sparkle (menu → Check for Updates…).
-- **Reconnect** — a menu-bar action that rebuilds LAN discovery and peer
+- **Reconnect**: a menu-bar action that rebuilds LAN discovery and peer
   connections when sync goes quiet after sleep/wake, a Wi-Fi roam, or a long
   idle period.
 
@@ -81,7 +81,7 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
               (pause · peers · last sync · pairing code)
 ```
 
-- **No push API for the clipboard** — macOS only exposes `changeCount`, so the
+- **No push API for the clipboard**: macOS only exposes `changeCount`, so the
   watcher polls. It reads pasteboard *types* first and never pulls the data for
   content marked secret.
 - **Password managers are respected.** Content tagged with the
@@ -105,17 +105,16 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   rejected. Being on the same Wi-Fi grants nothing on its own.
 - LAN-only. No internet relay, no unauthenticated writes.
 - Set the **same pairing code on every Mac.** Copy it from **Settings → Identity**
-  (or the menu) on one machine and type it into the field on the others —
-  applying re-keys the connection live, no relaunch.
+  (or the menu) on one machine and type it into the field on the others; applying re-keys the connection live, no relaunch.
 - **Trusted-device allowlist (off by default).** With it off, any Mac holding the
-  pairing code can sync — the code is the trust boundary. Turn it on
+  pairing code can sync; the code is the trust boundary. Turn it on
   (**Settings → Security**) to pin specific devices by their signing key and to
   revoke one without rotating the code everywhere; this is the way to cut off a
   Mac that once knew the code (shared, stolen, or decommissioned).
 
 The pairing code is stored in the login **Keychain** (migrated automatically off
 any older `UserDefaults` value), and the PSK is derived from it with
-**PBKDF2-HMAC-SHA256** at 600,000 iterations (fixed application salt) — the
+**PBKDF2-HMAC-SHA256** at 600,000 iterations (fixed application salt), the
 iteration count, not salt secrecy, is what adds the brute-force work factor
 against a captured handshake.
 
@@ -128,7 +127,7 @@ swift build --build-system native   # native (llbuild); the default engine hangs
 ```
 
 `--verbose` (or `TANDEMCLIP_VERBOSE=1`) logs discovery, PSK-TLS handshake
-success/failure, and every clip send/recv/dedup decision — run two machines this
+success/failure, and every clip send/recv/dedup decision. Run two machines this
 way to watch a copy propagate. A failed handshake is logged as "likely wrong
 pairing code".
 
@@ -142,8 +141,8 @@ TANDEMCLIP_PAIRING_CODE="K7QM-3PXF" .build/debug/tandemclip --no-menubar
 
 ## Package as a .app (recommended)
 
-A proper `.app` bundle is what makes launch-at-login work cleanly and — via its
-Info.plist — declares the Local Network + Bonjour usage that macOS 14+ requires
+A proper `.app` bundle is what makes launch-at-login work cleanly and, via its
+Info.plist, declares the Local Network + Bonjour usage that macOS 14+ requires
 for discovery to work at all. It also carries the app icon (regenerate it with
 `Scripts/make-icon.sh`).
 
@@ -193,7 +192,7 @@ swift build -c release
 sudo cp .build/release/tandemclip /usr/local/bin/tandemclip
 ```
 
-### Managed / corporate Macs — check first
+### Managed / corporate Macs: check first
 
 If these are MDM-managed machines, before relying on this:
 
@@ -229,8 +228,8 @@ Every installed copy then auto-updates via Sparkle (feed: `SUFeedURL` in
 `release.sh` publishes the DMG + `appcast.xml` to whatever `PUBLISH_DEST` points
 at (any static host works). Wherever you serve them, **the `SUFeedURL` host must
 enforce HTTPS and redirect HTTP → HTTPS.** Update *integrity* does not depend on
-this — every build is EdDSA-signed (`SUPublicEDKey`) and Sparkle refuses an
-unsigned or version-regressed appcast — but serving the feed over plain HTTP
+this, every build is EdDSA-signed (`SUPublicEDKey`) and Sparkle refuses an
+unsigned or version-regressed appcast, but serving the feed over plain HTTP
 would let a network MITM stall or withhold security updates. Verify with
 `curl -sSI http://tandemclip.com/appcast.xml` (expect a 301/308 to `https://`).
 
@@ -255,33 +254,33 @@ uploads dSYMs automatically.
 
 Text, rich text, images, files, and folders all sync today (each copy carries
 every enabled representation, so paste keeps full fidelity). The list below is
-the full feature history — shipped (checked) and still planned (unchecked):
+the full feature history, shipped (checked) and still planned (unchecked):
 
 - [x] In-app pairing-code entry + Keychain storage; PBKDF2 key derivation
 - [x] Rich text (`public.rtf`)
 - [x] Images (`public.png`, `public.tiff`)
-- [x] Files (`public.file-url`) — transferred by content; always captured to history, auto-sync opt-in (Settings → Files)
-- [x] Drop-to-share — drag files onto the picker to send them to your Macs now
-- [x] Delete everywhere — remove a clip from the picker and it disappears from history, clipboards, and received files on every Mac (signed, relayed like a clip)
-- [x] Clipboard history — in-memory, opt-in (Settings), browsed/re-copied via the picker
-- [x] Folders — sync as `.zip` archives (⌘C a folder or drop it on the picker)
-- [x] Picker organization — per-Mac collapsible groups with per-type sub-sections (Text / Images / Documents / Audio / Video / Files), count badges, hover previews (QuickLook: PDF pages, Office docs, video frames, media duration), per-item sizes
-- [x] Privacy hold — one click stops anything leaving this Mac (broadcasts, pulls, previews, AI calls); a pin keeps the picker open
-- [x] Auto-apply incoming clips — receive hands-free even in Manual mode (Settings → Sync)
-- [x] AI text cleanup — bring-your-own-LLM compose area (OpenAI-compatible endpoints incl. local Ollama/LM Studio; editable tone presets, auto-tone by destination app, changelog provenance, fallback endpoint; key in Keychain; https enforced off-LAN)
-- [x] Storage limit — configurable received-files cache (10 MB–1 GB) with pasteboard-safe oldest-first eviction
-- [x] Settings — sidebar navigation, plain-English bullet descriptions on every section
-- [x] Help — every settings tab documented with worked examples; on-device semantic search
-- [x] AirDrop a clip — hover action sends any clip to nearby Apple devices outside the mesh (iPhone/iPad/unpaired Macs) via the system sheet
-- [x] Send from any app — "Send to TandemClip" in every app's Services menu (text + files)
-- [x] Drag-out — drag any clip from the picker to Finder or another app
-- [x] Pinned clips — up to 20 permanent clips, synced and restart-proof (signed pin/unpin, delete-everywhere unpins)
-- [x] Search by meaning — on-device semantic search over history, full clip text, and OCR'd screenshot text
-- [x] Quick actions — open link / email / copy phone / save to Downloads from the hover preview (local detection)
-- [x] Secret guard — likely credentials (keys, cards, tokens) are held until released (Settings → Security)
-- [x] AI on clips — on-demand Summarize, opt-in smart titles + incoming-clip translation, and "Ask your clipboard" (retrieval-grounded answers)
-- [x] Chunked transfers — clips up to 100 MB travel as signed 1 MB slices
-- [ ] Share-sheet extension (NSExtension appex — needs an Xcode target; Services covers the use case today)
+- [x] Files (`public.file-url`): transferred by content; always captured to history, auto-sync opt-in (Settings → Files)
+- [x] Drop-to-share: drag files onto the picker to send them to your Macs now
+- [x] Delete everywhere: remove a clip from the picker and it disappears from history, clipboards, and received files on every Mac (signed, relayed like a clip)
+- [x] Clipboard history: in-memory, opt-in (Settings), browsed/re-copied via the picker
+- [x] Folders: sync as `.zip` archives (⌘C a folder or drop it on the picker)
+- [x] Picker organization: per-Mac collapsible groups with per-type sub-sections (Text / Images / Documents / Audio / Video / Files), count badges, hover previews (QuickLook: PDF pages, Office docs, video frames, media duration), per-item sizes
+- [x] Privacy hold: one click stops anything leaving this Mac (broadcasts, pulls, previews, AI calls); a pin keeps the picker open
+- [x] Auto-apply incoming clips: receive hands-free even in Manual mode (Settings → Sync)
+- [x] AI text cleanup: bring-your-own-LLM compose area (OpenAI-compatible endpoints incl. local Ollama/LM Studio; editable tone presets, auto-tone by destination app, changelog provenance, fallback endpoint; key in Keychain; https enforced off-LAN)
+- [x] Storage limit: configurable received-files cache (10 MB–1 GB) with pasteboard-safe oldest-first eviction
+- [x] Settings: sidebar navigation, plain-English bullet descriptions on every section
+- [x] Help: every settings tab documented with worked examples; on-device semantic search
+- [x] AirDrop a clip: hover action sends any clip to nearby Apple devices outside the mesh (iPhone/iPad/unpaired Macs) via the system sheet
+- [x] Send from any app: "Send to TandemClip" in every app's Services menu (text + files)
+- [x] Drag-out: drag any clip from the picker to Finder or another app
+- [x] Pinned clips: up to 20 permanent clips, synced and restart-proof (signed pin/unpin, delete-everywhere unpins)
+- [x] Search by meaning: on-device semantic search over history, full clip text, and OCR'd screenshot text
+- [x] Quick actions: open link / email / copy phone / save to Downloads from the hover preview (local detection)
+- [x] Secret guard: likely credentials (keys, cards, tokens) are held until released (Settings → Security)
+- [x] AI on clips: on-demand Summarize, opt-in smart titles + incoming-clip translation, and "Ask your clipboard" (retrieval-grounded answers)
+- [x] Chunked transfers: clips up to 100 MB travel as signed 1 MB slices
+- [ ] Share-sheet extension (NSExtension appex, needs an Xcode target; Services covers the use case today)
 - [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
 
 ## Contributing
@@ -295,7 +294,7 @@ swift test  --build-system native   # runs the test suite
 
 Please keep changes focused, run the tests, and match the existing style. The
 design system (`docs/design/DESIGN_SYSTEM.md`) is enforced by a drift lint in
-`Scripts/check-release.sh` — views draw from `Tokens`, not raw numbers.
+`Scripts/check-release.sh`, views draw from `Tokens`, not raw numbers.
 
 This repo is published directly (there's no sanitizing mirror), so enable the
 secret-scan **pre-push guard** once after cloning:
@@ -305,7 +304,7 @@ git config core.hooksPath .githooks   # blocks pushing LAN IPs, tokens, DSNs, pr
 ```
 
 The real Sentry DSN belongs in the gitignored `Packaging/sentry-dsn.local` (or
-the `TANDEMCLIP_SENTRY_DSN` env var), never in a tracked file — `make-app.sh`
+the `TANDEMCLIP_SENTRY_DSN` env var), never in a tracked file, `make-app.sh`
 injects it at package time.
 
 ## Security
@@ -316,7 +315,7 @@ cloud or relay.
 
 ## Support
 
-TandemClip is free and MIT-licensed, and it always will be. Tips don't unlock anything —
+TandemClip is free and MIT-licensed, and it always will be. Tips don't unlock anything;
 there's nothing to unlock. But if it's earned a place in your workflow and you'd like to
 chip in, a one-time tip helps me keep it maintained:
 
@@ -324,8 +323,8 @@ chip in, a one-time tip helps me keep it maintained:
 [Ko-fi](https://ko-fi.com/anatolivishnyakov) ·
 [PayPal](https://paypal.me/anatolivishnyakov)
 
-You can also [vote on what to build next](https://github.com/anatoliv/tandemclip/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
-— the features with the most thumbs-up rise to the top.
+You can also [vote on what to build next](https://github.com/anatoliv/tandemclip/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc).
+The features with the most thumbs-up rise to the top.
 
 ## License
 
