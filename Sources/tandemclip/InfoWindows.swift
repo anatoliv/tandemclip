@@ -136,6 +136,14 @@ struct AboutView: View {
             Link("Website", destination: URL(string: "https://tandemclip.com")!)
                 .font(Tokens.FontScale.small)
                 .tint(Tokens.accent)   // links use the accent, not system blue (DESIGN_SYSTEM.md §2)
+            if !TandemSupportLinks.options.isEmpty {
+                // Free & MIT — a compact, optional tip-jar row (full section lives in Settings).
+                (Text("Support: ").foregroundColor(.secondary)
+                    + Text(TandemSupportLinks.compactLinks))
+                    .font(Tokens.FontScale.small)
+                    .tint(Tokens.accent)   // links ride the accent (DESIGN_SYSTEM.md §2)
+                    .multilineTextAlignment(.center)
+            }
             Text("TandemClip — LAN clipboard sync for Macs")
                 .font(Tokens.FontScale.tiny).foregroundColor(.secondary).padding(.top, Tokens.Space.row)
         }
