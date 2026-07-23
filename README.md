@@ -1,14 +1,16 @@
 # TandemClip
 
-LAN-only clipboard sync for multiple Macs. No cloud, no relay, no remote
-control — text, rich text, images, files, and folders shared between machines
-you've paired with a shared code. Runs as a menu-bar-only background agent.
+Copy something on one Mac, paste it on another. TandemClip keeps the clipboard in sync
+across the Macs you own — text, rich text, images, files, and folders — over your local
+network. No cloud, no relay, no account, no remote control. Any Macs that share a pairing
+code find each other on the LAN and stay in sync, and nothing ever leaves it. It runs
+quietly as a menu-bar background agent.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 
-**Status:** Shipping. Signed, notarized, auto-updating; open source (MIT).
-**Download:** [tandemclip.com](https://tandemclip.com) · See [Roadmap](#roadmap).
+It's shipping today — signed, notarized, and self-updating. Grab it from
+[tandemclip.com](https://tandemclip.com), or see what's coming in the [roadmap](#roadmap).
 
 ## Install
 
@@ -264,7 +266,7 @@ the full feature history — shipped (checked) and still planned (unchecked):
 - [x] Clipboard history — in-memory, opt-in (Settings), browsed/re-copied via the picker
 - [x] Folders — sync as `.zip` archives (⌘C a folder or drop it on the picker)
 - [x] Picker organization — per-Mac collapsible groups with per-type sub-sections (Text / Images / Documents / Audio / Video / Files), count badges, hover previews (QuickLook: PDF pages, Office docs, video frames, media duration), per-item sizes
-- [x] Privacy hold (✋) — one click stops anything leaving this Mac (broadcasts, pulls, previews, AI calls); pin (📌) keeps the picker open
+- [x] Privacy hold — one click stops anything leaving this Mac (broadcasts, pulls, previews, AI calls); a pin keeps the picker open
 - [x] Auto-apply incoming clips — receive hands-free even in Manual mode (Settings → Sync)
 - [x] AI text cleanup — bring-your-own-LLM compose area (OpenAI-compatible endpoints incl. local Ollama/LM Studio; editable tone presets, auto-tone by destination app, changelog provenance, fallback endpoint; key in Keychain; https enforced off-LAN)
 - [x] Storage limit — configurable received-files cache (10 MB–1 GB) with pasteboard-safe oldest-first eviction
@@ -314,13 +316,16 @@ cloud or relay.
 
 ## Support
 
-TandemClip is free and MIT-licensed, and always will be — tips never unlock
-anything. If it earns a place in your workflow, a one-time tip helps keep it
-maintained:
+TandemClip is free and MIT-licensed, and it always will be. Tips don't unlock anything —
+there's nothing to unlock. But if it's earned a place in your workflow and you'd like to
+chip in, a one-time tip helps me keep it maintained:
 
-**[❤ GitHub Sponsors](https://github.com/sponsors/anatoliv)** · **[☕ Ko-fi](https://ko-fi.com/anatolivishnyakov)** · **[PayPal](https://paypal.me/anatolivishnyakov)**
+[GitHub Sponsors](https://github.com/sponsors/anatoliv) ·
+[Ko-fi](https://ko-fi.com/anatolivishnyakov) ·
+[PayPal](https://paypal.me/anatolivishnyakov)
 
-Or **[vote on what's next](https://github.com/anatoliv/tandemclip/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)** — 👍 the features you want most.
+You can also [vote on what to build next](https://github.com/anatoliv/tandemclip/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap+sort%3Areactions-%2B1-desc)
+— the features with the most thumbs-up rise to the top.
 
 ## License
 
