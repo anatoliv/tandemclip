@@ -176,6 +176,18 @@ if [[ -f "$CASK" ]]; then
     echo "    (commit Casks/tandemclip.rb alongside the version bump)"
 fi
 
+# 4d. Gate: every version-pinned surface must agree with this release before any
+#     of it goes out. check-release.sh verifies the appcast, the cask (version
+#     pin + sha256 against the real DMG), the README install steps, and the site
+#     source. It used to be a script you had to remember to run, which is the same
+#     as not having it — a stale cask and a two-releases-behind landing page both
+#     shipped that way.
+echo "==> Pre-publish gate (Scripts/check-release.sh)"
+Scripts/check-release.sh || {
+    echo "error: release gate failed — nothing published. Fix the above and re-run." >&2
+    exit 1
+}
+
 # 5. Publish DMG + appcast + landing page to the web host (PUBLISH=1). Serves
 #    the exact SUFeedURL. The landing page's download links are version-pinned,
 #    so render the current VERSION into a copy of web/site/index.html before
