@@ -47,4 +47,50 @@ if [[ "$APPCAST_VERSION" != "$VERSION" ]]; then
     exit 1
 fi
 
+# --- Version-pinned surfaces --------------------------------------------------
+# Every one of these has gone stale in practice, silently, because nothing
+# compared them to the release being built:
+#   * the cask pinned an old version/sha256  -> `brew install` 404s
+#   * the cask pinned "X" not "X,BUILD"      -> `brew audit` fails, autobump breaks
+#   * the site source sat 2 releases behind  -> deploying it DOWNGRADES the page
+# They are all mechanically checkable, so check them rather than remembering.
+
+CASK="Casks/tandemclip.rb"
+if [[ -f "$CASK" ]]; then
+    CASK_VERSION="$(sed -nE 's/^  version "([^"]+)".*/\1/p' "$CASK" | head -1)"
+    CASK_SHA="$(sed -nE 's/^  sha256 "([0-9a-f]{64})".*/\1/p' "$CASK" | head -1)"
+    WANT_VERSION="${VERSION},${BUILD_NUM}"
+    if [[ "$CASK_VERSION" != "$WANT_VERSION" ]]; then
+        echo "error: cask version '$CASK_VERSION' != '$WANT_VERSION'." >&2
+        echo "       The appcast carries both shortVersionString and version, so Homebrew's" >&2
+        echo "       Sparkle livecheck reports them joined; pin '<short>,<build>'." >&2
+        exit 1
+    fi
+    DMG_SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+    if [[ "$CASK_SHA" != "$DMG_SHA" ]]; then
+        echo "error: cask sha256 does not match $DMG" >&2
+        echo "       cask: ${CASK_SHA:-missing}" >&2
+        echo "       dmg : $DMG_SHA" >&2
+        exit 1
+    fi
+    if ! grep -q 'brew trust' README.md 2>/dev/null; then
+        echo "error: README install steps omit 'brew trust' — Homebrew 6+ refuses" >&2
+        echo "       third-party taps without it, so the instructions do not work." >&2
+        exit 1
+    fi
+fi
+
+SITE_SRC="web/site/index.html"
+if [[ -f "$SITE_SRC" ]]; then
+    SITE_STALE="$(grep -oE 'TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg|Version [0-9]+\.[0-9]+\.[0-9]+' "$SITE_SRC" \
+        | grep -v "$VERSION" | sort -u || true)"
+    if [[ -n "$SITE_STALE" ]]; then
+        echo "error: $SITE_SRC still references versions other than $VERSION:" >&2
+        printf '       %s\n' $SITE_STALE >&2
+        echo "       release.sh syncs this; deploying a stale source downgrades the live page." >&2
+        exit 1
+    fi
+fi
+
 echo "release metadata ok: $VERSION ($BUILD_NUM)"
+echo "  cask + site + README install steps all match this release"

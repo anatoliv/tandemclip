@@ -33,6 +33,16 @@ open build/TandemClip.app
 - For user-facing changes, add a line to `CHANGELOG.md` under an "Unreleased"
   heading.
 
+## The pre-publish gate
+
+`Scripts/check-release.sh` runs automatically from `release.sh` before anything is
+uploaded, and fails the release when a version-pinned surface disagrees with the
+build: the appcast, the cask's `version` pin (which must be `<short>,<build>`) and
+its `sha256`, the README's `brew trust` step, and the landing-page source.
+
+Each of those has gone stale in practice without anyone noticing, because nothing
+compared it to the release. Run it by hand any time: `Scripts/check-release.sh`.
+
 ## Releasing — and how changes reach users
 
 The key thing to understand: `brew install --cask tandemclip` and Sparkle both
