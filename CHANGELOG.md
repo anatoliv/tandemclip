@@ -4,6 +4,19 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## Unreleased
+- Homebrew cask: pin the version as `short,build` (e.g. `0.24.1,60`) so
+  `brew audit --online` and `brew livecheck` agree. The appcast carries both
+  `sparkle:shortVersionString` and `sparkle:version`, and Homebrew's Sparkle
+  strategy reports them joined, so pinning only the short version was a permanent
+  mismatch that also broke autobumping. The download URL uses
+  `version.csv.first`, so the DMG filename is unchanged.
+- `Scripts/release.sh` writes both parts on release and accepts either form, so an
+  existing pin migrates without hand-editing.
+- Install docs: `brew trust` is required on Homebrew 6+ for third-party taps, and
+  an existing `/Applications` copy needs `--adopt` (identical) or `--force`
+  (different version). The previous instructions failed on current Homebrew.
+
 ## [0.23.0] — 2026-07-22
 - Automatic reconnect: the LAN transport is rebuilt after the Mac wakes from
   sleep and when the network path changes (Wi-Fi roam or SSID change, Ethernet,
