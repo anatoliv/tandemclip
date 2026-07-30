@@ -201,6 +201,12 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
                 s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
             "$SITE_SRC" > "$RENDERED"
         scp -q "$RENDERED" "$DEST"
+        # Also write the version back into the SOURCE. Rendering only into $RENDERED
+        # left web/site/index.html pinned at whatever release last touched it by hand
+        # (it sat at 0.22.7 while 0.24.1 was live), so anyone deploying the source
+        # directly would silently DOWNGRADE the page and link a DMG that may be gone.
+        cp "$RENDERED" "$SITE_SRC"
+        echo "    site source synced to v$VERSION (commit web/site/index.html)"
         echo "    published: $(basename "$DMG") + appcast.xml + index.html (v$VERSION)"
     else
         echo "    published: $(basename "$DMG") + appcast.xml"
