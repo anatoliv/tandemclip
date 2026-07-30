@@ -18,11 +18,19 @@ Download the signed DMG from [tandemclip.com](https://tandemclip.com), or use Ho
 
 ```sh
 brew tap anatoliv/tandemclip https://github.com/anatoliv/tandemclip
+brew trust anatoliv/tandemclip     # Homebrew 6+ requires this for third-party taps
 brew install --cask tandemclip
 ```
 
+The `brew trust` step is not optional on Homebrew 6 and later: without it the install
+stops with *"Refusing to load cask … from untrusted tap"*. If TandemClip is already in
+`/Applications` from a DMG, use `--adopt` to let the cask take over an identical copy, or
+`--force` to replace a different version — otherwise Homebrew refuses rather than
+overwrite an app it didn't install.
+
 macOS 13+ (Ventura) on Apple Silicon. The app is Developer ID signed, notarized,
-and auto-updates via Sparkle.
+and auto-updates via Sparkle. The cask is marked `auto_updates`, so `brew upgrade`
+deliberately leaves TandemClip alone and Sparkle does the updating.
 
 ## Screenshots
 
