@@ -163,10 +163,13 @@ fi
 # 4b. Sync the Homebrew cask to this release. The cask pins version + sha256, so
 #     without this it rots to an old DMG (same failure mode the landing page had).
 #     Rewrites the committed Casks/tandemclip.rb in place; commit it with the bump.
+#     The pinned value is "<short>,<build>" because the appcast carries both and
+#     Homebrew's Sparkle livecheck reports them joined — pinning only the short
+#     version fails `brew audit --online`. The URL uses version.csv.first.
 CASK="Casks/tandemclip.rb"
 if [[ -f "$CASK" ]]; then
     /usr/bin/sed -i '' -E \
-        -e "s/^  version \"[0-9.]+\"/  version \"${VERSION}\"/" \
+        -e "s/^  version \"[0-9.]+(,[0-9]+)?\"/  version \"${VERSION},${BUILD_NUM}\"/" \
         -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"${SHA}\"/" \
         "$CASK"
     echo "==> Cask synced: $CASK -> v$VERSION"
