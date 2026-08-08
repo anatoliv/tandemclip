@@ -52,6 +52,32 @@ if [[ -n "$PREV_TAG" ]]; then
     esac
 fi
 
+# --- CHANGELOG ----------------------------------------------------------------
+# The changelog is a version-pinned surface like the cask and the landing page,
+# and it rots the same way — silently, because nothing compares it to the release
+# being built. A release with no entry is a release nobody can find out about:
+# the DMG ships, Sparkle offers it, and the only human-readable record of what
+# changed skips a version. Cheap to check, so check it.
+CHANGELOG="CHANGELOG.md"
+if [[ -f "$CHANGELOG" ]]; then
+    if ! grep -qE "(^|[^0-9.])${VERSION//./\\.}([^0-9.]|\$)" "$CHANGELOG"; then
+        echo "error: $CHANGELOG has no entry for $VERSION." >&2
+        echo "       Add one before releasing — users and the site read this, and a" >&2
+        echo "       silent release is indistinguishable from one that never shipped." >&2
+        exit 1
+    fi
+fi
+
+# Everything above needs no build artifacts, so release.sh runs this file once in
+# PREFLIGHT_ONLY mode *before* the build — a stale changelog or a non-increasing
+# build number should cost one second, not a full build plus notarization (~10
+# minutes) before anyone finds out. The checks below compare against the built
+# DMG and can only run afterwards. One file, one source of truth, two moments.
+if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
+    echo "preflight ok: $VERSION ($BUILD_NUM) — changelog, build number, design tokens"
+    exit 0
+fi
+
 if [[ ! -f "$DMG" ]]; then
     echo "error: missing release DMG: $DMG" >&2
     exit 1

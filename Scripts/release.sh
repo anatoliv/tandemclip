@@ -65,6 +65,68 @@ MSG
     echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without symbolicated crash reports" >&2
 fi
 
+# 0a1. A published release must be reproducible from a commit. Refuse a dirty
+#      tree when actually publishing, so the tag describes what shipped rather
+#      than what happened to be on disk.
+#
+#      Only when PUBLISH=1: local test builds from a working tree are the normal
+#      way to develop. Note the tree WILL be dirty when this script finishes, by
+#      design — step 4b rewrites Casks/tandemclip.rb and step 5 rewrites
+#      web/site/index.html once the DMG exists, so they land one commit behind
+#      the tag. That is expected; commit them after a successful run.
+if [[ "${PUBLISH:-}" == "1" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    echo "error: working tree is dirty — commit or stash before publishing." >&2
+    echo "       A release must be reproducible from a commit; otherwise the tag" >&2
+    echo "       does not describe what actually shipped." >&2
+    git status --short >&2
+    exit 1
+fi
+
+# 0a2. Refuse to package while a copy of the app is running out of this repo.
+#      A running copy holds files open in the tree `hdiutil create` reads, which
+#      produces a CORRUPT DMG — and a corrupt DMG makes `notarytool submit` hang
+#      exactly like a dead connection: nothing reaches Apple, no error is
+#      printed, and every network check comes back clean. Baton lost two
+#      debugging sessions to precisely this, chasing connectivity and even a VPN
+#      that was not in the route, when the image was simply bad.
+#
+#      Deliberately narrower than Baton's guard, which refuses ANY running copy.
+#      TandemClip is an always-resident menu-bar agent, so a copy running from
+#      /Applications is the normal state of every Mac it is installed on and
+#      blocking on it would mean quitting clipboard sync for every release. That
+#      copy also cannot hold open anything under build/, which is what gets
+#      staged. A copy running from THIS repo can, so that one is fatal.
+#      ALLOWLIST the installed copy and refuse everything else, rather than
+#      trying to pattern-match repo paths. Neither `ps -o args=` nor `ps -o comm=`
+#      reliably yields an absolute path — a process launched as
+#      ./build/…/tandemclip reports exactly that relative string — so any
+#      $PWD-anchored pattern silently misses the very case this guard exists for
+#      and leaves a check that looks present and never fires. Matching what is
+#      known-safe needs no path arithmetic and fails closed: a tandemclip running
+#      from anywhere other than /Applications during a release is worth stopping
+#      for, wherever it came from.
+REPO_RUNNERS=""
+INSTALLED_RUNNING=""
+for _pid in $(pgrep -x tandemclip 2>/dev/null || true); do
+    _exe="$(ps -p "$_pid" -o comm= 2>/dev/null || true)"
+    [[ -z "$_exe" ]] && continue          # exited between pgrep and ps
+    case "$_exe" in
+        /Applications/TandemClip.app/*) INSTALLED_RUNNING="$_pid  $_exe" ;;
+        *)                              REPO_RUNNERS+="$_pid  $_exe"$'\n' ;;
+    esac
+done
+if [[ -n "$REPO_RUNNERS" ]]; then
+    echo "error: a TandemClip built from this repo is running — quit it before packaging." >&2
+    printf '       %s' "$REPO_RUNNERS" >&2
+    echo "       It holds files open under build/, which corrupts the DMG that" >&2
+    echo "       hdiutil creates, which then hangs notarization with no error." >&2
+    exit 1
+fi
+if [[ -n "$INSTALLED_RUNNING" ]]; then
+    echo "note: the installed /Applications copy is running (normal for a menu-bar app)."
+    echo "      It holds nothing open under build/, so packaging continues."
+fi
+
 # 0b. Never clobber an already-built DMG for this version. `rm -f "$DMG"` below
 #     would otherwise destroy a *released*, notarized artifact — and since step 4
 #     regenerates the appcast from every DMG in dist/, the replacement gets
@@ -129,6 +191,16 @@ MSG
     fi
     echo "==> Sparkle key matches SUPublicEDKey"
 fi
+
+# 0d. Run the artifact-independent half of the release gate NOW, before the build.
+#     A missing changelog entry or a non-increasing build number is knowable in
+#     one second; discovering it at step 4d costs a full build plus notarization
+#     first. Same script, same rules — just the checks that need no DMG.
+echo "==> Preflight gate (Scripts/check-release.sh, artifact-independent checks)"
+PREFLIGHT_ONLY=1 Scripts/check-release.sh || {
+    echo "error: preflight gate failed — nothing built. Fix the above and re-run." >&2
+    exit 1
+}
 
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
 IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
