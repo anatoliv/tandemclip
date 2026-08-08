@@ -84,6 +84,52 @@ MSG
     exit 1
 fi
 
+# 0c. The Sparkle signing key must match the SUPublicEDKey baked into shipped
+#     builds. If it doesn't, generate_appcast still produces a perfectly
+#     well-formed, EdDSA-signed appcast — and every installed copy REJECTS the
+#     signature and silently stops updating. No error is shown to the user, and
+#     nothing downstream can see it: the feed looks correct, the DMG downloads,
+#     the release appears to succeed.
+#
+#     This is not hypothetical here. Keychain items on this machine have gone
+#     missing before (the notarize profile has vanished more than once), and a
+#     regenerated Sparkle key is indistinguishable from a working one until
+#     users stop receiving updates. Check it BEFORE the build, not after.
+#     Override with ALLOW_KEY_MISMATCH=1 only if you are deliberately rotating
+#     the key AND shipping a build whose Info.plist carries the new public key.
+GK_BIN="${GK_BIN:-$(find "$HOME/Library/Developer" "$HOME/Library/Caches/org.swift.swiftpm" ./.build 2>/dev/null -type f -name generate_keys -path '*Sparkle*' | head -1 || true)}"
+PLIST_ED_KEY="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' Packaging/Info.plist 2>/dev/null || true)"
+if [[ -n "${GK_BIN:-}" && -x "$GK_BIN" && -n "$PLIST_ED_KEY" ]]; then
+    KEYCHAIN_ED_KEY="$("$GK_BIN" -p 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ -z "$KEYCHAIN_ED_KEY" ]]; then
+        echo "error: no Sparkle signing key found in the keychain." >&2
+        echo "       generate_appcast would be unable to sign this release." >&2
+        echo "       Restore the key, or regenerate with: $GK_BIN" >&2
+        exit 1
+    fi
+    if [[ "$KEYCHAIN_ED_KEY" != "$PLIST_ED_KEY" ]]; then
+        if [[ "${ALLOW_KEY_MISMATCH:-}" != "1" ]]; then
+            cat >&2 <<MSG
+error: Sparkle signing key does not match SUPublicEDKey in Packaging/Info.plist.
+
+  keychain : $KEYCHAIN_ED_KEY
+  Info.plist: $PLIST_ED_KEY
+
+  Shipping this would produce a valid-looking appcast that EVERY installed copy
+  rejects — auto-update stops working silently, with no error shown to users.
+
+  Either restore the original signing key, or (if rotating on purpose) update
+  SUPublicEDKey to the new public key and re-run with ALLOW_KEY_MISMATCH=1.
+  Note a rotation only reaches users who update via a build signed with the OLD
+  key, so ship the key change before relying on it.
+MSG
+            exit 1
+        fi
+        echo "WARNING: ALLOW_KEY_MISMATCH=1 — Sparkle key differs from SUPublicEDKey" >&2
+    fi
+    echo "==> Sparkle key matches SUPublicEDKey"
+fi
+
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
 IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 
@@ -127,6 +173,16 @@ ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 
+# 2b. Verify the DMG is structurally sound BEFORE spending 5+ minutes on
+#     notarization. A corrupt DMG makes `notarytool submit` hang rather than
+#     fail cleanly, which then gets chased as a network/notary problem when it
+#     is nothing of the sort. One second of `hdiutil verify` says it outright.
+if ! hdiutil verify "$DMG" >/dev/null 2>&1; then
+    echo "error: $DMG failed hdiutil verify — refusing to notarize a corrupt image." >&2
+    echo "       Rebuild it (delete dist/ and re-run); do not retry notarization." >&2
+    exit 1
+fi
+
 # 3. Sign → notarize → staple the DMG (order matters).
 if [[ -n "$IDENTITY" ]]; then
     echo "==> Signing DMG"
@@ -134,7 +190,37 @@ if [[ -n "$IDENTITY" ]]; then
 fi
 if [[ -n "$NOTARY_PROFILE" ]]; then
     echo "==> Notarizing DMG"
-    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m
+    # `--timeout` covers the *wait for Apple's verdict*, not the upload — and the
+    # upload is what hangs. `notarytool submit` sits at "initiating connection to
+    # the Apple notary service" with nothing ever reaching `notarytool history`,
+    # so the flag never fires and the release appears to be working. Observed
+    # twice in one afternoon at 69 and 18 minutes, both killed by hand. An outer
+    # wall clock plus retries turns an hour of silence into a hiccup, and fails
+    # loudly instead of appearing to work.
+    #
+    # Diagnosis if all attempts fail: `xcrun notarytool history --keychain-profile
+    # "$NOTARY_PROFILE" | head -20`. If this DMG is absent from that list, nothing
+    # ever uploaded and waiting longer cannot help.
+    command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }  # coreutils absent: run bare
+    notarize_with_retry() {
+        local attempt
+        for attempt in 1 2 3; do
+            if timeout 900 xcrun notarytool submit "$DMG" \
+                 --keychain-profile "$NOTARY_PROFILE" --wait --timeout 12m; then
+                return 0
+            fi
+            echo "    WARNING: notarization attempt $attempt did not complete within 15 minutes — retrying" >&2
+            pkill -f "notarytool submit" 2>/dev/null || true
+        done
+        return 1
+    }
+    if ! notarize_with_retry; then
+        echo "error: notarization failed after 3 attempts (15 min wall clock each)." >&2
+        echo "       Check whether the upload ever landed:" >&2
+        echo "         xcrun notarytool history --keychain-profile $NOTARY_PROFILE | head -20" >&2
+        echo "       Absent from that list = nothing uploaded. Nothing was published or tagged." >&2
+        exit 1
+    fi
     xcrun stapler staple "$DMG"
     xcrun stapler validate "$DMG" && echo "    DMG staple validated"
 fi
@@ -200,10 +286,29 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
         exit 1
     fi
     echo "==> Publishing to $DEST"
-    scp -q "$DMG" "$DEST"
-    [[ -f "$DIST/appcast.xml" ]] && scp -q "$DIST/appcast.xml" "$DEST"
+    # Upload the DMG BEFORE the appcast, and land each file atomically (temp name
+    # + mv). Two failure modes this closes: a half-written DMG being served while
+    # scp is still streaming, and — if the run dies between the two copies — an
+    # appcast advertising a build whose download 404s, which breaks auto-update
+    # for everyone rather than merely delaying it. DMG-then-appcast means the
+    # worst interruption leaves the feed pointing at the PREVIOUS good release.
+    publish_atomic() {
+        local src="$1" base; base="$(basename "$src")"
+        if [[ "$DEST" == *:* ]]; then
+            local host="${DEST%%:*}" dir="${DEST#*:}"
+            dir="${dir%/}"
+            scp -q "$src" "$host:$dir/.$base.tmp"
+            ssh "$host" "mv -f '$dir/.$base.tmp' '$dir/$base'"
+        else
+            local dir="${DEST%/}"
+            cp "$src" "$dir/.$base.tmp"
+            mv -f "$dir/.$base.tmp" "$dir/$base"
+        fi
+    }
+    publish_atomic "$DMG"
+    [[ -f "$DIST/appcast.xml" ]] && publish_atomic "$DIST/appcast.xml"
     # Opt-in supporter list shown in the app + site footer (Support links). Not versioned.
-    [[ -f "web/site/supporters.json" ]] && scp -q "web/site/supporters.json" "$DEST"
+    [[ -f "web/site/supporters.json" ]] && publish_atomic "web/site/supporters.json"
 
     SITE_SRC="web/site/index.html"
     if [[ -f "$SITE_SRC" ]]; then
@@ -212,7 +317,7 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
         sed -E "s/TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg/TandemClip_${VERSION}_aarch64.dmg/g; \
                 s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
             "$SITE_SRC" > "$RENDERED"
-        scp -q "$RENDERED" "$DEST"
+        publish_atomic "$RENDERED"
         # Also write the version back into the SOURCE. Rendering only into $RENDERED
         # left web/site/index.html pinned at whatever release last touched it by hand
         # (it sat at 0.22.7 while 0.24.1 was live), so anyone deploying the source
@@ -223,6 +328,45 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
     else
         echo "    published: $(basename "$DMG") + appcast.xml"
     fi
-    echo "    verify: curl -fsSI https://tandemclip.com/appcast.xml"
-    echo "    verify: curl -fsSI https://tandemclip.com/TandemClip_${VERSION}_aarch64.dmg"
+    # 5b. Origin verify — check the artifact AS THE SERVER ACTUALLY SERVES IT,
+    #     not the local file. Hashing the local DMG proves nothing: it can never
+    #     fail, and it cannot see a truncated upload, a stale cached copy, or a
+    #     proxy serving an error page with a 200. This is the only check that
+    #     catches those, so it FAILS the release rather than printing a command
+    #     for someone to remember to run. Compares sha256, not just byte length —
+    #     length misses a same-size stale file.
+    DL_URL="${APPCAST_BASE}/$(basename "$DMG")"
+    echo "==> Origin verify: $DL_URL"
+    TMP_DL="$(mktemp -t tandemclip-originverify)"
+    trap 'rm -f "$TMP_DL"' EXIT
+    if ! curl -fsSL --max-time 300 -o "$TMP_DL" "$DL_URL"; then
+        echo "error: origin verify FAILED — $DL_URL is not fetchable." >&2
+        echo "       The appcast may now advertise a build users cannot download." >&2
+        exit 1
+    fi
+    REMOTE_SHA="$(shasum -a 256 "$TMP_DL" | awk '{print $1}')"
+    REMOTE_LEN="$(wc -c < "$TMP_DL" | tr -d ' ')"
+    LOCAL_LEN="$(wc -c < "$DMG" | tr -d ' ')"
+    if [[ "$REMOTE_SHA" != "$SHA" ]]; then
+        echo "error: origin verify FAILED — served bytes do not match the built DMG." >&2
+        echo "       url   : $DL_URL" >&2
+        echo "       served: $REMOTE_SHA ($REMOTE_LEN bytes)" >&2
+        echo "       built : $SHA ($LOCAL_LEN bytes)" >&2
+        echo "       Do NOT announce this release; re-publish and re-verify first." >&2
+        exit 1
+    fi
+    echo "    origin verified: $REMOTE_LEN bytes, sha256 ${REMOTE_SHA:0:16}…"
+
+    # The appcast must also be the one just written, or clients keep seeing the
+    # previous feed from a cache while the DMG is already swapped.
+    if [[ -f "$DIST/appcast.xml" ]]; then
+        REMOTE_APPCAST_BUILD="$(curl -fsSL --max-time 60 "${APPCAST_BASE}/appcast.xml" 2>/dev/null \
+            | perl -0ne 'if (/<sparkle:version>(\d+)<\/sparkle:version>/) { print $1; exit }' || true)"
+        if [[ "$REMOTE_APPCAST_BUILD" != "$BUILD_NUM" ]]; then
+            echo "error: origin verify FAILED — ${APPCAST_BASE}/appcast.xml advertises build" >&2
+            echo "       ${REMOTE_APPCAST_BUILD:-missing}, expected $BUILD_NUM. Auto-update will not offer this release." >&2
+            exit 1
+        fi
+        echo "    appcast verified: build $REMOTE_APPCAST_BUILD live"
+    fi
 fi

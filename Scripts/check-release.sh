@@ -24,6 +24,34 @@ if [[ -n "$RADIUS_DRIFT" || -n "$FONT_DRIFT" ]]; then
     exit 1
 fi
 
+# --- The build number must actually increase ----------------------------------
+# Sparkle decides whether an update exists by comparing sparkle:version — the
+# BUILD number — and ignores shortVersionString entirely. So two releases that
+# share a build number are invisible to each other: no update is offered, no
+# error is shown, and the appcast looks perfectly correct. Every other check in
+# this file compares the release against *itself* and cannot see it. This one
+# compares it against the last release that actually shipped.
+PREV_TAG="$(git tag --list 'v*' --sort=-v:refname 2>/dev/null | grep -v "^v${VERSION}\$" | head -1 || true)"
+if [[ -n "$PREV_TAG" ]]; then
+    PREV_PLIST="$(mktemp -t tandemclip-prevplist)"
+    if git show "$PREV_TAG:Packaging/Info.plist" > "$PREV_PLIST" 2>/dev/null; then
+        PREV_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PREV_PLIST" 2>/dev/null || true)"
+    fi
+    rm -f "$PREV_PLIST"
+    case "${PREV_BUILD:-x}" in
+        (*[!0-9]*|'') : ;;   # unreadable or pre-dates the field — nothing to compare
+        (*)
+            if [[ "$BUILD_NUM" -le "$PREV_BUILD" ]]; then
+                echo "error: build $BUILD_NUM is not greater than $PREV_BUILD (shipped in $PREV_TAG)." >&2
+                echo "       Sparkle compares sparkle:version, so this release would never be" >&2
+                echo "       offered to anyone running $PREV_TAG. Bump CFBundleVersion in" >&2
+                echo "       Packaging/Info.plist." >&2
+                exit 1
+            fi
+            ;;
+    esac
+fi
+
 if [[ ! -f "$DMG" ]]; then
     echo "error: missing release DMG: $DMG" >&2
     exit 1

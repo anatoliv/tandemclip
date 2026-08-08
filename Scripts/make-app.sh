@@ -89,7 +89,11 @@ fi
 codesign "${SOPTS[@]}" --sign "${SIGN}" "${BUNDLE}"
 [[ -n "${IDENTITY}" ]] && echo "    signed with Developer ID: ${IDENTITY}" || echo "    ad-hoc signed (local only)"
 
-codesign --verify --verbose "${BUNDLE}" >/dev/null && echo "    signature verified"
+# --strict, and verify the nested code too. The default verification is lenient
+# enough to pass a bundle whose embedded Sparkle XPC services or framework are
+# mis-signed — which then fails at notarization, or worse, at update time on a
+# user's machine. --deep walks the nested code signed in the loop above.
+codesign --verify --strict --deep --verbose=2 "${BUNDLE}" 2>/dev/null && echo "    signature verified (strict, nested)"
 
 if [[ -n "${NOTARY_PROFILE}" ]]; then
     if [[ -z "${IDENTITY}" ]]; then
