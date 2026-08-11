@@ -14,6 +14,17 @@
 
 set -euo pipefail
 
+# Keep the Mac awake through `notarytool submit --wait`, which uploads to Apple and
+# then blocks on a verdict; an idle Mac sleeping through it suspends the upload and the
+# step appears to hang with no error.
+#
+# release.sh already holds a caffeinate assertion for its whole run and calls this
+# script, so that path was covered — this is for running make-app.sh on its own.
+# Harmless when nested: two assertions simply overlap.
+if command -v caffeinate >/dev/null; then
+  caffeinate -dimsu -w $$ &
+fi
+
 cd "$(dirname "$0")/.."
 
 APP_NAME="TandemClip"                        # display / .app bundle name
