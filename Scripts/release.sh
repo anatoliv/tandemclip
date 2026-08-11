@@ -16,6 +16,22 @@
 #   SENTRY_ORG / SENTRY_PROJECT           (dSYM upload; skipped if org unset)
 
 set -euo pipefail
+
+# Keep the Mac awake for the whole run.
+#
+# The long unattended stretch here is `notarytool submit`, which uploads to Apple and
+# then waits for a verdict, and an idle Mac sleeping through that suspends the upload.
+# This script has a documented history of that step hanging — once for 69 minutes, once
+# for 18, both ended by hand and chased through connectivity, path MTU and a VPN that
+# was not even in the route. At least one of those was later traced to a corrupt DMG, so
+# this is not a claim that sleep caused them; it is one line that removes sleep from the
+# list of suspects for good.
+#
+# `-w $$` rather than wrapping the script: wrapping puts caffeinate between the terminal
+# and this script, so a TERM kills the wrapper and any EXIT trap never runs.
+if command -v caffeinate >/dev/null; then
+  caffeinate -dimsu -w $$ &
+fi
 cd "$(dirname "$0")/.."
 
 APP_NAME="TandemClip"
