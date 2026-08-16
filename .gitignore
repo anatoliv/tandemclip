@@ -19,3 +19,8 @@ web/
 # Real Sentry DSN, injected into the bundle at package time by make-app.sh.
 # The tracked Packaging/Info.plist keeps SentryDSN empty; never commit the DSN.
 Packaging/sentry-dsn.local
+
+# Learning log is business analysis (internal ticket IDs, infra detail) and this
+# repo publishes DIRECTLY to a public remote. Canonical copy is private:
+# ~/Projects/_learnings/logs/tandemclip/learning-log.md — this path is a symlink.
+docs/learning-log.md
