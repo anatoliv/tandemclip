@@ -78,6 +78,19 @@ is_private_path() {
     return 1
 }
 
+# Is this push going somewhere PUBLIC? git hands a pre-push hook the remote name in $1
+# and its URL in $2. Everything here exists to protect the public repo; the private
+# backup's job is the opposite — mirror origin faithfully, including anything already
+# published that we have not yet cleaned up. Blocking that does not unpublish a thing,
+# it just silently stops the backup, which is how a backup goes 5 commits stale without
+# anyone noticing. Findings are still PRINTED for a private push; they just do not veto it.
+#
+# Fails CLOSED: an unrecognised or absent remote is treated as public.
+TARGET_PUBLIC=1
+case "${2:-}" in
+    *tandemclip-private*) TARGET_PUBLIC=0 ;;
+esac
+
 hit=0
 
 # --- 1 + 3. Tracked tree ------------------------------------------------------
@@ -146,6 +159,12 @@ fi
 
 if [[ $hit -ne 0 ]]; then
     echo "" >&2
+    if [[ $TARGET_PUBLIC -eq 0 ]]; then
+        echo "! secret-scan: findings above are ALREADY in the public history." >&2
+        echo "  Allowing the push because ${1:-this remote} is the private backup, which must" >&2
+        echo "  mirror origin. Cleaning them requires rewriting the PUBLIC history." >&2
+        exit 0
+    fi
     echo "✗ secret-scan: refusing to push — remove the above before publishing." >&2
     echo "  A secret already in a pushed commit needs history rewritten, not just a new commit." >&2
     exit 1

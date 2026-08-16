@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
 # Enable with:  git config core.hooksPath .githooks
 # Blocks a push to the public repo if the tracked tree contains secrets.
-exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh"
+#
+# git passes the remote NAME as $1 and its URL as $2, and this hook used to drop both.
+# That made every push look like a push to the public repo — including pushes to the
+# PRIVATE backup, whose entire job is to mirror whatever origin already has. A backup
+# that refuses to copy a pre-existing public problem is not a safer backup, it is an
+# absent one. Forward them so the scan can tell the two apart.
+exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh" "$@"
