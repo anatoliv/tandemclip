@@ -27,6 +27,20 @@ SECRET_RE='ghp_[0-9A-Za-z]{20,}|gho_[0-9A-Za-z]{20,}|glpat-[0-9A-Za-z_-]{18,}|xo
 # Private LAN IPs — deployment hosts, never something the public repo needs.
 LAN_RE='192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
 
+# Internal hostnames and infra names. These have no shape: a machine name is not a
+# credential and not an IP, so SECRET_RE and LAN_RE both wave one through. That is how
+# two of this estate's names reached this repo's history and had to be rewritten out of
+# it on 2026-08-16. An explicit list is the only thing that catches a name.
+#
+# NOTE, and it is the reason this comment names nothing: is_exempt() skips THIS file,
+# because HOST_RE below contains a literal domain that would match itself. That
+# exemption covers the whole file, prose included — so this is the one place in the
+# repo where writing a real hostname in a comment is guaranteed NOT to be caught. The
+# first draft of this block did exactly that and published it. Keep the prose generic.
+# Keep in sync with Baton's scripts/publish-repo.sh guard (c): same author, same
+# homelab, same failure mode.
+HOST_RE='\b(web|ai|db|nas|dev|tm)-[0-9]{2}\b|\bagent-macbook\b|getvirtualview|[a-z]+-notarize\b|/Users/anatoli'
+
 # Paths that must never appear in public history. Anchored prefixes, matched
 # against the full path. Set SECRET_SCAN_ALLOW_PRIVATE_PATHS=1 to publish one
 # deliberately (e.g. if an internal doc is ever cleared for release).
@@ -79,6 +93,9 @@ while IFS= read -r f; do
     if out=$(grep -InE "$LAN_RE" "$f" 2>/dev/null); then
         echo "LAN IP  $f"; echo "$out"; hit=1
     fi
+    if out=$(grep -InE "$HOST_RE" "$f" 2>/dev/null); then
+        echo "INFRA   $f"; echo "$out"; hit=1
+    fi
 done < <(git ls-files)
 
 # --- 2 + 3. Commits being pushed ---------------------------------------------
@@ -87,7 +104,7 @@ done < <(git ls-files)
 scan_range() {
     local range="$1" commit path blob
     # Commit messages travel with the history too.
-    if out=$(git log --format='%H %s%n%b' "$range" 2>/dev/null | grep -InE "$SECRET_RE|$LAN_RE"); then
+    if out=$(git log --format='%H %s%n%b' "$range" 2>/dev/null | grep -InE "$SECRET_RE|$LAN_RE|$HOST_RE"); then
         echo "SECRET  in a commit message being pushed"; echo "$out"; hit=1
     fi
     # Every blob added or modified anywhere in the range.
@@ -105,6 +122,9 @@ scan_range() {
             fi
             if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$LAN_RE"); then
                 echo "LAN IP  $path (in $commit)"; echo "$out"; hit=1
+            fi
+            if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$HOST_RE"); then
+                echo "INFRA   $path (in $commit)"; echo "$out"; hit=1
             fi
         done < <(git diff-tree --no-commit-id --name-status -r --diff-filter=AM "$commit" 2>/dev/null)
     done < <(git rev-list "$range" 2>/dev/null)
