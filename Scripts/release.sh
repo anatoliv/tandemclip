@@ -235,6 +235,11 @@ if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
     SENTRY_AUTH_TOKEN="$(sentry_token_from_keychain || true)"
     export SENTRY_AUTH_TOKEN
 fi
+# SENTRY_ORG defaults the same way SENTRY_PROJECT does below. It used to be required
+# from the environment, so a release run without it skipped symbol upload with only a
+# warning partway down the log — which is how 0.23.0 shipped unsymbolicated, and how
+# 0.24.1 nearly did. The estate has exactly one Sentry org.
+SENTRY_ORG="${SENTRY_ORG:-get-virtual-view}"
 if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
     echo "==> Uploading dSYMs to Sentry"
     # Upload the shipped bundle (app + Sparkle, i.e. everything a user can crash
