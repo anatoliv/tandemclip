@@ -24,3 +24,7 @@ Packaging/sentry-dsn.local
 # repo publishes DIRECTLY to a public remote. Canonical copy is private:
 # ~/Projects/_learnings/logs/tandemclip/learning-log.md — this path is a symlink.
 docs/learning-log.md
+
+# Local ops tooling: mirrors this repo to the PRIVATE backup remote.
+# Untracked because origin here is the PUBLIC repo. See TBX-3882.
+Scripts/backup-repo.sh
