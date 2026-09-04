@@ -191,6 +191,16 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.24.2", date: "September 4, 2026",
+              highlight: "A clip's buttons stay reachable.",
+              changes: [
+                .init(.fixed, "The hover preview no longer sits on top of a clip's buttons. Resting on a clip low in the list used to pop the preview card right over that row's AirDrop, cleanup, pin and delete icons, which are the very buttons hovering reveals. The card now leaves that column clear, so you can read the preview and still click them."),
+              ]),
+        .init(version: "0.24.0", date: "July 23, 2026",
+              highlight: "A tip jar, if you want one.",
+              changes: [
+                .init(.added, "Optional donate links now sit in Settings and the About window, with a thank-you list of supporters. Nothing in TandemClip is locked behind it, and nothing changes if you skip it."),
+              ]),
         .init(version: "0.23.0", date: "July 22, 2026",
               highlight: "Sync repairs itself.",
               changes: [

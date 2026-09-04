@@ -10,6 +10,19 @@ struct SearchCaret: View {
     }
 }
 
+/// Geometry of a row's trailing action strip (the icons revealed on hover).
+/// The hover preview card reserves `gutter` on its right so it can never sit
+/// on top of those controls — the two must move together, hence one source.
+enum RowActions {
+    static let button: CGFloat = 17          // equal frames put the icons on one line
+    static let spacing: CGFloat = 10         // matches the row's HStack spacing
+    static let maxCount = 4                  // AirDrop · ✨ · pin · delete
+    /// Distance from the panel's right edge to the left of the first icon:
+    /// four 17pt frames at 10pt spacing, plus the row's 14 + 6 trailing padding.
+    static let gutter: CGFloat =
+        CGFloat(maxCount) * button + CGFloat(maxCount - 1) * spacing + 20
+}
+
 struct HistoryRow: View {
     let item: HistoryItem
     let index: Int
@@ -68,7 +81,7 @@ struct HistoryRow: View {
                             .font(.system(size: Tokens.CompactSize.rowText))
                             .foregroundColor(.secondary)
                             .offset(y: -1)
-                            .frame(width: 17, height: 17)
+                            .frame(width: RowActions.button, height: RowActions.button)
                     }
                     .buttonStyle(.plain)
                     .help("AirDrop to a nearby device (iPhone, iPad, any Mac)")
@@ -78,7 +91,7 @@ struct HistoryRow: View {
                         Image(systemName: "sparkles")
                             .font(.system(size: Tokens.CompactSize.rowText))
                             .foregroundColor(.secondary)
-                            .frame(width: 17, height: 17)
+                            .frame(width: RowActions.button, height: RowActions.button)
                     }
                     .buttonStyle(.plain)
                     .help("Clean up with AI (opens in compose)")
@@ -89,7 +102,7 @@ struct HistoryRow: View {
                             .font(.system(size: Tokens.CompactSize.meta))
                             .foregroundColor(.secondary)
                             .offset(y: 0.5)
-                            .frame(width: 17, height: 17)
+                            .frame(width: RowActions.button, height: RowActions.button)
                     }
                     .buttonStyle(.plain)
                     .help("Pin — keep past restarts, on every Mac")
@@ -99,7 +112,7 @@ struct HistoryRow: View {
                         .font(.system(size: Tokens.CompactSize.rowTitle))
                         .foregroundColor(.secondary)
                         .offset(y: deleteOffset)
-                        .frame(width: 17, height: 17)
+                        .frame(width: RowActions.button, height: RowActions.button)
                 }
                 .buttonStyle(.plain)
                 .help(deleteHelp)
@@ -134,10 +147,11 @@ struct HistoryRow: View {
 }
 
 /// Hover preview: enough content to know what a clip is without applying it.
-/// Fixed to the panel's bottom-trailing corner (stable — no flicker chasing
-/// the pointer). Text/rich clips show an excerpt; images a larger thumbnail;
-/// documents/files their file list, plus an excerpt for a text-like document
-/// or a first-page render for a PDF.
+/// Fixed to the panel's bottom edge, inset from the trailing edge by the width
+/// of a row's action strip (stable — no flicker chasing the pointer, and the
+/// row's own buttons stay reachable while the card is up). Text/rich clips show
+/// an excerpt; images a larger thumbnail; documents/files their file list, plus
+/// an excerpt for a text-like document or a first-page render for a PDF.
 struct PreviewCard: View {
     let item: HistoryItem
     @ObservedObject var model: PickerModel
@@ -223,7 +237,11 @@ struct PreviewCard: View {
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: Tokens.Radius.sheet))
         .overlay(RoundedRectangle(cornerRadius: Tokens.Radius.sheet).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.25), radius: 10, y: 3)
-        .padding(.trailing, 12).padding(.bottom, 44)
+        // Clear of the row action strip, not the panel edge: the card is
+        // bottom-anchored over the list, so a corner-hugging card sat exactly on
+        // the ✕/pin/✨/AirDrop icons of every row it covered — the controls you
+        // hovered the row to reach. 44 keeps it above the footer.
+        .padding(.trailing, RowActions.gutter).padding(.bottom, 44)
         .onHover { model.cardHover($0) }   // grace: entering the card keeps it up
         .task(id: item.id) {
             generated = PreviewThumbnailer.Result()

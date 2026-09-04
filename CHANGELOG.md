@@ -4,7 +4,13 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
-## Unreleased
+## [0.24.2] — 2026-09-04
+- Picker: the hover preview no longer covers a row's action buttons. The card
+  is anchored to the bottom of the panel, so it sat directly on the AirDrop /
+  cleanup / pin / delete icons of every row it overlapped, which are exactly the
+  controls hovering the row reveals. It now reserves the width of that action
+  strip on its right. The strip geometry lives in one place (`RowActions`), used
+  by both the buttons and the card, so the two can't drift apart.
 - Homebrew cask: pin the version as `short,build` (e.g. `0.24.1,60`) so
   `brew audit --online` and `brew livecheck` agree. The appcast carries both
   `sparkle:shortVersionString` and `sparkle:version`, and Homebrew's Sparkle
@@ -16,6 +22,20 @@ All notable changes to TandemClip are documented here. The format is based on
 - Install docs: `brew trust` is required on Homebrew 6+ for third-party taps, and
   an existing `/Applications` copy needs `--adopt` (identical) or `--force`
   (different version). The previous instructions failed on current Homebrew.
+
+## [0.24.1] — 2026-07-23
+- Support copy in the About window reads in plain punctuation (no em dash).
+
+## [0.24.0] — 2026-07-23
+- Tip jar: donate links in Settings and the About window, supporter recognition
+  from `web/site/supporters.json`, a GitHub `FUNDING.yml`, and a footer link on
+  the site. Nothing is gated behind it.
+- Release script hardening: refuse to ship unsymbolicated by default, read the
+  Sentry token from the shared Keychain item, upload only the shipped bundle and
+  its dSYM rather than all of `.build`, emit a real dSYM from `make-app.sh`, and
+  refuse to overwrite an already-built DMG for the same version.
+- Secret scan: check pushed commits and private paths, and narrow the `Tests/*`
+  skip.
 
 ## [0.23.0] — 2026-07-22
 - Automatic reconnect: the LAN transport is rebuilt after the Mac wakes from
