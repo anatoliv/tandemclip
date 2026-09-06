@@ -56,8 +56,13 @@ final class HelpSearchTests: XCTestCase {
 
         let privacy = HelpSearchModel.search("hide what I copy from my other computers",
                                              embedding: emb, vectors: vectors)
+        // "pause-vs-privacy-hold" was added 2026-09-06 and now ranks first for this
+        // phrasing, which is correct: it is the topic that explains which switch
+        // hides your copies. It pushed sync-role-receiveonly from 5th to 6th, so the
+        // set records it as an acceptable answer rather than the test being loosened.
         let acceptable: Set<String> = ["privacy-hold", "sync-peer-preview", "sync-role-receiveonly",
-                                       "sync-role-sendonly", "privacy-passwords"]
+                                       "sync-role-sendonly", "privacy-passwords",
+                                       "pause-vs-privacy-hold"]
         XCTAssertTrue(privacy.prefix(5).contains { acceptable.contains($0.id) },
                       "expected a privacy/visibility topic near the top, got \(privacy.prefix(5).map(\.id))")
     }
