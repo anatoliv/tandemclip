@@ -227,7 +227,7 @@ enum HelpCatalog {
         .init(version: "0.22.6", date: "July 3, 2026",
               highlight: "A clearer smart-title mark.",
               changes: [
-                .init(.improved, "Smart-titled clips now show a crisp accent ✨ sparkles icon in the picker instead of a tiny inline emoji, which is easier to spot and read in both light and dark mode."),
+                .init(.improved, "Smart-titled clips now show a crisp accent ✨ sparkles icon in the picker instead of a tiny inline emoji. The icon is easier to spot and read in both light and dark mode."),
               ]),
         .init(version: "0.22.5", date: "July 3, 2026",
               highlight: "Smart titles that actually turn on.",
