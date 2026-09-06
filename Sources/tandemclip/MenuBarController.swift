@@ -72,7 +72,7 @@ final class MenuBarController: NSObject {
         var state = config.paused ? "Paused" : modeName
         if config.privacyHold { state += " · Private" }
         let n = engine.peerCount
-        menu.addItem(disabled: "TandemClip — \(state) · \(n) Mac\(n == 1 ? "" : "s")")
+        menu.addItem(disabled: "TandemClip: \(state) · \(n) Mac\(n == 1 ? "" : "s")")
         if let info = engine.currentClipInfo {
             let origin = engine.clipOrigin.map { "from \($0), \(age(engine.localTimestamp))" } ?? "local"
             menu.addItem(disabled: "Clipboard: \(info.kind) · \(Self.sizeString(info.bytes)) · \(origin)")
@@ -80,10 +80,10 @@ final class MenuBarController: NSObject {
             menu.addItem(disabled: "Clipboard: empty")
         }
         if config.networkAllowlistEnabled, !NetworkGuard.syncAllowed(config) {
-            menu.addItem(disabled: "⚠︎ Paused — Wi-Fi not allowed/verified")
+            menu.addItem(disabled: "⚠︎ Paused: Wi-Fi not allowed/verified")
         }
         if let held = engine.heldSecret {
-            menu.addItem(disabled: "⚠︎ Copy held — looks like a \(held.reason)")
+            menu.addItem(disabled: "⚠︎ Copy held: looks like a \(held.reason)")
             menu.addItem(action: "Send Held Clip Anyway", selector: #selector(releaseHeldSecret), target: self)
         }
 
@@ -139,7 +139,7 @@ final class MenuBarController: NSObject {
         menu.addItem(action: "About TandemClip", selector: #selector(openAbout), target: self)
         menu.addItem(action: "Check for Updates…", selector: #selector(checkForUpdates), target: self)
         menu.addItem(action: "Getting Started", selector: #selector(openWelcome), target: self)
-        menu.addItem(action: "Help — Keyboard & Tips", selector: #selector(openHelp), target: self)
+        menu.addItem(action: "Help: Keyboard & Tips", selector: #selector(openHelp), target: self)
 
         menu.addItem(.separator())
         menu.addItem(action: "Quit TandemClip", selector: #selector(quit), target: self, key: "q")

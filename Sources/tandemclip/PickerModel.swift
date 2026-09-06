@@ -156,7 +156,7 @@ final class PickerModel: ObservableObject {
         // Privacy hold promises nothing leaves this Mac — that includes the
         // AI endpoint, even a local one (keep the promise simple).
         guard !privacyHold else {
-            composeError = "Privacy hold is on (✋) — AI calls are paused until you switch it off."
+            composeError = "Privacy hold is on (✋). AI calls are paused until you switch it off."
             return
         }
         let input = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -208,7 +208,7 @@ final class PickerModel: ObservableObject {
         guard !text.isEmpty else { return }
         onComposeCopy?(text)
         endCompose()
-        flashDrop("On the clipboard — syncs like any copy")
+        flashDrop("On the clipboard: syncs like any copy")
         onComposeDone?()
     }
 
@@ -284,7 +284,7 @@ final class PickerModel: ObservableObject {
         let question = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         guard !privacyHold else {
-            composeError = "Privacy hold is on (✋) — AI calls are paused."
+            composeError = "Privacy hold is on (✋). AI calls are paused."
             return
         }
         guard let made = makeAskStream?(question) else {
@@ -323,7 +323,7 @@ final class PickerModel: ObservableObject {
         guard summarizingHash == nil, summaries[item.hash] == nil,
               let text = item.snapshot.plainText else { return }
         guard !privacyHold else {
-            flashDrop("Privacy hold is on (✋) — AI calls are paused.", isError: true)
+            flashDrop("Privacy hold is on (✋). AI calls are paused.", isError: true)
             return
         }
         guard let stream = makeSummaryStream?(text) else {

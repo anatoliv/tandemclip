@@ -120,7 +120,7 @@ final class SettingsModel: ObservableObject {
         }
         guard let url = URL(string: aiEndpoint), !aiModel.isEmpty else { return nil }
         guard AIClient.isAcceptableEndpoint(url) else {
-            aiProbe = (false, "Plain http is only allowed for local/LAN endpoints — use https for anything on the internet.")
+            aiProbe = (false, "Plain http is only allowed for local/LAN endpoints. Use https for anything on the internet.")
             return nil
         }
         let auth: AIClient.AuthStrategy = aiAuthMode == .azureApiKey ? .azureApiKey(aiKey) : .apiKey(aiKey)
@@ -229,7 +229,7 @@ final class SettingsModel: ObservableObject {
 
     func addCurrentSSID() {
         guard let s = NetworkGuard.currentSSID(), !s.isEmpty else {
-            ssidHint = "Couldn't read the Wi-Fi name — are you connected to Wi-Fi (not Ethernet/VPN)?"
+            ssidHint = "Couldn't read the Wi-Fi name. Are you connected to Wi-Fi (not Ethernet/VPN)?"
             return
         }
         // Add the current network so sync is allowed on it. If the OS scrubbed
@@ -330,7 +330,7 @@ struct SettingsBullets: View {
             }
         }
         var line = term
-        line += AttributedString(" — \(item.text)")
+        line += AttributedString(": \(item.text)")
         return line
     }
 }
@@ -474,7 +474,7 @@ struct SettingsView: View {
             } footer: {
                 SettingsBullets(items: [
                     ("Launch at login", "open TandemClip automatically when you log in.", "general-startup"),
-                    ("Start paused", "launch with syncing off until you hit Resume in the menu — nothing is shared right after boot.", "general-startup#Start paused"),
+                    ("Start paused", "launch with syncing off until you hit Resume in the menu. Nothing is shared right after boot.", "general-startup#Start paused"),
                 ])
             }
             Section {
@@ -495,9 +495,9 @@ struct SettingsView: View {
                 Text("Diagnostics")
             } footer: {
                 SettingsBullets(items: [
-                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app) — useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
+                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). Useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
                     ("Send crash & error reports", CrashReporting.isConfigured
-                        ? "off by default; when on, sends crash and error reports to the developer to help fix bugs — never your clipboard content, no IP or identifiers."
+                        ? "off by default; when on, sends crash and error reports to the developer to help fix bugs. Reports never include your clipboard content, your IP, or any identifiers."
                         : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
                 ])
             }
@@ -512,8 +512,8 @@ struct SettingsView: View {
         Form {
             Section {
                 SettingsDropdown(title: "Mode", options: [
-                    (SyncMode.mirror, "Mirror — auto-sync"),
-                    (SyncMode.manual, "Manual — pull on demand"),
+                    (SyncMode.mirror, "Mirror: auto-sync"),
+                    (SyncMode.manual, "Manual: pull on demand"),
                 ], selection: $model.mode)
                 SettingsDropdown(title: "This Mac's role", options: [
                     (Role.sendReceive, "Send & receive"),
@@ -521,7 +521,7 @@ struct SettingsView: View {
                     (Role.sendOnly, "Send only"),
                 ], selection: $model.role)
                 SettingsDropdown(title: "Peer preview", options: [
-                    (PreviewLevel.metadata, "Metadata — age + size"),
+                    (PreviewLevel.metadata, "Metadata: age + size"),
                     (PreviewLevel.preview, "Live text preview"),
                     (PreviewLevel.names, "Names only"),
                 ], selection: $model.previewLevel)
@@ -545,7 +545,7 @@ struct SettingsView: View {
                 Text("Limits")
             } footer: {
                 SettingsBullets(items: [
-                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text. Large clips travel in chunks automatically — but all Macs need a recent version for clips over ~25 MB.", "sync-max-size"),
+                    ("Max clipboard size", "the biggest clip that will sync. Anything larger falls back to just its plain text, or is skipped entirely if there's no text. Large clips travel in chunks automatically, but all Macs need a recent version for clips over ~25 MB.", "sync-max-size"),
                 ])
             }
         }
@@ -564,7 +564,7 @@ struct SettingsView: View {
                 Text("What to sync")
             } footer: {
                 SettingsBullets(items: [
-                    ("Plain text", "always syncs — it can't be turned off.", "content-kinds"),
+                    ("Plain text", "always syncs and can't be turned off.", "content-kinds"),
                     ("Rich text / Images", "each copy carries every enabled representation, so pasting on the other Mac keeps full formatting.", "content-kinds#Rich text"),
                     ("Files (by content)", "whether copied files are sent to your Macs automatically. Even when off, file copies land in your history and can still be pulled or drop-shared.", "content-kinds#Files (by content)"),
                 ])
@@ -579,7 +579,7 @@ struct SettingsView: View {
                 Text("Storage")
             } footer: {
                 SettingsBullets(items: [
-                    ("Received-files limit", "files from your Macs are cached on disk so paste keeps working — currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically; picking them from history brings them back.", "content-storage"),
+                    ("Received-files limit", "files from your Macs are cached on disk so paste keeps working, currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically; picking them from history brings them back.", "content-storage"),
                 ])
             }
             Section {
@@ -597,7 +597,7 @@ struct SettingsView: View {
                 Text("History")
             } footer: {
                 SettingsBullets(items: [
-                    ("Keep clipboard history", "remember recent clips for this session (in memory only — cleared when the app quits). Browse them in the picker with ⇧⌘V.", "content-history#master switch"),
+                    ("Keep clipboard history", "remember recent clips for this session (in memory only, cleared when the app quits). Browse them in the picker with ⇧⌘V.", "content-history#master switch"),
                     ("Keep in history / Show in picker", "how many clips are remembered, and how many of those the picker lists.", "content-history#how many"),
                     ("Clear History Now", "wipes the session history and the received-files cache from disk.", "content-history#Clear History Now"),
                 ])
@@ -643,7 +643,7 @@ struct SettingsView: View {
                 Toggle("Enable AI text cleanup", isOn: $model.aiEnabled)
             } footer: {
                 SettingsBullets(items: [
-                    ("Enable AI text cleanup", "adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below — there is no middleman.", "ai-setup"),
+                    ("Enable AI text cleanup", "adds a compose area to the picker (✎) where AI rewrites text to be cleaner and more readable before you copy it. Calls go directly from this Mac to the endpoint below. There is no middleman.", "ai-setup"),
                 ])
             }
             Section {
@@ -703,7 +703,7 @@ struct SettingsView: View {
                 Text("Model")
             } footer: {
                 SettingsBullets(items: [
-                    ("Authentication", "API key / local server for any OpenAI-compatible endpoint; Azure OpenAI sends the key in an api-key header; ChatGPT sign-in uses your ChatGPT Plus/Pro subscription — no API key needed.", "ai-setup#Three ways to connect"),
+                    ("Authentication", "API key / local server for any OpenAI-compatible endpoint; Azure OpenAI sends the key in an api-key header; ChatGPT sign-in uses your ChatGPT Plus/Pro subscription, which needs no API key.", "ai-setup#Three ways to connect"),
                     ("Use preset", "fills the fields for a known provider and sets the matching authentication. A local Ollama / LM Studio keeps text entirely on your machine.", "ai-providers"),
                     ("Endpoint URL / Model", "where requests go and which model handles them.", "ai-setup"),
                     ("API key", "stored in the Keychain, never in preferences. Local servers usually need none.", "ai-setup#Keychain"),
@@ -738,7 +738,7 @@ struct SettingsView: View {
                 Text("Tone presets")
             } footer: {
                 SettingsBullets(items: [
-                    ("Tone presets", "each is a rewrite instruction the compose area can apply — Clean up, Email reply, Summarize, Translate, or your own. Edit the prompt here; pick which to run from the compose area.", "ai-presets"),
+                    ("Tone presets", "each is a rewrite instruction the compose area can apply, such as Clean up, Email reply, Summarize or Translate to English. You can add your own. Edit the prompt here; pick which to run from the compose area.", "ai-presets"),
                     ("Input cap", "at most \(Config.aiMaxInputChars / 1000)k characters are sent per run, so a giant clip can't become a giant bill.", "ai-setup#20,000 characters"),
                 ])
             }
@@ -747,7 +747,7 @@ struct SettingsView: View {
                     .disabled(!model.aiEnabled)
             } footer: {
                 SettingsBullets(items: [
-                    ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over — professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.", "ai-autotone"),
+                    ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over. Professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.", "ai-autotone"),
                 ])
             }
             Section {
@@ -764,12 +764,12 @@ struct SettingsView: View {
             } footer: {
                 SettingsBullets(items: [
                     ("Smart titles", "clips longer than a couple of sentences get a short AI-generated title (marked ✨) in the picker instead of their first line. Sends clip text to your endpoint automatically.", "ai-on-receive#Smart titles"),
-                    ("Translate incoming", "clips arriving from your Macs in another language get a translation in the hover preview — the clip itself is never altered. Language detection is on-device; only the translation call uses your endpoint.", "ai-on-receive#Translate incoming"),
+                    ("Translate incoming", "clips arriving from your Macs in another language get a translation in the hover preview. The clip itself is never altered. Language detection is on-device; only the translation call uses your endpoint.", "ai-on-receive#Translate incoming"),
                 ])
             }
             Section {
                 TextField("Fallback endpoint URL", text: $model.aiFallbackEndpoint,
-                          prompt: Text("optional — e.g. a cloud endpoint behind local Ollama"))
+                          prompt: Text("optional, e.g. a cloud endpoint behind local Ollama"))
                     .autocorrectionDisabled()
                 TextField("Fallback model", text: $model.aiFallbackModel)
                     .autocorrectionDisabled()
@@ -778,7 +778,7 @@ struct SettingsView: View {
                 Text("Fallback")
             } footer: {
                 SettingsBullets(items: [
-                    ("Fallback endpoint", "tried once when the primary fails with a rate limit, server error, or network problem before producing any output. Config mistakes (bad key, wrong model) don't fail over — they'd fail everywhere.", "ai-fallback"),
+                    ("Fallback endpoint", "tried once when the primary fails with a rate limit, server error, or network problem before producing any output. Config mistakes (bad key, wrong model) don't fail over, because they'd fail everywhere.", "ai-fallback"),
                 ])
             }
         }
@@ -806,7 +806,7 @@ struct SettingsView: View {
             } footer: {
                 SettingsBullets(items: [
                     ("Pairing code", "the shared secret that encrypts everything. Enter the same code on every Mac you want in the group.", "security-pairing"),
-                    ("Apply", "re-keys the connection immediately — peers drop until they also have the new code (no relaunch needed).", "security-pairing#Apply"),
+                    ("Apply", "re-keys the connection immediately. Peers drop until they also have the new code (no relaunch needed).", "security-pairing#Apply"),
                     ("Regenerate", "makes a fresh strong code; copy it to your other Macs afterwards.", "security-pairing#Regenerate"),
                 ])
             }
@@ -817,7 +817,7 @@ struct SettingsView: View {
                 Text("Secret guard")
             } footer: {
                 SettingsBullets(items: [
-                    ("Hold likely secrets", "copies that look like credentials — API keys, private keys, card numbers, lone random tokens — are kept on this Mac instead of syncing. The menu shows the hold; \"Send Held Clip Anyway\" releases it. Backstops apps that don't mark passwords as concealed.", "secret-guard"),
+                    ("Hold likely secrets", "copies that look like credentials (API keys, private keys, card numbers, lone random tokens) are kept on this Mac instead of syncing. The menu shows the hold; \"Send Held Clip Anyway\" releases it. Backstops apps that don't mark passwords as concealed.", "secret-guard"),
                 ])
             }
 
@@ -847,8 +847,8 @@ struct SettingsView: View {
             } footer: {
                 SettingsBullets(items: [
                     ("Only sync with trusted devices", model.allowlistEnabled
-                        ? "on — only the devices you check can sync. Unchecking one revokes it immediately, even if it still knows the pairing code: the safe way to cut off a Mac you've stopped using."
-                        : "off — any Mac with the pairing code can sync. Turn this on to pin specific devices and revoke one without changing the code everywhere.", "security-allowlist"),
+                        ? "on. Only the devices you check can sync. Unchecking one revokes it immediately, even if it still knows the pairing code: the safe way to cut off a Mac you've stopped using."
+                        : "off. Any Mac with the pairing code can sync. Turn this on to pin specific devices and revoke one without changing the code everywhere.", "security-allowlist"),
                 ])
             }
 
@@ -868,7 +868,7 @@ struct SettingsView: View {
                 }
                 if model.networkAllowlistEnabled {
                     if model.allowedSSIDs.isEmpty {
-                        Label("No networks added — sync is paused until you add one.",
+                        Label("No networks added. Sync is paused until you add one.",
                               systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundColor(.orange)
                     }
@@ -907,7 +907,7 @@ struct SettingsView: View {
                 Text("Wi-Fi networks")
             } footer: {
                 SettingsBullets(items: [
-                    ("Wi-Fi networks", "when the list is on, sync runs only on these networks — nothing is shared on coffee-shop Wi-Fi you haven't listed.", "security-wifi"),
+                    ("Wi-Fi networks", "when the list is on, sync runs only on these networks, so nothing is shared on coffee-shop Wi-Fi you haven't listed.", "security-wifi"),
                     ("Allow sync when Wi-Fi can't be verified", "on Ethernet or VPN there's no network name to match, so sync pauses by default; turn this on to allow it there instead.", "security-wifi#can't be verified"),
                 ])
             }

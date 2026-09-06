@@ -74,7 +74,7 @@ final class CodexAuthManager: ObservableObject {
         }
 
         guard result.state == state else {
-            lastError = "Sign-in returned a mismatched state token — please try again."
+            lastError = "Sign-in returned a mismatched state token. Please try again."
             throw CodexOAuth.OAuthError.stateMismatch
         }
 
