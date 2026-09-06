@@ -51,9 +51,13 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         // Settings changed from the window → refresh the menu/icon and re-apply
         // the appearance (cheap + idempotent, so any theme edit takes effect).
-        NotificationCenter.default.addObserver(forName: Config.didChange, object: nil, queue: .main) { [weak menuBar, config] _ in
+        NotificationCenter.default.addObserver(forName: Config.didChange, object: nil, queue: .main) { [weak self, weak menuBar, config] _ in
             menuBar?.refresh()
             AppTheme.apply(config.theme)
+            // Privacy hold is settable from the menu bar as well as the
+            // picker's ✋, so the panel re-reads config rather than trusting
+            // the state it was built with.
+            self?.picker.syncPrivacyHold()
         }
 
         // A "learn more" link in Settings → open the Help window (it reads the

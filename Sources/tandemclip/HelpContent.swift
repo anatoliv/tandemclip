@@ -65,7 +65,7 @@ enum HelpCatalog {
         .init(id: "first-sync", category: "Getting started", title: "Your first sync",
               body: "With two paired Macs in Mirror mode, copy some text on one and paste on the other. That's the whole loop. The menu-bar icon shows sync state; the picker (⇧⌘V) shows everything else."),
         .init(id: "menu-bar", category: "Getting started", title: "The menu-bar menu",
-              body: "TandemClip has no Dock icon. The menu-bar icon is home base. The icon itself reflects state: syncing normally, a raised hand while privacy hold is on, a warning when paused because the Wi-Fi isn't allowed. Open the menu for the live status and quick controls.\n\nWhat you'll find there:\n- A **status line** with the current state and how many Macs are connected.\n- The **current clipboard**: its kind, size, which Mac it came from, and how long ago.\n- **Pause / Resume** syncing, and **pull a peer's clipboard** on demand.\n- **Reconnect**, to rebuild LAN discovery and connections if sync goes quiet after sleep, a Wi-Fi change, or a long idle.\n- **Copy Pairing Code**, which puts the code on your clipboard to type into another Mac.\n- **Check for Updates…**, Settings, this Help window, and Quit.\n\nThe picker (⇧⌘V) is the other half: history, search, previews, pins, and compose all live there."),
+              body: "TandemClip has no Dock icon. The menu-bar icon is home base. The icon itself reflects state: syncing normally, a raised hand while privacy hold is on, a warning when paused because the Wi-Fi isn't allowed. Open the menu for the live status and quick controls.\n\nWhat you'll find there:\n- A **status line** with the current state and how many Macs are connected.\n- The **current clipboard**: its kind, size, which Mac it came from, and how long ago.\n- **Pause / Resume** syncing, and **pull a peer's clipboard** on demand.\n- **Privacy Hold**, which stops copies leaving this Mac without pausing sync altogether. It is the same switch as the picker's ✋, so either one moves both.\n- **Reconnect**, to rebuild LAN discovery and connections if sync goes quiet after sleep, a Wi-Fi change, or a long idle.\n- **Copy Pairing Code**, which puts the code on your clipboard to type into another Mac.\n- **Check for Updates…**, Settings, this Help window, and Quit.\n\nThe picker (⇧⌘V) is the other half: history, search, previews, pins, and compose all live there."),
 
         // MARK: Picker
         .init(id: "picker-open", category: "Clipboard picker", title: "Open & navigate",
@@ -97,7 +97,7 @@ enum HelpCatalog {
         .init(id: "delete-everywhere", category: "Clipboard picker", title: "Delete everywhere",
               body: "Hover a clip and click ✕ (or press ⌘⌫) to remove it from history on every Mac, including any clipboard or received file still holding it. Deletions are signed and can't be forged or replayed."),
         .init(id: "privacy-hold", category: "Clipboard picker", title: "Privacy hold ✋",
-              body: "The hand button in the picker footer stops anything you copy from leaving this Mac until you switch it off: no broadcasts, no pull serving, no previews, and AI cleanup calls are paused too. Receiving keeps working. The menu-bar icon shows a raised hand while it's on. Example: turn it on before copying passwords or unreleased numbers, then off when done."),
+              body: "The hand button in the picker footer stops anything you copy from leaving this Mac until you switch it off: no broadcasts, no pull serving, no previews, and AI cleanup calls are paused too. Receiving keeps working. The menu-bar menu carries the same switch as **Privacy Hold**, and the icon shows a raised hand while it's on. Example: turn it on before copying passwords or unreleased numbers, then off when done."),
         .init(id: "pin", category: "Clipboard picker", title: "Pin 📌",
               body: "The pin keeps the picker open: it stays up after picking a clip, survives clicking into other apps, and ignores Esc until you unpin it. Unpinned, the picker is transient. Esc or clicking away closes it."),
         .init(id: "compose", category: "Clipboard picker", title: "Compose & AI cleanup ✎",
@@ -191,6 +191,12 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.25.0", date: "September 6, 2026",
+              highlight: "Privacy hold reaches the menu bar.",
+              changes: [
+                .init(.added, "Privacy Hold is now in the menu-bar menu, next to Pause. Until now the only switch was the hand button in the picker, even though the menu-bar icon and status line already showed when it was on, so stopping your copies in a hurry meant opening the picker first. Both switches move together."),
+                .init(.improved, "Settings, the Welcome and About windows, the picker and the menu bar read in plain punctuation, finishing what 0.24.1 started in the Help window."),
+              ]),
         .init(version: "0.24.2", date: "September 4, 2026",
               highlight: "A clip's buttons stay reachable.",
               changes: [

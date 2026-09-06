@@ -104,6 +104,15 @@ final class ClipboardPickerController {
 
     func hide() { panel?.orderOut(nil) }
 
+    /// Re-seed the picker's privacy-hold state from config.
+    ///
+    /// The model is built once and `show()` does not re-seed this flag, so
+    /// without it a toggle from the menu bar would leave a stale ✋ in the
+    /// footer. Assigning the property does not call `onPrivacyChange` (only
+    /// `PickerModel.togglePrivacy()` does), so writing config's value back here
+    /// cannot loop. Pinned by `PickerModelPrivacySyncTests`.
+    func syncPrivacyHold() { model?.privacyHold = config.privacyHold }
+
     /// Total size of everything held in clipboard history (what the picker uses).
     private func usageString() -> String {
         let history = engine.history

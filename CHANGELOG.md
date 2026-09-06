@@ -4,6 +4,20 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.25.0] — 2026-09-06
+- Menu bar: **Privacy Hold** is now a menu item, next to Pause. It was only ever
+  reachable from the picker's hand button, while the menu-bar icon and status
+  line both *reported* the state, so the one control you want in a hurry was the
+  one you had to open the picker to reach. Either switch moves the other:
+  `Config.privacyHold` is the single source of truth and the picker re-seeds
+  from it on `Config.didChange`, so the two cannot drift.
+- Help: the menu-bar and privacy-hold topics say where the switch lives now that
+  it is in both places. Two Help lines already claimed privacy hold was in the
+  menu-bar menu, which was wrong when written; they are true as of this release.
+- Copy: plain punctuation across Settings, the Welcome and About windows, the
+  picker, the menu bar and the Codex sign-in errors, finishing the pass that
+  covered the Help window in 0.24.1.
+
 ## [0.24.2] — 2026-09-04
 - Picker: the hover preview no longer covers a row's action buttons. The card
   is anchored to the bottom of the panel, so it sat directly on the AirDrop /

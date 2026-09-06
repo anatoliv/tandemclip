@@ -129,6 +129,11 @@ final class MenuBarController: NSObject {
 
         menu.addItem(action: config.paused ? "Resume" : "Pause",
                      selector: #selector(togglePause), target: self)
+        // Privacy hold sits next to Pause because both are "stop sending"
+        // controls. A checkmark rather than a verb: it is a persistent mode the
+        // user wants to *see*, which is also why the status line above says
+        // "· Private". The picker's ✋ button toggles the same config flag.
+        addCheck(menu, "Privacy Hold", on: config.privacyHold, sel: #selector(togglePrivacyHold))
         menu.addItem(action: "Reconnect", selector: #selector(reconnect), target: self)
 
         menu.addItem(.separator())
@@ -190,6 +195,15 @@ final class MenuBarController: NSObject {
 
     @objc private func togglePause() {
         config.setPaused(!config.paused)
+        refresh()
+    }
+
+    /// Privacy hold: stop anything copied here from leaving this Mac, while
+    /// receiving keeps working. The picker's ✋ button sets the same flag, so
+    /// `config` is the single source of truth and `Config.didChange` re-seeds
+    /// the picker (AppController) rather than the two holding separate state.
+    @objc private func togglePrivacyHold() {
+        config.privacyHold.toggle()
         refresh()
     }
 
