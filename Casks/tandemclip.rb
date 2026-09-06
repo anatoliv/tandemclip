@@ -6,8 +6,7 @@ cask "tandemclip" do
   version "0.25.0,62"
   sha256 "b7c5598f5f377d849f6ca6f0627f4bb90a4a093db3f0f2942441f8519224f66d"
 
-  url "https://tandemclip.com/TandemClip_#{version.csv.first}_aarch64.dmg",
-      verified: "tandemclip.com/"
+  url "https://tandemclip.com/TandemClip_#{version.csv.first}_aarch64.dmg"
   name "TandemClip"
   desc "LAN-only clipboard sync for Macs"
   homepage "https://tandemclip.com/"
