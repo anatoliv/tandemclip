@@ -11,8 +11,13 @@ All notable changes to TandemClip are documented here. The format is based on
   one you had to open the picker to reach. Either switch moves the other:
   `Config.privacyHold` is the single source of truth and the picker re-seeds
   from it on `Config.didChange`, so the two cannot drift.
-- Help: the menu-bar and privacy-hold topics say where the switch lives now that
-  it is in both places. Two Help lines already claimed privacy hold was in the
+- Help: Pause has a topic of its own for the first time, and a new "Pause or
+  privacy hold?" topic spells out the three differences in plain English:
+  privacy hold keeps receiving while pause does not; privacy hold stops the AI
+  calls while pause does not, so a paused Mac will still send a long copy to
+  your model for a smart title; and a delete still reaches your other Macs
+  under privacy hold but not under pause. The menu-bar and privacy-hold topics
+  say where the switch lives now that it is in both places. Two Help lines already claimed privacy hold was in the
   menu-bar menu, which was wrong when written; they are true as of this release.
 - Copy: plain punctuation across Settings, the Welcome and About windows, the
   picker, the menu bar and the Codex sign-in errors, finishing the pass that
