@@ -175,10 +175,10 @@ struct WelcomeView: View {
                     step(1, "It already works",
                          "Nothing to configure to start. Right now TandemClip syncs text, rich text, and images between your Macs automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key. (Files are the one thing off by default. Turn them on in Settings ▸ Content when you want them.)")
                     step(2, "Pair your Macs: the one thing to do",
-                         "Sync needs two or more Macs that share a pairing code. That code (not just “same Wi-Fi”) is what lets them find and trust each other. Install TandemClip on your other Mac, then set the same code on both. Press ⇧⌘V anytime to open the picker and grab a specific Mac’s clipboard.",
+                         "Sync needs two or more Macs that share a pairing code. That code (not just “same Wi-Fi”) is what lets them find and trust each other. Install TandemClip on your other Mac, then set the same code on both. Press ⇧⌘V anytime to open the picker and grab a specific Mac's clipboard.",
                          action: ("Set the pairing code", "Security"))
                     step(3, "Lock it down (optional, recommended)",
-                         "When you’re ready to tighten things up: turn on Trusted devices to pin exactly which Macs may sync (and revoke any of them instantly), and restrict sync to your home Wi-Fi so nothing happens on public networks. Secret Guard is already catching passwords and keys for you.",
+                         "When you're ready to tighten things up: turn on Trusted devices to pin exactly which Macs may sync (and revoke any of them instantly), and restrict sync to your home Wi-Fi so nothing happens on public networks. Secret Guard is already catching passwords and keys for you.",
                          action: ("Open Security settings", "Security"))
                     step(4, "Add smarts (optional)",
                          "Bring your own AI model. Turn on “Enable AI text cleanup,” then sign in with ChatGPT or add an API key. A local model works too. That unlocks one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, all sent straight from your Mac to your model, never through us.",
@@ -450,7 +450,7 @@ struct HelpView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HelpMarkdown("""
-                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network: peers find each other with Bonjour and talk to each other; there is no server in the middle.
+                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network: peers find each other with Bonjour and talk directly; there is no server in the middle.
 
                 **1. It already works.** Out of the box TandemClip syncs text, rich text, and images automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key (Secret Guard). Files are the one thing off by default. Enable them under Settings → Content.
 

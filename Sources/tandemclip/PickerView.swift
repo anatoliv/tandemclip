@@ -97,7 +97,7 @@ struct PickerView: View {
              ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if !model.peers.isEmpty {
-                        sectionHeader("GRAB A MAC’S CLIPBOARD")
+                        sectionHeader("GRAB A MAC'S CLIPBOARD")
                         ForEach(model.peers, id: \.id) { peer in
                             PeerRow(clip: peer.clip).contentShape(Rectangle())
                                 .onTapGesture { model.onPullPeer(peer.id) }

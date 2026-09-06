@@ -278,7 +278,7 @@ final class ClipboardPickerController {
             return
         }
         guard config.role.canSend else {
-            model?.flashDrop("This Mac is receive-only and can’t share.", isError: true)
+            model?.flashDrop("This Mac is receive-only and can't share.", isError: true)
             return
         }
         // Honest reporting: say what was actually sent, to how many Macs, and

@@ -901,7 +901,7 @@ struct SettingsView: View {
                     if !model.ssidHint.isEmpty {
                         Text(model.ssidHint).font(.caption).foregroundColor(.secondary)
                     }
-                    Toggle("Allow sync when Wi-Fi can’t be verified", isOn: $model.wifiFailOpen)
+                    Toggle("Allow sync when Wi-Fi can't be verified", isOn: $model.wifiFailOpen)
                 }
             } header: {
                 Text("Wi-Fi networks")
