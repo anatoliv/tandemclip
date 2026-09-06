@@ -495,7 +495,7 @@ struct SettingsView: View {
                 Text("Diagnostics")
             } footer: {
                 SettingsBullets(items: [
-                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). It's useful when chasing a problem; otherwise leave it off.", "general-diagnostics"),
+                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system, readable in Console.app. Turn it on when chasing a problem; otherwise leave it off.", "general-diagnostics"),
                     ("Send crash & error reports", CrashReporting.isConfigured
                         ? "off by default; when on, sends crash and error reports to the developer to help fix bugs. Reports never include your clipboard content, your IP, or any identifiers."
                         : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
