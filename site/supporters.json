@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "_comment": "Opt-in supporter recognition shown in TandemClip's Settings → General. Add a { \"name\": \"…\" } (optionally \"url\") only when a supporter asks to be listed, then redeploy the site. TandemClip fetches https://tandemclip.com/supporters.json, caches the last good copy, and hides the section if this list is empty.",
+  "supporters": []
+}
