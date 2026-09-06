@@ -3,8 +3,8 @@ cask "tandemclip" do
   # sparkle:version, and Homebrew's Sparkle livecheck strategy reports them as one
   # comma value. Pinning only the short version fails `brew audit --online` with
   # "differs from ... retrieved by livecheck" and breaks autobumping.
-  version "0.24.2,61"
-  sha256 "e79ec01c01e2e75e9eae448bd319b65ca26f7627e13c79df89ec720ab4161df6"
+  version "0.25.0,62"
+  sha256 "b7c5598f5f377d849f6ca6f0627f4bb90a4a093db3f0f2942441f8519224f66d"
 
   url "https://tandemclip.com/TandemClip_#{version.csv.first}_aarch64.dmg",
       verified: "tandemclip.com/"
