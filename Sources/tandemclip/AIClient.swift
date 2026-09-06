@@ -29,7 +29,7 @@ struct AIClient {
             case let .httpStatus(code, detail):
                 return AIClient.friendlyHTTPMessage(code: code, detail: detail)
             case .emptyResponse:
-                return "The AI returned an empty response — try again or check the model name."
+                return "The AI returned an empty response. Try again or check the model name."
             }
         }
     }
@@ -276,9 +276,9 @@ struct AIClient {
         if let e = error as? URLError {
             switch e.code {
             case .cannotConnectToHost, .cannotFindHost:
-                return "Can't reach the AI server — check the endpoint URL (is the local server running?)."
+                return "Can't reach the AI server. Check the endpoint URL (is the local server running?)."
             case .notConnectedToInternet: return "No internet connection."
-            case .timedOut: return "The AI server timed out — try again or pick a faster model."
+            case .timedOut: return "The AI server timed out. Try again or pick a faster model."
             case .cancelled: return "Cancelled."
             default: break
             }
@@ -289,10 +289,10 @@ struct AIClient {
     private static func friendlyHTTPMessage(code: Int, detail: String) -> String {
         let hint = Self.serverDetail(from: detail).map { " (\($0))" } ?? ""
         switch code {
-        case 401, 403: return "The AI server rejected the key — update it in Settings → AI\(hint)."
-        case 404: return "Model or endpoint not found — check the model name and URL\(hint)."
-        case 429: return "Rate limited by the AI server — wait a moment and try again\(hint)."
-        case 500...599: return "The AI server had an internal error (\(code)) — try again\(hint)."
+        case 401, 403: return "The AI server rejected the key. Update it in Settings → AI\(hint)."
+        case 404: return "Model or endpoint not found. Check the model name and URL\(hint)."
+        case 429: return "Rate limited by the AI server. Wait a moment and try again\(hint)."
+        case 500...599: return "The AI server had an internal error (\(code)). Try again\(hint)."
         default: return "AI request failed (HTTP \(code))\(hint)."
         }
     }
