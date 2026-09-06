@@ -316,7 +316,7 @@ struct SettingsBullets: View {
         }
     }
 
-    /// Build the "**term** — text" line, making the term an accent link when
+    /// Build the "**term**: text" line, making the term an accent link when
     /// the item points at a Help article.
     private func line(for item: (term: String, text: String, help: String?)) -> AttributedString {
         var term = AttributedString(item.term)
@@ -495,7 +495,7 @@ struct SettingsView: View {
                 Text("Diagnostics")
             } footer: {
                 SettingsBullets(items: [
-                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). Useful when chasing a problem, otherwise leave it off.", "general-diagnostics"),
+                    ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). It's useful when chasing a problem; otherwise leave it off.", "general-diagnostics"),
                     ("Send crash & error reports", CrashReporting.isConfigured
                         ? "off by default; when on, sends crash and error reports to the developer to help fix bugs. Reports never include your clipboard content, your IP, or any identifiers."
                         : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
@@ -533,7 +533,7 @@ struct SettingsView: View {
                 SettingsBullets(items: [
                     ("Mode", "Mirror sends every copy to your other Macs the moment you copy it. Manual keeps your copies here until another Mac asks for them.", "sync-mirror"),
                     ("This Mac's role", "limits direction. Receive only never sends anything from this Mac; Send only never takes anything in.", "sync-role-sendreceive"),
-                    ("Peer preview", "what other Macs can see about your current clip before pulling it: just its age and size, a snippet of the text, or nothing at all.", "sync-peer-preview"),
+                    ("Peer preview", "what other Macs can see about your current clip before pulling it, whether that's just its age and size, a snippet of the text, or nothing at all.", "sync-peer-preview"),
                     ("Apply incoming clips automatically", "clips copied on your other Macs land on this clipboard by themselves. Mirror always does this; turn it on to get the same in Manual mode.", "sync-auto-apply"),
                 ])
             }
@@ -579,7 +579,7 @@ struct SettingsView: View {
                 Text("Storage")
             } footer: {
                 SettingsBullets(items: [
-                    ("Received-files limit", "files from your Macs are cached on disk so paste keeps working, currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB"). Past the limit the oldest clips are removed automatically; picking them from history brings them back.", "content-storage"),
+                    ("Received-files limit", "files from your Macs are cached on disk so paste keeps working (currently \(ByteCountFormatter.string(fromByteCount: Int64(model.cacheUsage), countStyle: .file)) of \(model.receivedCacheMB >= 1000 ? "\(model.receivedCacheMB / 1000) GB" : "\(model.receivedCacheMB) MB")). Past the limit the oldest clips are removed automatically; picking them from history brings them back.", "content-storage"),
                 ])
             }
             Section {
@@ -738,7 +738,7 @@ struct SettingsView: View {
                 Text("Tone presets")
             } footer: {
                 SettingsBullets(items: [
-                    ("Tone presets", "each is a rewrite instruction the compose area can apply, such as Clean up, Email reply, Summarize or Translate to English. You can add your own. Edit the prompt here; pick which to run from the compose area.", "ai-presets"),
+                    ("Tone presets", "each is a rewrite instruction the compose area can apply, such as Clean up, Email reply, Summarize, or Translate to English. You can add your own. Edit the prompt here; pick which to run from the compose area.", "ai-presets"),
                     ("Input cap", "at most \(Config.aiMaxInputChars / 1000)k characters are sent per run, so a giant clip can't become a giant bill.", "ai-setup#20,000 characters"),
                 ])
             }
@@ -747,7 +747,7 @@ struct SettingsView: View {
                     .disabled(!model.aiEnabled)
             } footer: {
                 SettingsBullets(items: [
-                    ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over. Professional for email, casual for chat, literal for code editors and terminals, structured prose for notes.", "ai-autotone"),
+                    ("Adapt tone to the destination app", "the rewrite is steered by the app you opened the picker over. Email gets a professional tone, chat a casual one, code editors and terminals a literal one, and notes structured prose.", "ai-autotone"),
                 ])
             }
             Section {

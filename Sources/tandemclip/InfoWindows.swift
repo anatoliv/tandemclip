@@ -450,22 +450,22 @@ struct HelpView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HelpMarkdown("""
-                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network — peers find each other with Bonjour and talk to each other; there is no server in the middle.
+                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network: peers find each other with Bonjour and talk to each other; there is no server in the middle.
 
-                **1. It already works.** Out of the box TandemClip syncs text, rich text, and images automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key (Secret Guard). Files are the one thing off by default — enable them under Settings → Content.
+                **1. It already works.** Out of the box TandemClip syncs text, rich text, and images automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key (Secret Guard). Files are the one thing off by default. Enable them under Settings → Content.
 
-                **2. Pair your Macs — the one thing to do.** Sync needs two or more Macs that share a pairing code. That code, not just being on the same Wi-Fi, is the encryption key that lets them find and trust each other. Install TandemClip on each Mac and set the same code on all of them under Settings → Security.
+                **2. Pair your Macs: the one thing to do.** Sync needs two or more Macs that share a pairing code. That code, not just being on the same Wi-Fi, is the encryption key that lets them find and trust each other. Install TandemClip on each Mac and set the same code on all of them under Settings → Security.
 
-                **3. Lock it down (optional, recommended).** Turn on Trusted devices to pin exactly which Macs may sync — and revoke any instantly — and restrict sync to your home Wi-Fi so nothing happens on public networks. Both live under Settings → Security; Secret Guard is already on.
+                **3. Lock it down (optional, recommended).** Turn on Trusted devices to pin exactly which Macs may sync (and revoke any instantly), and restrict sync to your home Wi-Fi so nothing happens on public networks. Both live under Settings → Security; Secret Guard is already on.
 
-                **4. Add smarts (optional).** Turn on “Enable AI text cleanup” under Settings → AI and connect a model — ChatGPT sign-in, an API key, or a local server. You get one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, sent straight from your Mac to your model.
+                **4. Add smarts (optional).** Turn on “Enable AI text cleanup” under Settings → AI and connect a model: ChatGPT sign-in, an API key, or a local server. You get one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, sent straight from your Mac to your model.
 
                 **The two things you'll use most:**
 
-                - The **menu-bar icon** shows sync state and holds the quick controls — pause/resume, pull from a peer, privacy hold, Check for Updates, and Getting Started (reopens the welcome guide).
+                - The **menu-bar icon** shows sync state and holds the quick controls: pause/resume, pull from a peer, privacy hold, Check for Updates, and Getting Started (reopens the welcome guide).
                 - The **clipboard picker** (⇧⌘V) is where everything else lives: your history, search, previews, pins, compose/AI, and per-clip actions.
 
-                Use the sidebar to browse, or search at the top — it matches by meaning as well as words, so “stop sharing my clipboard” finds the Privacy hold.
+                Use the sidebar to browse, or search at the top. It matches by meaning as well as words, so “stop sharing my clipboard” finds the Privacy hold.
                 """)
             }
         }
