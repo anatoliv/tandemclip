@@ -497,7 +497,7 @@ struct AIProviderPreset: Identifiable {
     }
 
     static let all: [AIProviderPreset] = [
-        .init(id: "openai-chatgpt", name: "ChatGPT Plus/Pro (sign in — no API key)",
+        .init(id: "openai-chatgpt", name: "ChatGPT Plus/Pro (sign in without an API key)",
               endpoint: "https://chatgpt.com/backend-api/codex/responses",
               model: "gpt-5.4-mini", authMode: .codexOAuth),
         .init(id: "openai", name: "OpenAI (gpt-4o-mini, paid)",
