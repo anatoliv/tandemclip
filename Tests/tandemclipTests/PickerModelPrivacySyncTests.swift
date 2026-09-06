@@ -59,4 +59,28 @@ final class PickerModelPrivacySyncTests: XCTestCase {
 
         XCTAssertTrue(m.privacyHold, "the picker must adopt a change made outside it")
     }
+
+    /// The menu item's whole action is `config.privacyHold.toggle()`, and the
+    /// picker only learns about it because that write posts `Config.didChange`
+    /// (AppController's observer calls `syncPrivacyHold()` from there). If the
+    /// notification ever stopped firing, the menu would still work and the
+    /// picker would silently show the wrong state, which is the failure this
+    /// pins. Nothing else in the suite asserts that post.
+    func testTogglingConfigPrivacyHoldPersistsAndPostsDidChange() {
+        let config = Config()
+        let original = config.privacyHold
+        defer { config.privacyHold = original }
+
+        let posted = expectation(description: "Config.didChange after a privacy-hold write")
+        posted.assertForOverFulfill = false
+        let token = NotificationCenter.default.addObserver(
+            forName: Config.didChange, object: nil, queue: .main) { _ in posted.fulfill() }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        config.privacyHold.toggle()
+
+        XCTAssertEqual(config.privacyHold, !original,
+                       "the menu action's write must round-trip through defaults")
+        wait(for: [posted], timeout: 2)
+    }
 }
