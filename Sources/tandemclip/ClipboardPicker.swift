@@ -157,7 +157,7 @@ final class ClipboardPickerController {
         m.onPin = { [weak self] item in
             guard let self else { return }
             if self.engine.pin(item) {
-                self.model?.flashDrop("Pinned — synced to your Macs and kept past restarts")
+                self.model?.flashDrop("Pinned: synced to your Macs and kept past restarts")
             } else {
                 self.model?.flashDrop("Too large to pin (over the clip size limit)", isError: true)
             }
@@ -274,11 +274,11 @@ final class ClipboardPickerController {
     private func handleDrop(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         guard !config.privacyHold else {
-            model?.flashDrop("Privacy hold is on — nothing is shared.", isError: true)
+            model?.flashDrop("Privacy hold is on. Nothing is shared.", isError: true)
             return
         }
         guard config.role.canSend else {
-            model?.flashDrop("This Mac is receive-only — can’t share.", isError: true)
+            model?.flashDrop("This Mac is receive-only and can't share.", isError: true)
             return
         }
         // Honest reporting: say what was actually sent, to how many Macs, and
@@ -287,11 +287,11 @@ final class ClipboardPickerController {
         let outcome = engine.shareFiles(urls)
         if outcome.sent == 0 {
             model?.flashDrop(outcome.skipped > 0
-                ? "Nothing sent — items were over the size limit or unreadable"
+                ? "Nothing sent: items were over the size limit or unreadable"
                 : "No connected Macs to share with", isError: true)
         } else {
             var msg = "Shared \(outcome.sent) file\(outcome.sent == 1 ? "" : "s")"
-            msg += outcome.peers > 0 ? " to \(outcome.peers) Mac\(outcome.peers == 1 ? "" : "s")" : " — no Macs connected right now"
+            msg += outcome.peers > 0 ? " to \(outcome.peers) Mac\(outcome.peers == 1 ? "" : "s")" : " (no Macs connected right now)"
             if outcome.skipped > 0 { msg += " · \(outcome.skipped) skipped (too large)" }
             model?.flashDrop(msg)
         }

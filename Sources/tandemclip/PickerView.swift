@@ -97,7 +97,7 @@ struct PickerView: View {
              ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if !model.peers.isEmpty {
-                        sectionHeader("GRAB A MAC’S CLIPBOARD")
+                        sectionHeader("GRAB A MAC'S CLIPBOARD")
                         ForEach(model.peers, id: \.id) { peer in
                             PeerRow(clip: peer.clip).contentShape(Rectangle())
                                 .onTapGesture { model.onPullPeer(peer.id) }
@@ -128,7 +128,7 @@ struct PickerView: View {
                     }
                     sectionHeader("RECENT")
                     if model.grouped.isEmpty {
-                        Text(model.query.isEmpty ? "No clips yet — copy something, or drop files here to share." : "No matches.")
+                        Text(model.query.isEmpty ? "No clips yet. Copy something, or drop files here to share." : "No matches.")
                             .foregroundColor(.secondary).font(.callout).padding(.horizontal, 14).padding(.vertical, 10)
                     } else {
                         // Grouped by source Mac; headers fold/unfold their group.
@@ -175,7 +175,7 @@ struct PickerView: View {
 
             Divider()
             HStack(spacing: 9) {
-                hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1–9", "quick"); hint("⌘⌫", "delete"); hint("⎋", "close")
+                hint("↑↓", "navigate"); hint("⏎", "use"); hint("⌘1-9", "quick"); hint("⌘⌫", "delete"); hint("⎋", "close")
                 Spacer(minLength: 6)
                 if !model.clipUsage.isEmpty {
                     HStack(spacing: 4) {
@@ -192,14 +192,14 @@ struct PickerView: View {
                 footerToggle("hand.raised" + (model.privacyHold ? ".fill" : ""),
                              active: model.privacyHold,
                              help: model.privacyHold
-                                ? "Privacy hold is ON — nothing you copy leaves this Mac. Click to resume sharing."
+                                ? "Privacy hold is ON. Nothing you copy leaves this Mac. Click to resume sharing."
                                 : "Privacy hold: stop sending your copies to other Macs") { model.togglePrivacy() }
                 footerToggle("pin" + (model.pinned ? ".fill" : ""),
                              active: model.pinned,
                              help: model.pinned
-                                ? "Pinned — the picker stays open after picking. Click to unpin."
+                                ? "Pinned: the picker stays open after picking. Click to unpin."
                                 : "Pin: keep the picker open after picking a clip") { model.togglePin() }
-                pickerHelp("picker-open", help: "Help — how the picker works")
+                pickerHelp("picker-open", help: "Help: how the picker works")
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
         }
@@ -240,7 +240,7 @@ struct PickerView: View {
                     .foregroundColor(.secondary)
                 Spacer()
                 if model.composeBusy { ProgressView().controlSize(.small) }
-                pickerHelp("compose", help: "Help — Compose & AI cleanup")
+                pickerHelp("compose", help: "Help: Compose & AI cleanup")
             }
             TextEditor(text: $model.composeText)
                 .font(.system(size: Tokens.CompactSize.rowText))
@@ -260,7 +260,7 @@ struct PickerView: View {
                         Text("From your clipboard").font(.system(size: Tokens.CompactSize.label, weight: .semibold))
                         if model.askBusy { ProgressView().controlSize(.mini) }
                         Spacer()
-                        pickerHelp("ask", help: "Help — Ask your clipboard")
+                        pickerHelp("ask", help: "Help: Ask your clipboard")
                         Button { model.clearAsk() } label: {
                             Image(systemName: "xmark.circle.fill").imageScale(.small)
                                 .foregroundStyle(.tertiary)

@@ -34,7 +34,9 @@ final class CodexCallbackServer: @unchecked Sendable {
             case .missingQueryParams:
                 return "Sign-in returned without a code or state parameter."
             case let .authorizeError(code, description):
-                return "Sign-in was rejected: \(code) — \(description)"
+                return description.isEmpty
+                    ? "Sign-in was rejected: \(code)"
+                    : "Sign-in was rejected: \(code) (\(description))"
             case .cancelled:
                 return "Sign-in was cancelled."
             }

@@ -105,7 +105,7 @@ struct HistoryRow: View {
                             .frame(width: RowActions.button, height: RowActions.button)
                     }
                     .buttonStyle(.plain)
-                    .help("Pin — keep past restarts, on every Mac")
+                    .help("Pin: keep past restarts, on every Mac")
                 }
                 Button(action: onDelete) {
                     Image(systemName: deleteSymbol)
@@ -185,7 +185,7 @@ struct PreviewCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Help — Hover previews & quick actions")
+                .help("Help: Hover previews & quick actions")
             }
             Divider()
             content
@@ -220,7 +220,7 @@ struct PreviewCard: View {
                     }
                     if let ocr = ocrText {
                         cardButton("Copy Text", "text.viewfinder") {
-                            model.copyText(ocr, toast: "Image text copied — syncs like any copy")
+                            model.copyText(ocr, toast: "Image text copied: syncs like any copy")
                         }
                     }
                     if summarizable && model.summaries[item.hash] == nil {

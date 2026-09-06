@@ -130,7 +130,7 @@ struct AboutView: View {
                 .resizable().frame(width: 88, height: 88)
             Text("TandemClip").font(Tokens.FontScale.display)
             Text("Version \(version) (\(build))").font(Tokens.FontScale.small).foregroundColor(.secondary)
-            Text("Shares your clipboard between your Macs over your local network — copy on one, paste on another. End-to-end encrypted with a code only you hold. No cloud, no account.")
+            Text("Shares your clipboard between your Macs over your local network: copy on one, paste on another. End-to-end encrypted with a code only you hold. No cloud, no account.")
                 .font(Tokens.FontScale.body).foregroundColor(.secondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Link("Website", destination: URL(string: "https://tandemclip.com")!)
@@ -144,7 +144,7 @@ struct AboutView: View {
                     .tint(Tokens.accent)   // links ride the accent (DESIGN_SYSTEM.md §2)
                     .multilineTextAlignment(.center)
             }
-            Text("TandemClip — LAN clipboard sync for Macs")
+            Text("TandemClip: LAN clipboard sync for Macs")
                 .font(Tokens.FontScale.tiny).foregroundColor(.secondary).padding(.top, Tokens.Space.row)
         }
         .padding(.horizontal, Tokens.Space.wide).padding(.vertical, Tokens.Space.wide)
@@ -173,15 +173,15 @@ struct WelcomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Tokens.Space.snug) {
                     step(1, "It already works",
-                         "Nothing to configure to start. Right now TandemClip syncs text, rich text, and images between your Macs automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key. (Files are the one thing off by default — turn them on in Settings ▸ Content when you want them.)")
-                    step(2, "Pair your Macs — the one thing to do",
-                         "Sync needs two or more Macs that share a pairing code. That code — not just “same Wi-Fi” — is what lets them find and trust each other. Install TandemClip on your other Mac, then set the same code on both. Press ⇧⌘V anytime to open the picker and grab a specific Mac’s clipboard.",
+                         "Nothing to configure to start. Right now TandemClip syncs text, rich text, and images between your Macs automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key. (Files are the one thing off by default. Turn them on in Settings ▸ Content when you want them.)")
+                    step(2, "Pair your Macs: the one thing to do",
+                         "Sync needs two or more Macs that share a pairing code. That code (not just “same Wi-Fi”) is what lets them find and trust each other. Install TandemClip on your other Mac, then set the same code on both. Press ⇧⌘V anytime to open the picker and grab a specific Mac's clipboard.",
                          action: ("Set the pairing code", "Security"))
                     step(3, "Lock it down (optional, recommended)",
-                         "When you’re ready to tighten things up: turn on Trusted devices to pin exactly which Macs may sync — and revoke any of them instantly — and restrict sync to your home Wi-Fi so nothing happens on public networks. Secret Guard is already catching passwords and keys for you.",
+                         "When you're ready to tighten things up: turn on Trusted devices to pin exactly which Macs may sync (and revoke any of them instantly), and restrict sync to your home Wi-Fi so nothing happens on public networks. Secret Guard is already catching passwords and keys for you.",
                          action: ("Open Security settings", "Security"))
                     step(4, "Add smarts (optional)",
-                         "Bring your own AI model. Turn on “Enable AI text cleanup,” then sign in with ChatGPT or add an API key — a local model works too. That unlocks one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, all sent straight from your Mac to your model, never through us.",
+                         "Bring your own AI model. Turn on “Enable AI text cleanup,” then sign in with ChatGPT or add an API key. A local model works too. That unlocks one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, all sent straight from your Mac to your model, never through us.",
                          action: ("Open AI settings", "AI"))
                 }
                 .padding(Tokens.Space.pane)
@@ -199,7 +199,7 @@ struct WelcomeView: View {
                 .resizable().frame(width: 56, height: 56)
             VStack(alignment: .leading, spacing: Tokens.Space.row6) {
                 Text("Welcome to TandemClip").font(Tokens.FontScale.title)
-                Text("It already works — copy on this Mac, paste on your other Macs. Encrypted over your own network, no cloud, no account.")
+                Text("It already works: copy on this Mac, paste on your other Macs. Encrypted over your own network, no cloud, no account.")
                     .font(Tokens.FontScale.body).foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -445,27 +445,27 @@ struct HelpView: View {
                 HStack(spacing: Tokens.Space.snug) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable().frame(width: 56, height: 56)
-                    Text("Copy on one Mac, paste on another — end-to-end encrypted over your own network, with no cloud and no account.")
+                    Text("Copy on one Mac, paste on another. End-to-end encrypted over your own network, with no cloud and no account.")
                         .font(Tokens.FontScale.body).foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HelpMarkdown("""
-                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network — peers find each other with Bonjour and talk to each other; there is no server in the middle.
+                **What it is.** TandemClip keeps the clipboards of your Macs in step. Copy on one, and it's ready to paste on the others a moment later. Everything travels directly over your local network: peers find each other with Bonjour and talk directly; there is no server in the middle.
 
-                **1. It already works.** Out of the box TandemClip syncs text, rich text, and images automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key (Secret Guard). Files are the one thing off by default — enable them under Settings → Content.
+                **1. It already works.** Out of the box TandemClip syncs text, rich text, and images automatically, runs at login, keeps a searchable history you open with ⇧⌘V, and holds back anything that looks like a password or key (Secret Guard). Files are the one thing off by default. Enable them under Settings → Content.
 
-                **2. Pair your Macs — the one thing to do.** Sync needs two or more Macs that share a pairing code. That code, not just being on the same Wi-Fi, is the encryption key that lets them find and trust each other. Install TandemClip on each Mac and set the same code on all of them under Settings → Security.
+                **2. Pair your Macs: the one thing to do.** Sync needs two or more Macs that share a pairing code. That code, not just being on the same Wi-Fi, is the encryption key that lets them find and trust each other. Install TandemClip on each Mac and set the same code on all of them under Settings → Security.
 
-                **3. Lock it down (optional, recommended).** Turn on Trusted devices to pin exactly which Macs may sync — and revoke any instantly — and restrict sync to your home Wi-Fi so nothing happens on public networks. Both live under Settings → Security; Secret Guard is already on.
+                **3. Lock it down (optional, recommended).** Turn on Trusted devices to pin exactly which Macs may sync (and revoke any instantly), and restrict sync to your home Wi-Fi so nothing happens on public networks. Both live under Settings → Security; Secret Guard is already on.
 
-                **4. Add smarts (optional).** Turn on “Enable AI text cleanup” under Settings → AI and connect a model — ChatGPT sign-in, an API key, or a local server. You get one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, sent straight from your Mac to your model.
+                **4. Add smarts (optional).** Turn on “Enable AI text cleanup” under Settings → AI and connect a model: ChatGPT sign-in, an API key, or a local server. You get one-tap cleanup, ✨ smart titles for long clips, and translation of incoming foreign-language clips, sent straight from your Mac to your model.
 
                 **The two things you'll use most:**
 
-                - The **menu-bar icon** shows sync state and holds the quick controls — pause/resume, pull from a peer, privacy hold, Check for Updates, and Getting Started (reopens the welcome guide).
+                - The **menu-bar icon** shows sync state and holds the quick controls: pause/resume, pull from a peer, privacy hold, Check for Updates, and Getting Started (reopens the welcome guide).
                 - The **clipboard picker** (⇧⌘V) is where everything else lives: your history, search, previews, pins, compose/AI, and per-clip actions.
 
-                Use the sidebar to browse, or search at the top — it matches by meaning as well as words, so “stop sharing my clipboard” finds the Privacy hold.
+                Use the sidebar to browse, or search at the top. It matches by meaning as well as words, so “stop sharing my clipboard” finds the Privacy hold.
                 """)
             }
         }
@@ -482,17 +482,17 @@ struct HelpView: View {
                     (["⇧", "⌘", "V"], "Open the picker (works in any app)"),
                     (["↑", "↓"], "Move the selection"),
                     (["⏎"], "Use the selected clip"),
-                    (["⌘", "1–9"], "Quick-pick a clip by its number"),
+                    (["⌘", "1-9"], "Quick-pick a clip by its number"),
                     (["⌘", "⌫"], "Delete the selected clip everywhere"),
                     (["⎋"], "Close the picker (ignored while pinned 📌)"),
                 ])
                 shortcutGroup("Typing & search", [
-                    (["A–Z"], "Just start typing to search your clips"),
+                    (["A-Z"], "Just start typing to search your clips"),
                 ])
                 shortcutGroup("Compose & AI (✎)", [
                     (["⌘", "⏎"], "Use the composed / rewritten text"),
                 ])
-                Text("The picker's hotkey (⇧⌘V) is fixed. Everything else — pause, pull, privacy hold, Check for Updates — lives in the menu-bar menu.")
+                Text("The picker's hotkey (⇧⌘V) is fixed. Everything else (pause, pull, privacy hold, Check for Updates) lives in the menu-bar menu.")
                     .font(Tokens.FontScale.small).foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

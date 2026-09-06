@@ -127,7 +127,7 @@ enum CodexOAuth {
             case .malformedResponse:
                 return "OAuth server response was missing expected fields."
             case .stateMismatch:
-                return "OAuth callback `state` didn't match — possible forged callback."
+                return "OAuth callback `state` didn't match. This may be a forged callback."
             }
         }
     }
