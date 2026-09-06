@@ -87,8 +87,8 @@ fi
 #
 #      Only when PUBLISH=1: local test builds from a working tree are the normal
 #      way to develop. Note the tree WILL be dirty when this script finishes, by
-#      design — step 4b rewrites Casks/tandemclip.rb and step 5 rewrites
-#      web/site/index.html once the DMG exists, so they land one commit behind
+#      design — step 4b rewrites Casks/tandemclip.rb and step 4c rewrites
+#      site/index.html once the DMG exists, so they land one commit behind
 #      the tag. That is expected; commit them after a successful run.
 if [[ "${PUBLISH:-}" == "1" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
     echo "error: working tree is dirty — commit or stash before publishing." >&2
@@ -355,6 +355,26 @@ if [[ -f "$CASK" ]]; then
     echo "    (commit Casks/tandemclip.rb alongside the version bump)"
 fi
 
+# 4c. Sync the landing page to this release, for the same reason as the cask and
+#     in the same place: BEFORE the gate, so the gate validates what will actually
+#     be published rather than a source the publish step is about to rewrite.
+#
+#     This used to live in step 5, after the gate, reading a gitignored
+#     `web/site/index.html` that did not exist. Both halves failed silently: the
+#     links were never repointed, and the staleness check never ran. The live page
+#     offered 0.24.1 for the whole of 0.24.2 as a result. Ordering it here also
+#     removes the contradiction that made a naive path fix impossible, where the
+#     gate demanded a synced source that only the later step could produce.
+SITE_SRC="site/index.html"
+if [[ -f "$SITE_SRC" ]]; then
+    /usr/bin/sed -i '' -E \
+        -e "s/TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg/TandemClip_${VERSION}_aarch64.dmg/g" \
+        -e "s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
+        "$SITE_SRC"
+    echo "==> Site synced: $SITE_SRC -> v$VERSION"
+    echo "    (commit site/index.html alongside the version bump)"
+fi
+
 # 4d. Gate: every version-pinned surface must agree with this release before any
 #     of it goes out. check-release.sh verifies the appcast, the cask (version
 #     pin + sha256 against the real DMG), the README install steps, and the site
@@ -369,8 +389,8 @@ Scripts/check-release.sh || {
 
 # 5. Publish DMG + appcast + landing page to the web host (PUBLISH=1). Serves
 #    the exact SUFeedURL. The landing page's download links are version-pinned,
-#    so render the current VERSION into a copy of web/site/index.html before
-#    publishing — otherwise the "Download" button rots to a DMG that 404s.
+#    The page's download links are version-pinned; step 4c already synced them
+#    to VERSION and the gate verified it, so this just ships that file.
 #    Set PUBLISH_DEST to your own scp/rsync target, e.g. user@host:/srv/site/.
 if [[ "${PUBLISH:-}" == "1" ]]; then
     DEST="${PUBLISH_DEST:-}"
@@ -400,23 +420,14 @@ if [[ "${PUBLISH:-}" == "1" ]]; then
     }
     publish_atomic "$DMG"
     [[ -f "$DIST/appcast.xml" ]] && publish_atomic "$DIST/appcast.xml"
-    # Opt-in supporter list shown in the app + site footer (Support links). Not versioned.
-    [[ -f "web/site/supporters.json" ]] && publish_atomic "web/site/supporters.json"
+    # Opt-in supporter list shown in the app + site footer (Support links).
+    [[ -f "site/supporters.json" ]] && publish_atomic "site/supporters.json"
 
-    SITE_SRC="web/site/index.html"
+    # The page was already synced to VERSION in step 4c and the gate verified it,
+    # so publish the source as-is rather than rendering a second copy that could
+    # differ from the one that was checked.
     if [[ -f "$SITE_SRC" ]]; then
-        RENDERED="$DIST/index.html"
-        # Repoint every versioned DMG link and the "Version x.y.z" line at VERSION.
-        sed -E "s/TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg/TandemClip_${VERSION}_aarch64.dmg/g; \
-                s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
-            "$SITE_SRC" > "$RENDERED"
-        publish_atomic "$RENDERED"
-        # Also write the version back into the SOURCE. Rendering only into $RENDERED
-        # left web/site/index.html pinned at whatever release last touched it by hand
-        # (it sat at 0.22.7 while 0.24.1 was live), so anyone deploying the source
-        # directly would silently DOWNGRADE the page and link a DMG that may be gone.
-        cp "$RENDERED" "$SITE_SRC"
-        echo "    site source synced to v$VERSION (commit web/site/index.html)"
+        publish_atomic "$SITE_SRC"
         echo "    published: $(basename "$DMG") + appcast.xml + index.html (v$VERSION)"
     else
         echo "    published: $(basename "$DMG") + appcast.xml"

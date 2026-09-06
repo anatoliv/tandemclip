@@ -134,14 +134,26 @@ if [[ -f "$CASK" ]]; then
     fi
 fi
 
-SITE_SRC="web/site/index.html"
+# The landing page is a version-pinned surface like the cask, so a missing one is
+# an ERROR rather than a skip. It was `web/site/index.html` until 2026-09-06: a
+# gitignored path (web/ holds deploy infra kept out of public history) that did not
+# exist, so this check silently passed for every release while the live page sat on
+# 0.24.1 through the whole of 0.24.2. A guard aimed at an absent file is
+# indistinguishable from a guard that passes, which is the worse of the two.
+SITE_SRC="site/index.html"
+if [[ ! -f "$SITE_SRC" ]]; then
+    echo "error: missing $SITE_SRC — the landing page is version-pinned and must be" >&2
+    echo "       in the repo, or release.sh cannot sync its download links." >&2
+    exit 1
+fi
 if [[ -f "$SITE_SRC" ]]; then
     SITE_STALE="$(grep -oE 'TandemClip_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.dmg|Version [0-9]+\.[0-9]+\.[0-9]+' "$SITE_SRC" \
         | grep -v "$VERSION" | sort -u || true)"
     if [[ -n "$SITE_STALE" ]]; then
         echo "error: $SITE_SRC still references versions other than $VERSION:" >&2
         printf '       %s\n' $SITE_STALE >&2
-        echo "       release.sh syncs this; deploying a stale source downgrades the live page." >&2
+        echo "       release.sh syncs this in step 4c, before this gate runs. Reaching here means
+       the sync did not happen or did not cover this string." >&2
         exit 1
     fi
 fi
