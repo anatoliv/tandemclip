@@ -199,7 +199,7 @@ enum HelpCatalog {
         .init(version: "0.24.0", date: "July 23, 2026",
               highlight: "A tip jar, if you want one.",
               changes: [
-                .init(.added, "Optional donate links now sit in Settings and the About window, with a thank-you list of supporters. Nothing in TandemClip is locked behind it, and nothing changes if you skip it."),
+                .init(.added, "Donate links are in Settings and the About window, with a thank-you list of supporters. Everything in TandemClip stays available whether or not you use them."),
               ]),
         .init(version: "0.23.0", date: "July 22, 2026",
               highlight: "Sync repairs itself.",
