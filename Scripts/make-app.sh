@@ -75,6 +75,73 @@ if [[ -n "${SENTRY_DSN_VALUE}" ]]; then
     echo "==> Injected Sentry DSN into bundle Info.plist"
 fi
 
+# Bake the exact source revision into the bundle (Info.plist
+# TandemClipSourceCommit), injected here for the same reason the DSN is: it is a
+# property of the *build*, not of the tracked tree.
+#
+# Without it a shipped .app records only the version string it chose for itself,
+# so nothing about a live artifact says which commit produced it. A tag is a
+# claim made next to the release, not a property of the bytes — you cannot hand
+# someone a DMG and have them check it. This makes any live artifact answer for
+# itself: `plutil -p TandemClip.app/Contents/Info.plist` yields the revision, and
+# the same value rides in the Sentry release name (see BuildIdentity.swift).
+#
+# A distributable build (IDENTITY set = Developer ID signed = a thing that can
+# reach a user) REFUSES to exist without a well-formed identity. An unsigned
+# local build is allowed to carry none: dev builds go nowhere, and blocking them
+# on git state would only teach people to work around this.
+SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+GIT_DIRTY="$(git status --porcelain 2>/dev/null || true)"
+
+identity_is_well_formed() {                 # 40 chars, lowercase hex, nothing else
+    [[ "$1" =~ ^[0-9a-f]{40}$ ]]
+}
+
+if [[ -n "${IDENTITY}" ]]; then
+    if ! identity_is_well_formed "${SOURCE_COMMIT}"; then
+        cat >&2 <<MSG
+error: refusing to build a distributable app with no usable source identity.
+
+  git rev-parse HEAD gave: '${SOURCE_COMMIT:-<nothing>}'
+  Required: exactly 40 lowercase hex characters.
+
+  A signed build can reach a user, and a build that reaches a user must be
+  mappable back to the revision it came from. An abbreviated, uppercase or
+  placeholder value is not identity — it is a value that looks like one.
+MSG
+        exit 1
+    fi
+    if [[ -n "${GIT_DIRTY}" && "${ALLOW_DIRTY_IDENTITY:-}" != "1" ]]; then
+        cat >&2 <<MSG
+error: working tree is dirty — a distributable build would claim a revision
+       that does not describe its own bytes.
+
+  Commit or stash first, or (knowing the identity will be a lie) re-run with:
+      ALLOW_DIRTY_IDENTITY=1 ${0}
+MSG
+        git status --short >&2
+        exit 1
+    fi
+fi
+
+if identity_is_well_formed "${SOURCE_COMMIT}"; then
+    /usr/libexec/PlistBuddy -c "Set :TandemClipSourceCommit ${SOURCE_COMMIT}" \
+        "${BUNDLE}/Contents/Info.plist"
+    # Read it back out of the bundle rather than trusting the write. PlistBuddy
+    # reports success on a Set against a key type it cannot honor, and the whole
+    # point of this value is that it can be trusted without re-deriving it.
+    BAKED="$(/usr/libexec/PlistBuddy -c 'Print :TandemClipSourceCommit' \
+        "${BUNDLE}/Contents/Info.plist" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "${BAKED}" != "${SOURCE_COMMIT}" ]]; then
+        echo "error: source identity did not survive injection (bundle holds '${BAKED:-<empty>}')." >&2
+        exit 1
+    fi
+    echo "==> Source identity baked in: ${SOURCE_COMMIT}"
+else
+    echo "note: no source identity (not a git checkout, or detached/unborn HEAD)."
+    echo "      Fine for a local build; a signed build refuses this."
+fi
+
 # Bundle Sparkle.framework (auto-update) if the app links it.
 SPARKLE_FW="$(find .build -type d -name 'Sparkle.framework' -path '*macos*' 2>/dev/null | head -1)"
 if [[ -n "${SPARKLE_FW}" ]]; then

@@ -86,11 +86,14 @@ enum CrashReporting {
         SentrySDK.flush(timeout: 5)
     }
 
-    /// `com.tandemclip@<version>+<build>` — conventional Sentry release id.
+    /// `com.tandemclip@<version>+<build>.<commit>` — conventional Sentry release
+    /// id, extended with the source revision baked in at package time so a crash
+    /// report identifies the revision it came from and not merely the version
+    /// string the release chose for itself. See `BuildIdentity`.
     private static var release: String {
         let info = Bundle.main.infoDictionary
         let v = info?["CFBundleShortVersionString"] as? String ?? "0"
         let b = info?["CFBundleVersion"] as? String ?? "0"
-        return "com.tandemclip@\(v)+\(b)"
+        return BuildIdentity.sentryRelease(version: v, build: b, commit: BuildIdentity.sourceCommit)
     }
 }

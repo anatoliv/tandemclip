@@ -88,6 +88,36 @@ if [[ ! -f "$APPCAST" ]]; then
     exit 1
 fi
 
+# --- The shipped bundle must carry its own source revision --------------------
+# Every other check in this file compares one *claim about* the release against
+# another (appcast vs plist, cask vs DMG). None of them can say which commit the
+# binary came from, because until 0.25.0 nothing in the artifact recorded it —
+# the tag was the only answer, and a tag is a label attached beside a release,
+# not a property of its bytes. Anyone holding the DMG could not check it.
+# make-app.sh now bakes the revision in; this verifies it survived to the
+# artifact and still matches the tree being released, so the gate fails here
+# rather than the fact being discovered from a crash report months later.
+APP_BUNDLE="build/TandemClip.app"
+if [[ -d "$APP_BUNDLE" ]]; then
+    BAKED_COMMIT="$(/usr/libexec/PlistBuddy -c 'Print :TandemClipSourceCommit' \
+        "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null | tr -d '[:space:]' || true)"
+    if ! [[ "$BAKED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "error: $APP_BUNDLE carries no usable source identity" >&2
+        echo "       (TandemClipSourceCommit = '${BAKED_COMMIT:-missing}', want 40 lowercase hex)." >&2
+        echo "       A released build must be mappable back to the revision it came from." >&2
+        exit 1
+    fi
+    HEAD_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+    if [[ -n "$HEAD_COMMIT" && "$BAKED_COMMIT" != "$HEAD_COMMIT" ]]; then
+        echo "error: $APP_BUNDLE was built from a different revision than HEAD." >&2
+        echo "       bundle: $BAKED_COMMIT" >&2
+        echo "       HEAD  : $HEAD_COMMIT" >&2
+        echo "       Rebuild, or the tag will not describe what shipped." >&2
+        exit 1
+    fi
+    echo "source identity ok: $BAKED_COMMIT"
+fi
+
 APPCAST_BUILD="$(perl -0ne 'if (/<sparkle:version>(\d+)<\/sparkle:version>/) { print $1; exit }' "$APPCAST")"
 APPCAST_VERSION="$(perl -0ne 'if (/<sparkle:shortVersionString>([^<]+)<\/sparkle:shortVersionString>/) { print $1; exit }' "$APPCAST")"
 
