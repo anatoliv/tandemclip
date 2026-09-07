@@ -35,7 +35,7 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 
 # --- Source identity gate -----------------------------------------------------
 # The exact source revision gets baked into the bundle further down (Info.plist
-# TandemClipSourceCommit, injected the same way the Sentry DSN is). Whether that
+# TandemClipSourceCommit, injected the same way the Crashbox DSN is). Whether that
 # is even possible is knowable in one `git rev-parse`, so it is checked HERE —
 # before the release build — rather than at assembly time. release.sh makes the
 # same argument for its preflight gate: a failure that costs a full build plus
@@ -46,7 +46,7 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 # tag is a claim made beside a release, not a property of its bytes — you cannot
 # hand someone a DMG and have them check it. With the commit inside the bundle,
 # `plutil -p TandemClip.app/Contents/Info.plist` answers on its own, and the same
-# value rides in the Sentry release name (see BuildIdentity.swift).
+# value rides in the event release name (see BuildIdentity.swift).
 SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
 GIT_DIRTY="$(git status --porcelain 2>/dev/null || true)"
 
@@ -92,7 +92,7 @@ fi
 
 echo "==> Building release binary"
 # -Xswiftc -g emits DWARF so dsymutil can produce a real dSYM. Without it the
-# binary carries only symtab+unwind, and Sentry can resolve function names but
+# binary carries only symtab+unwind, and Crashbox can resolve function names but
 # never file/line — which is most of the value of a crash report.
 swift build -c release --build-system native -Xswiftc -g
 BIN_PATH="$(swift build -c release --build-system native --show-bin-path)/${EXE_NAME}"
@@ -119,17 +119,17 @@ cp "${BIN_PATH}" "${BUNDLE}/Contents/MacOS/${EXE_NAME}"
 cp "Packaging/Info.plist" "${BUNDLE}/Contents/Info.plist"
 [[ -f Packaging/AppIcon.icns ]] && cp "Packaging/AppIcon.icns" "${BUNDLE}/Contents/Resources/AppIcon.icns"
 
-# Inject the Sentry DSN from a gitignored source (never committed). The tracked
-# Packaging/Info.plist keeps SentryDSN empty; the real DSN comes from the env
-# var TANDEMCLIP_SENTRY_DSN, or the gitignored file Packaging/sentry-dsn.local.
-# No source means an empty DSN, so crash reporting stays off in the shipped build.
-SENTRY_DSN_VALUE="${TANDEMCLIP_SENTRY_DSN:-}"
-if [[ -z "${SENTRY_DSN_VALUE}" && -f Packaging/sentry-dsn.local ]]; then
-    SENTRY_DSN_VALUE="$(tr -d ' \t\r\n' < Packaging/sentry-dsn.local)"
+# Inject the sole Crashbox DSN from a gitignored source (never committed). The
+# tracked Info.plist keeps CrashboxDSN empty; no source means reporting-disabled.
+# Deliberately read no legacy variable or local file: a stale hosted-provider
+# secret must not become an accidental fallback.
+CRASHBOX_DSN_VALUE="${TANDEMCLIP_CRASHBOX_DSN:-}"
+if [[ -z "${CRASHBOX_DSN_VALUE}" && -f Packaging/crashbox-dsn.local ]]; then
+    CRASHBOX_DSN_VALUE="$(tr -d ' \t\r\n' < Packaging/crashbox-dsn.local)"
 fi
-if [[ -n "${SENTRY_DSN_VALUE}" ]]; then
-    /usr/libexec/PlistBuddy -c "Set :SentryDSN ${SENTRY_DSN_VALUE}" "${BUNDLE}/Contents/Info.plist"
-    echo "==> Injected Sentry DSN into bundle Info.plist"
+if [[ -n "${CRASHBOX_DSN_VALUE}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CrashboxDSN ${CRASHBOX_DSN_VALUE}" "${BUNDLE}/Contents/Info.plist"
+    echo "==> Injected Crashbox DSN into bundle Info.plist"
 fi
 
 # Bake in the revision checked at the top of this script. Injected here, at the

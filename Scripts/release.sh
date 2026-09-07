@@ -13,7 +13,7 @@
 #   SPARKLE_BIN=/path/to/sign_update      (else auto-located)
 #   APPCAST_BASE=https://tandemclip.com   (enclosure URL base; default below)
 #   PUBLISH=1 PUBLISH_DEST=user@host:/path (rsync/scp the DMG + appcast + page)
-#   SENTRY_ORG / SENTRY_PROJECT           (dSYM upload; skipped if org unset)
+#   ALLOW_NO_SYMBOLS=1                    (explicitly omit the Crashbox dSYM archive)
 
 set -euo pipefail
 
@@ -44,42 +44,6 @@ BUILD_NUM="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Packaging/Info.
 DIST="dist"
 APP="build/${APP_NAME}.app"
 DMG="${DIST}/${APP_NAME}_${VERSION}_aarch64.dmg"
-
-# One Sentry *organization* token covers every project in the org, so it is
-# stored once under a shared Keychain item rather than copied per project —
-# otherwise rotating it means updating N items and silently missing one. The
-# older per-project item is still honored so existing setups keep working.
-SENTRY_KEYCHAIN_ITEMS=(sentry-release-token tandemclip-sentry)
-sentry_token_from_keychain() {
-    local item
-    for item in "${SENTRY_KEYCHAIN_ITEMS[@]}"; do
-        if security find-generic-password -s "$item" -w 2>/dev/null; then return 0; fi
-    done
-    return 1
-}
-
-# 0. Preflight: catch a missing symbolication token BEFORE the long build and
-#    notarization, not as a warning partway down a log nobody re-reads. 0.23.0
-#    shipped unsymbolicated exactly that way. Set ALLOW_NO_SYMBOLS=1 to ship
-#    anyway (a deliberate choice, rather than one made by not noticing).
-if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]] \
-   && ! sentry_token_from_keychain >/dev/null 2>&1; then
-    if [[ "${ALLOW_NO_SYMBOLS:-}" != "1" ]]; then
-        cat >&2 <<'MSG'
-error: no Sentry auth token — this release would ship without symbolicated
-       crash reports (stack traces with no function names or line numbers).
-
-  Store one once (needs the project:releases scope):
-      security add-generic-password -U -s sentry-release-token -a sentry -w
-      (bare -w prompts hidden, so the token stays out of shell history)
-
-  Or ship without symbols deliberately:
-      ALLOW_NO_SYMBOLS=1 Scripts/release.sh ...
-MSG
-        exit 1
-    fi
-    echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without symbolicated crash reports" >&2
-fi
 
 # 0a1. A published release must be reproducible from a commit. Refuse a dirty
 #      tree when actually publishing, so the tag describes what shipped rather
@@ -224,37 +188,39 @@ IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 mkdir -p "$DIST"
 rm -f "$DMG"
 
-# 1b. Upload dSYMs to Sentry for symbolicated crash reports. Token comes from
-#     the environment or, failing that, the shared Keychain item (see above)
-#     (create once with:
-#       security add-generic-password -U -s sentry-release-token -a sentry -w
-#       — bare -w prompts hidden, keeping the token out of shell history —
-#     token needs project:releases scope). Missing token WARNS — a release
-#     without dSYMs means unsymbolicated crash reports, which you want to know.
-if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
-    SENTRY_AUTH_TOKEN="$(sentry_token_from_keychain || true)"
-    export SENTRY_AUTH_TOKEN
-fi
-# SENTRY_ORG defaults the same way SENTRY_PROJECT does below. It used to be required
-# from the environment, so a release run without it skipped symbol upload with only a
-# warning partway down the log — which is how 0.23.0 shipped unsymbolicated, and how
-# 0.24.1 nearly did. The estate has exactly one Sentry org.
-SENTRY_ORG="${SENTRY_ORG:-get-virtual-view}"
-if [[ -n "${SENTRY_AUTH_TOKEN:-}" && -n "${SENTRY_ORG:-}" ]] && command -v sentry-cli >/dev/null 2>&1; then
-    echo "==> Uploading dSYMs to Sentry"
-    # Upload the shipped bundle (app + Sparkle, i.e. everything a user can crash
-    # in) and the matching release dSYM — NOT all of .build, which also holds the
-    # SwiftPM artifacts cache: Sentry-cocoa's iOS/visionOS/simulator slices and
-    # debug-build copies, none of which this macOS app can ever crash in. They
-    # just burn upload time and Sentry storage.
-    SENTRY_UPLOAD_PATHS=("$APP")
-    RELEASE_DSYM="$(swift build -c release --build-system native --show-bin-path 2>/dev/null)/tandemclip.dSYM"
-    [[ -d "$RELEASE_DSYM" ]] && SENTRY_UPLOAD_PATHS+=("$RELEASE_DSYM")
-    sentry-cli debug-files upload --org "${SENTRY_ORG}" \
-        --project "${SENTRY_PROJECT:-tandemclip}" "${SENTRY_UPLOAD_PATHS[@]}" 2>&1 | tail -3 || \
-        echo "    dSYM upload failed (non-fatal)"
+# 1b. Produce a private Crashbox upload artifact and prove that it matches the
+#     application binary by UUID. This script deliberately does not contact a
+#     provider or read an upload credential: an operator uploads the archive to
+#     Crashbox through the protected artifact path and records the returned
+#     artifact id before publishing. There is no hosted-provider fallback.
+RELEASE_DSYM="$(swift build -c release --build-system native --show-bin-path 2>/dev/null)/tandemclip.dSYM"
+if [[ -d "$RELEASE_DSYM" ]]; then
+    APP_UUIDS="$(dwarfdump --uuid "$APP/Contents/MacOS/tandemclip" | awk '{print $2}' | LC_ALL=C sort)"
+    DSYM_UUIDS="$(dwarfdump --uuid "$RELEASE_DSYM" | awk '{print $2}' | LC_ALL=C sort)"
+    if [[ -z "$APP_UUIDS" || "$APP_UUIDS" != "$DSYM_UUIDS" ]]; then
+        echo "error: release dSYM UUIDs do not match the application binary." >&2
+        echo "       Refusing to package symbols that could never resolve this release." >&2
+        exit 1
+    fi
+    SOURCE_COMMIT="$(git rev-parse HEAD)"
+    DEBUG_ARCHIVE="${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.dSYM.zip"
+    rm -f "$DEBUG_ARCHIVE"
+    ditto -c -k --sequesterRsrc --keepParent "$RELEASE_DSYM" "$DEBUG_ARCHIVE"
+    echo "==> Crashbox dSYM artifact ready (not uploaded)"
+    echo "    archive: $DEBUG_ARCHIVE"
+    echo "    sha256: $(shasum -a 256 "$DEBUG_ARCHIVE" | awk '{print $1}')"
+    while IFS= read -r uuid; do echo "    uuid: $uuid"; done <<< "$DSYM_UUIDS"
+elif [[ "${ALLOW_NO_SYMBOLS:-}" == "1" ]]; then
+    echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without a Crashbox dSYM artifact" >&2
 else
-    echo "WARNING: no SENTRY_AUTH_TOKEN + SENTRY_ORG — shipping without symbolicated crash reports" >&2
+    cat >&2 <<'MSG'
+error: release dSYM is missing. Refusing to build a release whose crashes cannot
+       be symbolicated in Crashbox.
+
+  Fix dSYM generation, or ship without symbols deliberately:
+      ALLOW_NO_SYMBOLS=1 Scripts/release.sh ...
+MSG
+    exit 1
 fi
 
 # 2. Stage the DMG (app + /Applications drop target) and build it.

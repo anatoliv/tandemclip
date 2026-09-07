@@ -59,20 +59,20 @@ final class BuildIdentityTests: XCTestCase {
         XCTAssertNil(BuildIdentity.commit(from: [BuildIdentity.infoKey: 42]))
     }
 
-    func testSentryReleaseCarriesTheCommitAfterTheBuildNumber() {
+    func testEventReleaseCarriesTheCommitAfterTheBuildNumber() {
         XCTAssertEqual(
-            BuildIdentity.sentryRelease(version: "0.25.0", build: "62", commit: realCommit),
+            BuildIdentity.eventRelease(version: "0.25.0", build: "62", commit: realCommit),
             "com.tandemclip@0.25.0+62.\(realCommit)"
         )
     }
 
-    func testSentryReleaseFallsBackRatherThanInventingAnIdentity() {
-        // An unidentified build must be *visibly* unidentified in Sentry, not
+    func testEventReleaseFallsBackRatherThanInventingAnIdentity() {
+        // An unidentified build must be *visibly* unidentified in Crashbox, not
         // decorated with a placeholder that reads like a revision.
         let bare = "com.tandemclip@0.25.0+62"
-        XCTAssertEqual(BuildIdentity.sentryRelease(version: "0.25.0", build: "62", commit: nil), bare)
-        XCTAssertEqual(BuildIdentity.sentryRelease(version: "0.25.0", build: "62", commit: "unknown"), bare)
-        XCTAssertEqual(BuildIdentity.sentryRelease(version: "0.25.0", build: "62", commit: "c3eb297"), bare)
+        XCTAssertEqual(BuildIdentity.eventRelease(version: "0.25.0", build: "62", commit: nil), bare)
+        XCTAssertEqual(BuildIdentity.eventRelease(version: "0.25.0", build: "62", commit: "unknown"), bare)
+        XCTAssertEqual(BuildIdentity.eventRelease(version: "0.25.0", build: "62", commit: "c3eb297"), bare)
     }
 
     /// The tracked plist must keep the key present and empty: present so the

@@ -410,8 +410,8 @@ final class Config {
         set { set("verboseLogging", newValue) }
     }
 
-    /// Opt-in remote crash & error reporting (Sentry). Off by default. See
-    /// `CrashReporting`; also requires a DSN baked into the build.
+    /// Opt-in remote crash & error reporting to Crashbox. Off by default. See
+    /// `CrashReporting`; also requires a valid DSN baked into the build.
     var crashReportingEnabled: Bool {
         get { defaults.bool(forKey: CrashReporting.enabledKey) }
         set { set(CrashReporting.enabledKey, newValue) }

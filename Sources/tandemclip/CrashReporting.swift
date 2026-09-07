@@ -1,28 +1,73 @@
 import Foundation
 import Sentry
 
-/// Remote crash + error reporting via Sentry. **Opt-in and gated**: it starts
+/// Remote crash + error reporting to Crashbox through its deliberately small
+/// Sentry-compatible ingest surface. **Opt-in and gated**: it starts
 /// only when the user has turned it on (Settings, Diagnostics, default OFF)
-/// AND a DSN is baked into the build (Info.plist `SentryDSN`, injected at
-/// package time from a gitignored source, not committed). No opt-in or no DSN
-/// means it stays off, so dev/self-built copies and un-consented users never
-/// phone home. Privacy: no PII, IP, or user ids, plus a `beforeSend` scrubber.
+/// AND a valid HTTPS Crashbox DSN is baked into the build (Info.plist
+/// `CrashboxDSN`, injected at package time from a gitignored source, not
+/// committed). No opt-in or no usable DSN means reporting-disabled. The SDK is
+/// only a protocol client; there is no hosted-provider endpoint or fallback.
+/// Privacy: no PII, IP, user ids, automatic breadcrumbs, or request capture,
+/// plus a `beforeSend` scrubber.
 enum CrashReporting {
+    static let infoKey = "CrashboxDSN"
+
     /// UserDefaults key for the opt-in toggle (app domain `com.tandemclip`).
     /// Absent or `false` keeps reporting off.
     static let enabledKey = "crashReportingEnabled"
+
+    /// Bounded failure behavior. Crashbox availability must never determine
+    /// whether TandemClip launches, syncs, responds, or exits promptly.
+    static let maximumCachedEnvelopes = 10
+    static let requestTimeout: TimeInterval = 5
+    static let resourceTimeout: TimeInterval = 10
+    static let shutdownTimeout: TimeInterval = 0.25
 
     static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: enabledKey)
     }
 
-    /// Whether this build can report at all (a DSN is baked in).
+    /// Whether this build can report at all (one valid Crashbox DSN is baked in).
     static var isConfigured: Bool { dsn != nil }
 
     private static var dsn: String? {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: "SentryDSN") as? String else { return nil }
+        dsn(from: Bundle.main.infoDictionary)
+    }
+
+    /// Reject malformed input before handing it to the SDK. This intentionally
+    /// accepts any HTTPS host: staging and private Crashbox installations are
+    /// valid, while the build-time secret selects exactly one endpoint.
+    static func dsn(from info: [String: Any]?) -> String? {
+        guard let raw = info?[infoKey] as? String else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty,
+              let components = URLComponents(string: trimmed),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(),
+              !host.isEmpty,
+              host != "sentry.io",
+              !host.hasSuffix(".sentry.io"),
+              components.user?.isEmpty == false,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              components.path.hasPrefix("/"),
+              !components.path.dropFirst().isEmpty,
+              !components.path.dropFirst().contains("/"),
+              components.url != nil else { return nil }
+        return trimmed
+    }
+
+    static func transportConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = requestTimeout
+        configuration.timeoutIntervalForResource = resourceTimeout
+        configuration.waitsForConnectivity = false
+        configuration.httpMaximumConnectionsPerHost = 1
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
     }
 
     /// Start at launch only if the user opted in. No-op otherwise.
@@ -42,7 +87,7 @@ enum CrashReporting {
     }
 
     private static func startSDK() {
-        guard let dsn else { return }   // no DSN → off
+        guard let dsn else { return }   // no usable Crashbox DSN → off
         SentrySDK.start { options in
             options.dsn = dsn
             options.sendDefaultPii = false          // never IP / user ids / bodies
@@ -53,9 +98,23 @@ enum CrashReporting {
             options.environment = "release"
             #endif
             options.tracesSampleRate = 0.0          // crashes/errors only, no perf volume
+            options.enableAutoPerformanceTracing = false
+            options.enableNetworkTracking = false
+            options.enableNetworkBreadcrumbs = false
+            options.enableCaptureFailedRequests = false
+            options.enableAutoBreadcrumbTracking = false
+            options.maxBreadcrumbs = 0
+            options.maxCacheItems = UInt(maximumCachedEnvelopes)
+            options.shutdownTimeInterval = shutdownTimeout
+
+            // The SDK sends on its own low-priority queue. A private ephemeral
+            // session adds finite network deadlines and no shared URL cache or
+            // credential storage, so a dead or misbehaving Crashbox is bounded.
+            options.urlSession = URLSession(configuration: transportConfiguration())
+
             // Belt-and-braces scrubbing: drop user/server/request, and redact
-            // the home-directory path (which reveals the account name) from
-            // event and breadcrumb messages before anything leaves the Mac.
+            // the home-directory path (which reveals the account name) from an
+            // explicitly captured event before anything leaves the Mac.
             options.beforeSend = { event in
                 event.user = nil
                 event.serverName = nil
@@ -70,7 +129,7 @@ enum CrashReporting {
                 return event
             }
         }
-        Log.trace("app", "crash reporting started")
+        Log.trace("app", "Crashbox reporting started")
     }
 
     /// Replaces the user's home-directory path with `~` so account names and
@@ -80,20 +139,22 @@ enum CrashReporting {
         return home.isEmpty ? s : s.replacingOccurrences(of: home, with: "~")
     }
 
-    /// Send a test event (verification only; triggered by TANDEMCLIP_TEST_SENTRY).
+    /// Send a test event (verification only; triggered by
+    /// TANDEMCLIP_TEST_CRASHBOX in a controlled local proof).
     static func captureTest() {
-        SentrySDK.capture(message: "TandemClip Sentry wiring test")
-        SentrySDK.flush(timeout: 5)
+        guard isConfigured, isEnabled else { return }
+        SentrySDK.capture(message: "TandemClip Crashbox wiring test")
+        SentrySDK.flush(timeout: shutdownTimeout)
     }
 
-    /// `com.tandemclip@<version>+<build>.<commit>` — conventional Sentry release
-    /// id, extended with the source revision baked in at package time so a crash
+    /// `com.tandemclip@<version>+<build>.<commit>` — Sentry-protocol release id,
+    /// extended with the source revision baked in at package time so a crash
     /// report identifies the revision it came from and not merely the version
     /// string the release chose for itself. See `BuildIdentity`.
     private static var release: String {
         let info = Bundle.main.infoDictionary
         let v = info?["CFBundleShortVersionString"] as? String ?? "0"
         let b = info?["CFBundleVersion"] as? String ?? "0"
-        return BuildIdentity.sentryRelease(version: v, build: b, commit: BuildIdentity.sourceCommit)
+        return BuildIdentity.eventRelease(version: v, build: b, commit: BuildIdentity.sourceCommit)
     }
 }

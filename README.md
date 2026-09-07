@@ -241,22 +241,30 @@ unsigned or version-regressed appcast, but serving the feed over plain HTTP
 would let a network MITM stall or withhold security updates. Verify with
 `curl -sSI http://tandemclip.com/appcast.xml` (expect a 301/308 to `https://`).
 
-## Crash reporting (Sentry)
+## Crash reporting (Crashbox)
 
-Integrated via the Sentry Cocoa SDK, **opt-in and off by default**. It starts
-only when the user turns it on (Settings, Diagnostics) **and** a DSN is baked
-into the build, so dev/self-built copies and un-consented users never phone
-home. Privacy: no PII, IP, or user identifiers; a `beforeSend` scrubber drops
-user/server/request and redacts home-directory paths; crashes/errors only (no
-performance tracing).
+Crashbox uses a deliberately small Sentry-compatible ingest surface, so the
+Sentry Cocoa SDK remains as the wire-protocol client; the hosted Sentry service
+is not configured or used. Reporting is **opt-in and off by default**. It starts
+only when the user turns it on (Settings, Diagnostics) **and** one valid HTTPS
+Crashbox DSN is baked into the build. A missing or malformed DSN means
+reporting-disabled; there is no second endpoint and no dual-send fallback.
 
-To enable: create a `tandemclip` Sentry project, then put its DSN in the
-**gitignored** `Packaging/sentry-dsn.local` (or set the `TANDEMCLIP_SENTRY_DSN`
-environment variable). `make-app.sh` injects it into the bundle at package
-time; the tracked `Packaging/Info.plist` always keeps `SentryDSN` empty, so a
-DSN is never committed. For symbolicated stack traces, set `SENTRY_AUTH_TOKEN`
-+ `SENTRY_ORG` (+ `brew install getsentry/tools/sentry-cli`) and `release.sh`
-uploads dSYMs automatically.
+Crashbox failure does not gate app launch or clipboard sync. Delivery runs on
+the SDK's background transport with 5-second request and 10-second resource
+deadlines, one connection per host, at most 10 cached envelopes, and a 0.25
+second shutdown flush. Privacy: no PII, IP, user identifiers, automatic
+breadcrumbs, request capture, or performance tracing. A
+`beforeSend` scrubber also drops user/server/request and redacts home paths.
+
+To prepare a build, put its public DSN in the **gitignored**
+`Packaging/crashbox-dsn.local` (or set `TANDEMCLIP_CRASHBOX_DSN`).
+`make-app.sh` injects it at package time; tracked `Packaging/Info.plist` always
+keeps `CrashboxDSN` empty, so a DSN is never committed. `release.sh` verifies
+the release binary and dSYM UUIDs match, then creates a private dSYM archive and
+prints its SHA-256. Upload that archive through Crashbox's protected artifact
+path and record the artifact receipt before publishing the app. The release
+script itself does not contact either provider or read an upload credential.
 
 ## Roadmap
 
@@ -311,9 +319,9 @@ secret-scan **pre-push guard** once after cloning:
 git config core.hooksPath .githooks   # blocks pushing LAN IPs, tokens, DSNs, private keys
 ```
 
-The real Sentry DSN belongs in the gitignored `Packaging/sentry-dsn.local` (or
-the `TANDEMCLIP_SENTRY_DSN` env var), never in a tracked file, `make-app.sh`
-injects it at package time.
+The real Crashbox DSN belongs in the gitignored
+`Packaging/crashbox-dsn.local` (or `TANDEMCLIP_CRASHBOX_DSN`), never in a
+tracked file. `make-app.sh` injects it at package time.
 
 ## Security
 

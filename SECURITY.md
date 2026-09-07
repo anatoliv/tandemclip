@@ -57,5 +57,7 @@ The design defends against:
   from your Mac to an endpoint you choose (local Ollama/LM Studio keeps it
   on-machine); plain-HTTP endpoints are rejected unless the host is loopback,
   `.local`, or RFC-1918. Keys live in the Keychain.
-- **Crash reporting (Sentry) is off by default** and only starts when a DSN is
-  present; no PII, IP, or user identifiers are sent.
+- **Crash reporting (Crashbox) is off by default** and only starts when one
+  valid HTTPS DSN is present. Failure is bounded (10 cached envelopes, finite
+  network and shutdown timeouts), and no PII, IP, user identifiers, automatic
+  breadcrumbs, or request capture are sent.

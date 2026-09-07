@@ -13,8 +13,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private lazy var servicesProvider = ServicesProvider(engine: engine)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        CrashReporting.start()   // gated on Info.plist SentryDSN; off if absent
-        if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_SENTRY"] != nil {
+        CrashReporting.start()   // gated on CrashboxDSN; off if absent/malformed
+        if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_CRASHBOX"] != nil {
             CrashReporting.captureTest()
         }
 

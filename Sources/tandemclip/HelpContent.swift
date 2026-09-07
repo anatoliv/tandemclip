@@ -393,7 +393,7 @@ enum HelpCatalog {
               highlight: "More than plain text.",
               changes: [
                 .init(.added, "Rich text and image sync, file sync by content, and session clipboard history."),
-                .init(.improved, "Wired Sentry crash reporting (opt-in, PII-scrubbed)."),
+                .init(.improved, "Wired Crashbox crash reporting (opt-in, PII-scrubbed)."),
               ]),
         .init(version: "0.1.1", date: "July 2, 2026",
               highlight: "Secure by default, from the first build.",

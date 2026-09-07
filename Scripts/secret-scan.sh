@@ -22,7 +22,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# Tokens, Sentry DSNs, private keys — never legitimate in the tree.
+# Tokens, Crashbox DSNs, private keys — never legitimate in the tree.
 SECRET_RE='ghp_[0-9A-Za-z]{20,}|gho_[0-9A-Za-z]{20,}|glpat-[0-9A-Za-z_-]{18,}|xox[abprs]-[0-9A-Za-z-]{10,}|AKIA[0-9A-Z]{16}|sntry[a-z]_[0-9a-f]{32}|https?://[0-9a-f]{16,}@o[0-9]+\.ingest\.|-----BEGIN [A-Z ]*PRIVATE KEY'
 # Private LAN IPs — deployment hosts, never something the public repo needs.
 LAN_RE='192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
@@ -49,7 +49,7 @@ PRIVATE_PATHS=(
     "docs/launch/"                  # launch + credit playbook, marketing drafts
     "web/"                          # deploy infra: compose, nginx, marketing site
     "SECURITY_AUDIT.md"             # internal audit; names exact weak spots
-    "Packaging/sentry-dsn.local"    # the real Sentry DSN
+    "Packaging/crashbox-dsn.local"  # the real Crashbox DSN
     "Scripts/backup-repo.sh"        # private backup remote wiring
 )
 

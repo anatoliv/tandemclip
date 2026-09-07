@@ -2,7 +2,7 @@ import Foundation
 
 /// The exact source revision this binary was built from, baked into the bundle
 /// at package time (Info.plist `TandemClipSourceCommit`, injected by
-/// make-app.sh from `git rev-parse HEAD`) the same way the Sentry DSN is.
+/// make-app.sh from `git rev-parse HEAD`) the same way the Crashbox DSN is.
 ///
 /// Why it exists: a version and build number describe *what a release called
 /// itself*, not *what it was built from*. A tag pointing at a commit is a claim
@@ -61,15 +61,16 @@ enum BuildIdentity {
         }
     }
 
-    /// Sentry release id: `com.tandemclip@<version>+<build>.<commit>`.
+    /// Sentry-protocol event release id:
+    /// `com.tandemclip@<version>+<build>.<commit>`.
     ///
     /// The commit rides in the semver build-metadata segment, after the build
-    /// number, so the `name@version+build` shape Sentry parses is unchanged and
-    /// releases stay comparable with the ones already recorded — it only gains
-    /// the field that ties an event to a revision. A build with no identity
+    /// number, so the `name@version+build` wire shape Crashbox accepts is
+    /// unchanged and releases stay comparable — it only gains the field that
+    /// ties an event to a revision. A build with no identity
     /// falls back to the old `com.tandemclip@<version>+<build>` rather than
     /// inventing one, so an unidentified dev build is visibly unidentified.
-    static func sentryRelease(version: String, build: String, commit: String?) -> String {
+    static func eventRelease(version: String, build: String, commit: String?) -> String {
         let base = "com.tandemclip@\(version)+\(build)"
         guard let commit, isWellFormed(commit) else { return base }
         return "\(base).\(commit)"
