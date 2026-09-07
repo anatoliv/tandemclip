@@ -33,6 +33,63 @@ BUNDLE="build/${APP_NAME}.app"
 IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
 
+# --- Source identity gate -----------------------------------------------------
+# The exact source revision gets baked into the bundle further down (Info.plist
+# TandemClipSourceCommit, injected the same way the Sentry DSN is). Whether that
+# is even possible is knowable in one `git rev-parse`, so it is checked HERE —
+# before the release build — rather than at assembly time. release.sh makes the
+# same argument for its preflight gate: a failure that costs a full build plus
+# notarization to discover is a failure nobody finds until it is expensive.
+#
+# Why bake it in at all: a shipped .app records only the version string it chose
+# for itself, so nothing about a live artifact says which commit produced it. A
+# tag is a claim made beside a release, not a property of its bytes — you cannot
+# hand someone a DMG and have them check it. With the commit inside the bundle,
+# `plutil -p TandemClip.app/Contents/Info.plist` answers on its own, and the same
+# value rides in the Sentry release name (see BuildIdentity.swift).
+SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+GIT_DIRTY="$(git status --porcelain 2>/dev/null || true)"
+
+identity_is_well_formed() {                 # 40 chars, lowercase hex, nothing else
+    [[ "$1" =~ ^[0-9a-f]{40}$ ]]
+}
+
+# A distributable build (IDENTITY set = Developer ID signed = a thing that can
+# reach a user) refuses to exist without a well-formed identity. An unsigned
+# local build is allowed to carry none: dev builds go nowhere, and blocking them
+# on git state would only teach people to work around this.
+if [[ -n "${IDENTITY}" ]]; then
+    if ! identity_is_well_formed "${SOURCE_COMMIT}"; then
+        cat >&2 <<MSG
+error: refusing to build a distributable app with no usable source identity.
+
+  git rev-parse HEAD gave: '${SOURCE_COMMIT:-<nothing>}'
+  Required: exactly 40 lowercase hex characters.
+
+  A signed build can reach a user, and a build that reaches a user must be
+  mappable back to the revision it came from. An abbreviated, uppercase or
+  placeholder value is not identity — it is a value that looks like one.
+MSG
+        exit 1
+    fi
+    if [[ -n "${GIT_DIRTY}" && "${ALLOW_DIRTY_IDENTITY:-}" != "1" ]]; then
+        cat >&2 <<MSG
+error: working tree is dirty — a distributable build would claim a revision
+       that does not describe its own bytes.
+
+  Commit or stash first, or (knowing the identity will be a lie) re-run with:
+      ALLOW_DIRTY_IDENTITY=1 ${0}
+MSG
+        git status --short >&2
+        exit 1
+    fi
+    if [[ -n "${GIT_DIRTY}" ]]; then
+        echo "WARNING: ALLOW_DIRTY_IDENTITY=1 — ${SOURCE_COMMIT} does not describe this build" >&2
+    else
+        echo "==> Source identity: ${SOURCE_COMMIT} (clean tree)"
+    fi
+fi
+
 echo "==> Building release binary"
 # -Xswiftc -g emits DWARF so dsymutil can produce a real dSYM. Without it the
 # binary carries only symtab+unwind, and Sentry can resolve function names but
@@ -75,55 +132,9 @@ if [[ -n "${SENTRY_DSN_VALUE}" ]]; then
     echo "==> Injected Sentry DSN into bundle Info.plist"
 fi
 
-# Bake the exact source revision into the bundle (Info.plist
-# TandemClipSourceCommit), injected here for the same reason the DSN is: it is a
-# property of the *build*, not of the tracked tree.
-#
-# Without it a shipped .app records only the version string it chose for itself,
-# so nothing about a live artifact says which commit produced it. A tag is a
-# claim made next to the release, not a property of the bytes — you cannot hand
-# someone a DMG and have them check it. This makes any live artifact answer for
-# itself: `plutil -p TandemClip.app/Contents/Info.plist` yields the revision, and
-# the same value rides in the Sentry release name (see BuildIdentity.swift).
-#
-# A distributable build (IDENTITY set = Developer ID signed = a thing that can
-# reach a user) REFUSES to exist without a well-formed identity. An unsigned
-# local build is allowed to carry none: dev builds go nowhere, and blocking them
-# on git state would only teach people to work around this.
-SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
-GIT_DIRTY="$(git status --porcelain 2>/dev/null || true)"
-
-identity_is_well_formed() {                 # 40 chars, lowercase hex, nothing else
-    [[ "$1" =~ ^[0-9a-f]{40}$ ]]
-}
-
-if [[ -n "${IDENTITY}" ]]; then
-    if ! identity_is_well_formed "${SOURCE_COMMIT}"; then
-        cat >&2 <<MSG
-error: refusing to build a distributable app with no usable source identity.
-
-  git rev-parse HEAD gave: '${SOURCE_COMMIT:-<nothing>}'
-  Required: exactly 40 lowercase hex characters.
-
-  A signed build can reach a user, and a build that reaches a user must be
-  mappable back to the revision it came from. An abbreviated, uppercase or
-  placeholder value is not identity — it is a value that looks like one.
-MSG
-        exit 1
-    fi
-    if [[ -n "${GIT_DIRTY}" && "${ALLOW_DIRTY_IDENTITY:-}" != "1" ]]; then
-        cat >&2 <<MSG
-error: working tree is dirty — a distributable build would claim a revision
-       that does not describe its own bytes.
-
-  Commit or stash first, or (knowing the identity will be a lie) re-run with:
-      ALLOW_DIRTY_IDENTITY=1 ${0}
-MSG
-        git status --short >&2
-        exit 1
-    fi
-fi
-
+# Bake in the revision checked at the top of this script. Injected here, at the
+# same point and for the same reason as the DSN: it is a property of the *build*,
+# not of the tracked tree, so the committed Packaging/Info.plist keeps it empty.
 if identity_is_well_formed "${SOURCE_COMMIT}"; then
     /usr/libexec/PlistBuddy -c "Set :TandemClipSourceCommit ${SOURCE_COMMIT}" \
         "${BUNDLE}/Contents/Info.plist"
