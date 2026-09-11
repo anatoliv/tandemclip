@@ -20,6 +20,10 @@ web/
 # The tracked Packaging/Info.plist keeps CrashboxDSN empty; never commit the DSN.
 Packaging/crashbox-dsn.local
 
+# Retained legacy hosted-provider input. The release path no longer reads it,
+# but keep the local credential ignored until the owner removes it securely.
+Packaging/sentry-dsn.local
+
 # Learning log is business analysis (internal ticket IDs, infra detail) and this
 # repo publishes DIRECTLY to a public remote. Canonical copy is private:
 # ~/Projects/_learnings/logs/tandemclip/learning-log.md — this path is a symlink.
