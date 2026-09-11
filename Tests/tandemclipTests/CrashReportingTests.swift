@@ -87,11 +87,68 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertTrue(makeApp.contains("TANDEMCLIP_CRASHBOX_DSN"))
         XCTAssertTrue(makeApp.contains("Packaging/crashbox-dsn.local"))
         XCTAssertTrue(makeApp.contains("Set :CrashboxDSN"))
+        XCTAssertTrue(makeApp.contains("crashbox_dsn_is_valid"))
+        XCTAssertTrue(makeApp.contains("a distributable release requires a protected Crashbox DSN"))
+        XCTAssertTrue(release.contains("REQUIRE_CRASHBOX=\"${PUBLISH:-0}\""))
         for legacy in ["TANDEMCLIP_" + "SENTRY_DSN", "Packaging/" + "sentry-dsn.local", "Set :" + "SentryDSN"] {
             XCTAssertFalse(makeApp.contains(legacy), "legacy build input remains: \(legacy)")
         }
         for legacy in ["SENTRY_" + "AUTH_TOKEN", "sentry-" + "cli", "debug-files " + "upload"] {
             XCTAssertFalse(release.contains(legacy), "hosted symbol upload remains: \(legacy)")
         }
+    }
+
+    func testReleaseInputGuardFailsClosedBeforeBuilding() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = root.appendingPathComponent("Scripts/make-app.sh").path
+        let absent = root.appendingPathComponent(".build/test-missing-crashbox-input").path
+
+        func run(dsn: String?, requireCrashbox: Bool) throws -> (Int32, String) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [script]
+            var environment = ProcessInfo.processInfo.environment
+            environment["VERIFY_CRASHBOX_INPUT_ONLY"] = "1"
+            environment["TANDEMCLIP_CRASHBOX_CONFIG_FILE"] = absent
+            environment["REQUIRE_CRASHBOX"] = requireCrashbox ? "1" : "0"
+            if let dsn {
+                environment["TANDEMCLIP_CRASHBOX_DSN"] = dsn
+            } else {
+                environment.removeValue(forKey: "TANDEMCLIP_CRASHBOX_DSN")
+            }
+            process.environment = environment
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            try process.run()
+            process.waitUntilExit()
+            let text = String(
+                data: output.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            return (process.terminationStatus, text)
+        }
+
+        let disabled = try run(dsn: nil, requireCrashbox: false)
+        XCTAssertEqual(disabled.0, 0)
+        XCTAssertTrue(disabled.1.contains("disabled"))
+
+        let missing = try run(dsn: nil, requireCrashbox: true)
+        XCTAssertNotEqual(missing.0, 0)
+        XCTAssertTrue(missing.1.contains("requires a protected Crashbox DSN"))
+
+        let malformed = try run(dsn: "https://public@sentry.io/project", requireCrashbox: true)
+        XCTAssertNotEqual(malformed.0, 0)
+        XCTAssertTrue(malformed.1.contains("unsafe or malformed"))
+
+        let configured = try run(
+            dsn: "https://public-key@ingest.crashbox.dev/6bb1b202-8b83-4ec4-9151-f4ef7548e544",
+            requireCrashbox: true
+        )
+        XCTAssertEqual(configured.0, 0)
+        XCTAssertTrue(configured.1.contains("crashbox"))
     }
 }

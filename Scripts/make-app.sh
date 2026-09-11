@@ -90,6 +90,40 @@ MSG
     fi
 fi
 
+# Select and validate the sole remote reporting endpoint before the expensive
+# build. A contributor's unsigned local build may stay reporting-disabled. A
+# signed build, or a build that release.sh intends to publish, must carry a
+# valid Crashbox DSN; otherwise a successful release silently removes crash
+# reporting from the public artifact.
+crashbox_dsn_is_valid() {
+    local value="$1" host
+    [[ "$value" =~ ^https://([A-Za-z0-9._~-]+)@([A-Za-z0-9.-]+)/([A-Za-z0-9-]+)$ ]] \
+        || return 1
+    host="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
+    case "$host" in
+        sentry.io|*.sentry.io) return 1 ;;
+    esac
+}
+
+CRASHBOX_DSN_FILE="${TANDEMCLIP_CRASHBOX_CONFIG_FILE:-Packaging/crashbox-dsn.local}"
+CRASHBOX_DSN_VALUE="${TANDEMCLIP_CRASHBOX_DSN:-}"
+if [[ -z "${CRASHBOX_DSN_VALUE}" && -f "$CRASHBOX_DSN_FILE" ]]; then
+    CRASHBOX_DSN_VALUE="$(tr -d ' \t\r\n' < "$CRASHBOX_DSN_FILE")"
+fi
+if [[ -n "${CRASHBOX_DSN_VALUE}" ]] && ! crashbox_dsn_is_valid "${CRASHBOX_DSN_VALUE}"; then
+    echo "error: Crashbox DSN has an unsafe or malformed shape." >&2
+    exit 1
+fi
+if [[ ( -n "${IDENTITY}" || "${REQUIRE_CRASHBOX:-}" == "1" ) && -z "${CRASHBOX_DSN_VALUE}" ]]; then
+    echo "error: a distributable release requires a protected Crashbox DSN." >&2
+    echo "       Install ${CRASHBOX_DSN_FILE} with mode 0600; local unsigned builds may stay disabled." >&2
+    exit 1
+fi
+if [[ "${VERIFY_CRASHBOX_INPUT_ONLY:-}" == "1" ]]; then
+    [[ -n "${CRASHBOX_DSN_VALUE}" ]] && echo crashbox || echo disabled
+    exit 0
+fi
+
 echo "==> Building release binary"
 # -Xswiftc -g emits DWARF so dsymutil can produce a real dSYM. Without it the
 # binary carries only symtab+unwind, and Crashbox can resolve function names but
@@ -123,10 +157,6 @@ cp "Packaging/Info.plist" "${BUNDLE}/Contents/Info.plist"
 # tracked Info.plist keeps CrashboxDSN empty; no source means reporting-disabled.
 # Deliberately read no legacy variable or local file: a stale hosted-provider
 # secret must not become an accidental fallback.
-CRASHBOX_DSN_VALUE="${TANDEMCLIP_CRASHBOX_DSN:-}"
-if [[ -z "${CRASHBOX_DSN_VALUE}" && -f Packaging/crashbox-dsn.local ]]; then
-    CRASHBOX_DSN_VALUE="$(tr -d ' \t\r\n' < Packaging/crashbox-dsn.local)"
-fi
 if [[ -n "${CRASHBOX_DSN_VALUE}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CrashboxDSN ${CRASHBOX_DSN_VALUE}" "${BUNDLE}/Contents/Info.plist"
     echo "==> Injected Crashbox DSN into bundle Info.plist"

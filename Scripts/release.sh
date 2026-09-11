@@ -183,7 +183,7 @@ PREFLIGHT_ONLY=1 Scripts/check-release.sh || {
 }
 
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
-IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
+REQUIRE_CRASHBOX="${PUBLISH:-0}" IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 
 mkdir -p "$DIST"
 rm -f "$DMG"
