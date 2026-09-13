@@ -17,6 +17,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["TANDEMCLIP_TEST_CRASHBOX"] != nil {
             CrashReporting.captureTest()
         }
+        if CrashReporting.shouldCaptureNativeTest(
+            request: ProcessInfo.processInfo.environment[CrashReporting.nativeTestEnvironmentKey],
+            reportingActive: CrashReporting.isConfigured && CrashReporting.isEnabled
+        ) {
+            // Let Sentry finish installing its native handler before the
+            // playbook's deliberate crash. Normal launches never set this key.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                CrashReporting.captureNativeTest()
+            }
+        }
 
         // Reflect persisted settings that live outside Config's own storage.
         Log.verbose = Log.verbose || config.verboseLogging

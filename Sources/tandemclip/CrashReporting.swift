@@ -12,6 +12,7 @@ import Sentry
 /// plus a `beforeSend` scrubber.
 enum CrashReporting {
     static let infoKey = "CrashboxDSN"
+    static let nativeTestEnvironmentKey = "TANDEMCLIP_TEST_CRASHBOX_NATIVE"
 
     /// UserDefaults key for the opt-in toggle (app domain `com.tandemclip`).
     /// Absent or `false` keeps reporting off.
@@ -23,6 +24,12 @@ enum CrashReporting {
     static let requestTimeout: TimeInterval = 5
     static let resourceTimeout: TimeInterval = 10
     static let shutdownTimeout: TimeInterval = 0.25
+
+    #if DEBUG
+    static let environment = "debug"
+    #else
+    static let environment = "production"
+    #endif
 
     static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: enabledKey)
@@ -89,47 +96,73 @@ enum CrashReporting {
     private static func startSDK() {
         guard let dsn else { return }   // no usable Crashbox DSN → off
         SentrySDK.start { options in
-            options.dsn = dsn
-            options.sendDefaultPii = false          // never IP / user ids / bodies
-            options.releaseName = release
-            #if DEBUG
-            options.environment = "debug"
-            #else
-            options.environment = "release"
-            #endif
-            options.tracesSampleRate = 0.0          // crashes/errors only, no perf volume
-            options.enableAutoPerformanceTracing = false
-            options.enableNetworkTracking = false
-            options.enableNetworkBreadcrumbs = false
-            options.enableCaptureFailedRequests = false
-            options.enableAutoBreadcrumbTracking = false
-            options.maxBreadcrumbs = 0
-            options.maxCacheItems = UInt(maximumCachedEnvelopes)
-            options.shutdownTimeInterval = shutdownTimeout
-
-            // The SDK sends on its own low-priority queue. A private ephemeral
-            // session adds finite network deadlines and no shared URL cache or
-            // credential storage, so a dead or misbehaving Crashbox is bounded.
-            options.urlSession = URLSession(configuration: transportConfiguration())
-
-            // Belt-and-braces scrubbing: drop user/server/request, and redact
-            // the home-directory path (which reveals the account name) from an
-            // explicitly captured event before anything leaves the Mac.
-            options.beforeSend = { event in
-                event.user = nil
-                event.serverName = nil
-                event.request = nil
-                if let formatted = event.message?.formatted {
-                    event.message = SentryMessage(formatted: redactHome(formatted))
-                }
-                event.breadcrumbs = event.breadcrumbs?.map { crumb in
-                    if let m = crumb.message { crumb.message = redactHome(m) }
-                    return crumb
-                }
-                return event
-            }
+            configure(options, dsn: dsn, environment: environment)
         }
         Log.trace("app", "Crashbox reporting started")
+    }
+
+    /// Apply the event-only Crashbox transport profile without starting the SDK.
+    /// Kept separate so the native-crash scope and protocol bounds are testable.
+    static func configure(_ options: Options, dsn: String, environment: String) {
+        options.dsn = dsn
+        options.sendDefaultPii = false          // never IP / user ids / bodies
+        options.releaseName = release
+        options.environment = environment
+        options.initialScope = { scope in
+            // Native crashes are serialized from the crash scope before a
+            // later launch can enrich the event. Options.environment alone
+            // does not persist this attribution into that scope.
+            scope.setEnvironment(environment)
+            return scope
+        }
+        options.tracesSampleRate = 0.0          // crashes/errors only, no perf volume
+        options.sendClientReports = false
+        options.enableAutoSessionTracking = false
+        options.enableAutoPerformanceTracing = false
+        options.enableAppHangTracking = false
+        options.enableWatchdogTerminationTracking = false
+        options.enableMetricKit = false
+        options.enableMetricKitRawPayload = false
+        options.enableNetworkTracking = false
+        options.enableNetworkBreadcrumbs = false
+        options.enableCaptureFailedRequests = false
+        options.enableAutoBreadcrumbTracking = false
+        options.maxBreadcrumbs = 0
+        options.maxCacheItems = UInt(maximumCachedEnvelopes)
+        options.shutdownTimeInterval = shutdownTimeout
+
+        // The SDK sends on its own low-priority queue. A private ephemeral
+        // session adds finite network deadlines and no shared URL cache or
+        // credential storage, so a dead or misbehaving Crashbox is bounded.
+        options.urlSession = URLSession(configuration: transportConfiguration())
+
+        // Belt-and-braces scrubbing: drop user/server/request, and redact
+        // the home-directory path (which reveals the account name) from an
+        // explicitly captured event before anything leaves the Mac.
+        options.beforeSend = { event in
+            event.user = nil
+            event.serverName = nil
+            event.request = nil
+            if let formatted = event.message?.formatted {
+                event.message = SentryMessage(formatted: redactHome(formatted))
+            }
+            event.breadcrumbs = event.breadcrumbs?.map { crumb in
+                if let m = crumb.message { crumb.message = redactHome(m) }
+                return crumb
+            }
+            return event
+        }
+    }
+
+    static func shouldCaptureNativeTest(request: String?, reportingActive: Bool) -> Bool {
+        request == "1" && reportingActive
+    }
+
+    /// Deliberate native crash for the release verification playbook. The exact
+    /// environment gate in AppController keeps this unreachable in normal use.
+    @inline(never)
+    static func captureNativeTest() -> Never {
+        fatalError("TandemClip Crashbox native verification")
     }
 
     /// Replaces the user's home-directory path with `~` so account names and

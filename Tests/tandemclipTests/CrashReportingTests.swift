@@ -1,4 +1,5 @@
 import XCTest
+import Sentry
 @testable import tandemclip
 
 final class CrashReportingTests: XCTestCase {
@@ -53,6 +54,41 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertEqual(configuration.httpMaximumConnectionsPerHost, 1)
         XCTAssertNil(configuration.urlCache)
         XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+    }
+
+    func testReleaseEnvironmentIsPersistedInTheNativeCrashScope() {
+        let options = Options()
+        CrashReporting.configure(
+            options,
+            dsn: "https://public-key@ingest.crashbox.dev/6bb1b202-8b83-4ec4-9151-f4ef7548e544",
+            environment: "production"
+        )
+
+        XCTAssertEqual(options.environment, "production")
+        let scope = options.initialScope(Scope())
+        XCTAssertEqual(scope.serialize()["environment"] as? String, "production")
+        XCTAssertFalse(options.sendClientReports)
+        XCTAssertFalse(options.enableAutoSessionTracking)
+        XCTAssertFalse(options.enableAutoPerformanceTracing)
+        XCTAssertFalse(options.enableAppHangTracking)
+        XCTAssertFalse(options.enableWatchdogTerminationTracking)
+        XCTAssertFalse(options.enableMetricKit)
+        XCTAssertFalse(options.enableMetricKitRawPayload)
+    }
+
+    func testNativeVerificationCrashNeedsTheExactGateAndActiveReporting() {
+        XCTAssertTrue(
+            CrashReporting.shouldCaptureNativeTest(request: "1", reportingActive: true)
+        )
+        XCTAssertFalse(
+            CrashReporting.shouldCaptureNativeTest(request: nil, reportingActive: true)
+        )
+        XCTAssertFalse(
+            CrashReporting.shouldCaptureNativeTest(request: "true", reportingActive: true)
+        )
+        XCTAssertFalse(
+            CrashReporting.shouldCaptureNativeTest(request: "1", reportingActive: false)
+        )
     }
 
     func testTrackedInfoPlistDeclaresCrashboxOnlyAndNoSecret() throws {

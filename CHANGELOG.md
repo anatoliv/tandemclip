@@ -4,6 +4,13 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.25.1] — 2026-09-13
+- Crash reporting: native crashes keep their production environment attribution,
+  so a Crashbox event can be checked against the release that sent it.
+- Release verification: an exact, reporting-enabled environment gate can trigger
+  one deliberate native crash for the cohort playbook. Normal launches cannot
+  reach it, and unsupported SDK telemetry stays disabled.
+
 ## [0.25.0] — 2026-09-06
 - Menu bar: **Privacy Hold** is now a menu item, next to Pause. It was only ever
   reachable from the picker's hand button, while the menu-bar icon and status

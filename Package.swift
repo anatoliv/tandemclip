@@ -23,7 +23,10 @@ let package = Package(
         ),
         .testTarget(
             name: "tandemclipTests",
-            dependencies: ["tandemclip"]
+            dependencies: [
+                "tandemclip",
+                .product(name: "Sentry", package: "sentry-cocoa")
+            ]
         )
     ]
 )
