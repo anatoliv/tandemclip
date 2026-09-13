@@ -262,9 +262,13 @@ To prepare a build, put its public DSN in the **gitignored**
 `make-app.sh` injects it at package time; tracked `Packaging/Info.plist` always
 keeps `CrashboxDSN` empty, so a DSN is never committed. `release.sh` verifies
 the release binary and dSYM UUIDs match, then creates a private dSYM archive and
-prints its SHA-256. Upload that archive through Crashbox's protected artifact
-path and record the artifact receipt before publishing the app. The release
-script itself does not contact either provider or read an upload credential.
+prints its SHA-256. Prepare the release once with `PUBLISH=0`, upload that archive
+through Crashbox's protected project-scoped artifact path, and retain the JSON
+receipt outside the repository. A publishing run requires
+`CRASHBOX_ARTIFACT_RECEIPT_FILE` and `TANDEMCLIP_CRASHBOX_PROJECT_ID`; it refuses
+unless the receipt says `ready` for the exact project, release string, and archive
+digest it just built. The release script does not contact a provider or read an
+upload credential.
 
 ## Roadmap
 

@@ -13,6 +13,8 @@
 #   SPARKLE_BIN=/path/to/sign_update      (else auto-located)
 #   APPCAST_BASE=https://tandemclip.com   (enclosure URL base; default below)
 #   PUBLISH=1 PUBLISH_DEST=user@host:/path (rsync/scp the DMG + appcast + page)
+#   CRASHBOX_ARTIFACT_RECEIPT_FILE=/path/to/receipt.json (required to publish)
+#   TANDEMCLIP_CRASHBOX_PROJECT_ID=<uuid> (required to publish)
 #   ALLOW_NO_SYMBOLS=1                    (explicitly omit the Crashbox dSYM archive)
 
 set -euo pipefail
@@ -206,10 +208,33 @@ if [[ -d "$RELEASE_DSYM" ]]; then
     DEBUG_ARCHIVE="${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.dSYM.zip"
     rm -f "$DEBUG_ARCHIVE"
     ditto -c -k --sequesterRsrc --keepParent "$RELEASE_DSYM" "$DEBUG_ARCHIVE"
+    EVENT_RELEASE="com.tandemclip@${VERSION}+${BUILD_NUM}.${SOURCE_COMMIT}"
     echo "==> Crashbox dSYM artifact ready (not uploaded)"
     echo "    archive: $DEBUG_ARCHIVE"
     echo "    sha256: $(shasum -a 256 "$DEBUG_ARCHIVE" | awk '{print $1}')"
     while IFS= read -r uuid; do echo "    uuid: $uuid"; done <<< "$DSYM_UUIDS"
+    if [[ "${PUBLISH:-}" == "1" ]]; then
+        RECEIPT_FILE="${CRASHBOX_ARTIFACT_RECEIPT_FILE:-}"
+        PROJECT_ID="${TANDEMCLIP_CRASHBOX_PROJECT_ID:-}"
+        if [[ -z "$RECEIPT_FILE" || -z "$PROJECT_ID" ]]; then
+            cat >&2 <<MSG
+error: publication requires the matching Crashbox dSYM receipt.
+
+  First prepare without publishing, upload ${DEBUG_ARCHIVE} through the scoped
+  TandemClip artifact credential, and retain Crashbox's JSON response. Then rerun with:
+      CRASHBOX_ARTIFACT_RECEIPT_FILE=/protected/path/receipt.json
+      TANDEMCLIP_CRASHBOX_PROJECT_ID=<project-uuid>
+
+  No upload credential is read by this release script.
+MSG
+            exit 1
+        fi
+        python3 Scripts/verify-crashbox-artifact-receipt.py \
+            --receipt "$RECEIPT_FILE" \
+            --archive "$DEBUG_ARCHIVE" \
+            --release "$EVENT_RELEASE" \
+            --project "$PROJECT_ID"
+    fi
 elif [[ "${ALLOW_NO_SYMBOLS:-}" == "1" ]]; then
     echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without a Crashbox dSYM artifact" >&2
 else

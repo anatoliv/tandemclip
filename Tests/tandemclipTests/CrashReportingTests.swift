@@ -126,6 +126,10 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertTrue(makeApp.contains("crashbox_dsn_is_valid"))
         XCTAssertTrue(makeApp.contains("a distributable release requires a protected Crashbox DSN"))
         XCTAssertTrue(release.contains("REQUIRE_CRASHBOX=\"${PUBLISH:-0}\""))
+        XCTAssertTrue(release.contains("CRASHBOX_ARTIFACT_RECEIPT_FILE"))
+        XCTAssertTrue(release.contains("TANDEMCLIP_CRASHBOX_PROJECT_ID"))
+        XCTAssertTrue(release.contains("verify-crashbox-artifact-receipt.py"))
+        XCTAssertTrue(release.contains("--release \"$EVENT_RELEASE\""))
         for legacy in ["TANDEMCLIP_" + "SENTRY_DSN", "Packaging/" + "sentry-dsn.local", "Set :" + "SentryDSN"] {
             XCTAssertFalse(makeApp.contains(legacy), "legacy build input remains: \(legacy)")
         }

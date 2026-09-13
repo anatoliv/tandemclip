@@ -74,6 +74,7 @@ fi
 # minutes) before anyone finds out. The checks below compare against the built
 # DMG and can only run afterwards. One file, one source of truth, two moments.
 if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-artifact-receipt.py
     echo "preflight ok: $VERSION ($BUILD_NUM) — changelog, build number, design tokens"
     exit 0
 fi
