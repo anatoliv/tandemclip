@@ -12,9 +12,12 @@
 # Optional:
 #   SPARKLE_BIN=/path/to/sign_update      (else auto-located)
 #   APPCAST_BASE=https://tandemclip.com   (enclosure URL base; default below)
-#   PUBLISH=1 PUBLISH_DEST=user@host:/path (rsync/scp the DMG + appcast + page)
+#   PREPARE_RELEASE=1 PUBLISH=0           (build once and write a resume manifest)
+#   PUBLISH=1 RESUME_PREPARED_RELEASE=/path/to/manifest.json
+#   PUBLISH_DEST=user@host:/path          (rsync/scp the DMG + appcast + page)
 #   CRASHBOX_ARTIFACT_RECEIPT_FILE=/path/to/receipt.json (required to publish)
 #   TANDEMCLIP_CRASHBOX_PROJECT_ID=<uuid> (required to publish)
+#   VERIFY_PREPARED_RELEASE_ONLY=1        (validate resume inputs, publish nothing)
 #   ALLOW_NO_SYMBOLS=1                    (explicitly omit the Crashbox dSYM archive)
 
 set -euo pipefail
@@ -40,12 +43,54 @@ APP_NAME="TandemClip"
 IDENTITY="${IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 APPCAST_BASE="${APPCAST_BASE:-https://tandemclip.com}"
+PUBLISH="${PUBLISH:-0}"
+PREPARE_RELEASE="${PREPARE_RELEASE:-0}"
+RESUME_MANIFEST="${RESUME_PREPARED_RELEASE:-}"
+VERIFY_PREPARED_ONLY="${VERIFY_PREPARED_RELEASE_ONLY:-0}"
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Packaging/Info.plist)"
 BUILD_NUM="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Packaging/Info.plist)"
 DIST="dist"
 APP="build/${APP_NAME}.app"
 DMG="${DIST}/${APP_NAME}_${VERSION}_aarch64.dmg"
+APPCAST="${DIST}/appcast.xml"
+CASK="Casks/tandemclip.rb"
+SITE_SRC="site/index.html"
+SUPPORTERS="site/supporters.json"
+
+case "$PUBLISH:$PREPARE_RELEASE:$VERIFY_PREPARED_ONLY" in
+    [01]:[01]:[01]) ;;
+    *) echo "error: PUBLISH, PREPARE_RELEASE and VERIFY_PREPARED_RELEASE_ONLY must be 0 or 1." >&2; exit 1 ;;
+esac
+if [[ -n "$RESUME_MANIFEST" ]]; then
+    if [[ "$PUBLISH" != "1" || "$PREPARE_RELEASE" != "0" ]]; then
+        echo "error: RESUME_PREPARED_RELEASE requires PUBLISH=1 and PREPARE_RELEASE=0." >&2
+        exit 1
+    fi
+    if [[ -n "${FORCE_REBUILD:-}" ]]; then
+        echo "error: FORCE_REBUILD cannot resume an immutable prepared release." >&2
+        exit 1
+    fi
+elif [[ "$PUBLISH" == "1" ]]; then
+    echo "error: publication requires RESUME_PREPARED_RELEASE." >&2
+    echo "       First run PREPARE_RELEASE=1 PUBLISH=0, upload its dSYM archive," >&2
+    echo "       then resume the exact prepared bytes with the recorded manifest." >&2
+    exit 1
+fi
+if [[ "$PREPARE_RELEASE" == "1" ]]; then
+    if [[ "$PUBLISH" != "0" || -z "$IDENTITY" || -z "$NOTARY_PROFILE" ]]; then
+        echo "error: PREPARE_RELEASE=1 requires PUBLISH=0, IDENTITY and NOTARY_PROFILE." >&2
+        exit 1
+    fi
+    if [[ "${ALLOW_NO_SYMBOLS:-}" == "1" ]]; then
+        echo "error: PREPARE_RELEASE=1 cannot omit the dSYM archive." >&2
+        exit 1
+    fi
+fi
+if [[ "$VERIFY_PREPARED_ONLY" == "1" && -z "$RESUME_MANIFEST" ]]; then
+    echo "error: VERIFY_PREPARED_RELEASE_ONLY requires RESUME_PREPARED_RELEASE." >&2
+    exit 1
+fi
 
 # 0a1. A published release must be reproducible from a commit. Refuse a dirty
 #      tree when actually publishing, so the tag describes what shipped rather
@@ -56,13 +101,84 @@ DMG="${DIST}/${APP_NAME}_${VERSION}_aarch64.dmg"
 #      design — step 4b rewrites Casks/tandemclip.rb and step 4c rewrites
 #      site/index.html once the DMG exists, so they land one commit behind
 #      the tag. That is expected; commit them after a successful run.
-if [[ "${PUBLISH:-}" == "1" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+if [[ "$PUBLISH" == "1" && -z "$RESUME_MANIFEST" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
     echo "error: working tree is dirty — commit or stash before publishing." >&2
     echo "       A release must be reproducible from a commit; otherwise the tag" >&2
     echo "       does not describe what actually shipped." >&2
     git status --short >&2
     exit 1
 fi
+
+prepared_release() {
+    python3 Scripts/prepared-release.py "$1" \
+        --manifest "$2" \
+        --repository . \
+        --app "$APP" \
+        --dsym-archive "$DEBUG_ARCHIVE" \
+        --dmg "$DMG" \
+        --appcast "$APPCAST" \
+        --cask "$CASK" \
+        --site "$SITE_SRC" \
+        --supporters "$SUPPORTERS" \
+        --source-commit "$SOURCE_COMMIT" \
+        --version "$VERSION" \
+        --build "$BUILD_NUM" \
+        --release "$EVENT_RELEASE"
+}
+
+verify_prepared_release() {
+    prepared_release verify "$RESUME_MANIFEST"
+    python3 Scripts/verify-crashbox-artifact-receipt.py \
+        --receipt "$CRASHBOX_ARTIFACT_RECEIPT_FILE" \
+        --archive "$DEBUG_ARCHIVE" \
+        --release "$EVENT_RELEASE" \
+        --project "$TANDEMCLIP_CRASHBOX_PROJECT_ID"
+}
+
+if [[ -n "$RESUME_MANIFEST" ]]; then
+    SOURCE_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+    DEBUG_ARCHIVE="${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.dSYM.zip"
+    EVENT_RELEASE="com.tandemclip@${VERSION}+${BUILD_NUM}.${SOURCE_COMMIT}"
+    if [[ -z "${CRASHBOX_ARTIFACT_RECEIPT_FILE:-}" || -z "${TANDEMCLIP_CRASHBOX_PROJECT_ID:-}" ]]; then
+        echo "error: resume requires CRASHBOX_ARTIFACT_RECEIPT_FILE and TANDEMCLIP_CRASHBOX_PROJECT_ID." >&2
+        exit 1
+    fi
+    verify_prepared_release
+
+    APP_UUIDS="$(dwarfdump --uuid "$APP/Contents/MacOS/tandemclip" | awk '{print $2}' | LC_ALL=C sort)"
+    DSYM_BINARY_MEMBER="$(unzip -Z1 "$DEBUG_ARCHIVE" | awk '
+        /\.dSYM\/Contents\/Resources\/DWARF\/[^/]+$/ { member=$0; count++ }
+        END { if (count == 1) print member }
+    ')"
+    if [[ -z "$DSYM_BINARY_MEMBER" ]]; then
+        echo "error: prepared dSYM archive must contain exactly one DWARF binary." >&2
+        exit 1
+    fi
+    DSYM_CHECK_BINARY="$(mktemp -t tandemclip-resume-dsym)"
+    trap 'rm -f "$DSYM_CHECK_BINARY"' EXIT
+    unzip -p "$DEBUG_ARCHIVE" "$DSYM_BINARY_MEMBER" > "$DSYM_CHECK_BINARY"
+    DSYM_UUIDS="$(dwarfdump --uuid "$DSYM_CHECK_BINARY" | awk '{print $2}' | LC_ALL=C sort)"
+    rm -f "$DSYM_CHECK_BINARY"
+    trap - EXIT
+    if [[ -z "$APP_UUIDS" || "$APP_UUIDS" != "$DSYM_UUIDS" ]]; then
+        echo "error: prepared app and dSYM UUIDs do not match." >&2
+        exit 1
+    fi
+    codesign --verify --deep --strict "$APP"
+    spctl -a -vv "$APP"
+    xcrun stapler validate "$APP"
+    codesign --verify "$DMG"
+    hdiutil verify "$DMG" >/dev/null
+    xcrun stapler validate "$DMG"
+    SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+    echo "==> Prepared release identity, signatures, ticket and UUIDs verified"
+    echo "==> Pre-publish gate (Scripts/check-release.sh)"
+    Scripts/check-release.sh
+    if [[ "$VERIFY_PREPARED_ONLY" == "1" ]]; then
+        echo "==> Prepared release is safe to resume; publication was not attempted"
+        exit 0
+    fi
+else
 
 # 0a2. Refuse to package while a copy of the app is running out of this repo.
 #      A running copy holds files open in the tree `hdiutil create` reads, which
@@ -185,7 +301,11 @@ PREFLIGHT_ONLY=1 Scripts/check-release.sh || {
 }
 
 # 1. Build + sign + notarize + staple the .app (reuses make-app.sh).
-REQUIRE_CRASHBOX="${PUBLISH:-0}" IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
+BUILD_REQUIRES_CRASHBOX="$PUBLISH"
+if [[ "$PREPARE_RELEASE" == "1" ]]; then
+    BUILD_REQUIRES_CRASHBOX=1
+fi
+REQUIRE_CRASHBOX="$BUILD_REQUIRES_CRASHBOX" IDENTITY="$IDENTITY" NOTARY_PROFILE="$NOTARY_PROFILE" ./Scripts/make-app.sh
 
 mkdir -p "$DIST"
 rm -f "$DMG"
@@ -213,28 +333,6 @@ if [[ -d "$RELEASE_DSYM" ]]; then
     echo "    archive: $DEBUG_ARCHIVE"
     echo "    sha256: $(shasum -a 256 "$DEBUG_ARCHIVE" | awk '{print $1}')"
     while IFS= read -r uuid; do echo "    uuid: $uuid"; done <<< "$DSYM_UUIDS"
-    if [[ "${PUBLISH:-}" == "1" ]]; then
-        RECEIPT_FILE="${CRASHBOX_ARTIFACT_RECEIPT_FILE:-}"
-        PROJECT_ID="${TANDEMCLIP_CRASHBOX_PROJECT_ID:-}"
-        if [[ -z "$RECEIPT_FILE" || -z "$PROJECT_ID" ]]; then
-            cat >&2 <<MSG
-error: publication requires the matching Crashbox dSYM receipt.
-
-  First prepare without publishing, upload ${DEBUG_ARCHIVE} through the scoped
-  TandemClip artifact credential, and retain Crashbox's JSON response. Then rerun with:
-      CRASHBOX_ARTIFACT_RECEIPT_FILE=/protected/path/receipt.json
-      TANDEMCLIP_CRASHBOX_PROJECT_ID=<project-uuid>
-
-  No upload credential is read by this release script.
-MSG
-            exit 1
-        fi
-        python3 Scripts/verify-crashbox-artifact-receipt.py \
-            --receipt "$RECEIPT_FILE" \
-            --archive "$DEBUG_ARCHIVE" \
-            --release "$EVENT_RELEASE" \
-            --project "$PROJECT_ID"
-    fi
 elif [[ "${ALLOW_NO_SYMBOLS:-}" == "1" ]]; then
     echo "WARNING: ALLOW_NO_SYMBOLS=1 — shipping without a Crashbox dSYM artifact" >&2
 else
@@ -378,12 +476,29 @@ Scripts/check-release.sh || {
     exit 1
 }
 
+if [[ "$PREPARE_RELEASE" == "1" ]]; then
+    PREPARED_MANIFEST="${PREPARED_RELEASE_MANIFEST:-${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.prepared.json}"
+    prepared_release write "$PREPARED_MANIFEST"
+    echo "==> Prepared release paused before publication"
+    echo "    manifest: $PREPARED_MANIFEST"
+    echo "    Upload the dSYM archive privately, retain its Crashbox receipt, then"
+    echo "    resume these exact bytes with PUBLISH=1 RESUME_PREPARED_RELEASE=$PREPARED_MANIFEST."
+fi
+fi
+
+# The resume path deliberately bypasses the existing-DMG build guard: that DMG
+# is required input, not stale output. Recheck all bytes and the receipt at the
+# last possible moment before the first external write.
+if [[ -n "$RESUME_MANIFEST" ]]; then
+    verify_prepared_release
+fi
+
 # 5. Publish DMG + appcast + landing page to the web host (PUBLISH=1). Serves
 #    the exact SUFeedURL. The landing page's download links are version-pinned,
 #    The page's download links are version-pinned; step 4c already synced them
 #    to VERSION and the gate verified it, so this just ships that file.
 #    Set PUBLISH_DEST to your own scp/rsync target, e.g. user@host:/srv/site/.
-if [[ "${PUBLISH:-}" == "1" ]]; then
+if [[ "$PUBLISH" == "1" ]]; then
     DEST="${PUBLISH_DEST:-}"
     if [[ -z "$DEST" ]]; then
         echo "error: PUBLISH=1 but PUBLISH_DEST is unset (e.g. user@host:/srv/tandemclip/)" >&2

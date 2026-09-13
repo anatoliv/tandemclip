@@ -75,6 +75,7 @@ fi
 # DMG and can only run afterwards. One file, one source of truth, two moments.
 if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-artifact-receipt.py
+    PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-prepared-release.py
     echo "preflight ok: $VERSION ($BUILD_NUM) — changelog, build number, design tokens"
     exit 0
 fi

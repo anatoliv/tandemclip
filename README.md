@@ -212,19 +212,37 @@ If these are MDM-managed machines, before relying on this:
 
 ## Releasing
 
-`Scripts/release.sh` cuts a full release in one command: builds → bundles the
-Sparkle framework → signs → notarizes the DMG → generates the EdDSA-signed
-`appcast.xml` → syncs the Homebrew cask (`Casks/tandemclip.rb`) to the new
-version + DMG hash → (with `PUBLISH=1` and a `PUBLISH_DEST`) uploads the DMG,
-appcast, and version-pinned landing page to your web host.
+`Scripts/release.sh` prepares the signed release, pauses for the private
+Crashbox dSYM handoff, then resumes the exact same bytes for publication. It
+builds → bundles the Sparkle framework → signs → notarizes the DMG → generates
+the EdDSA-signed `appcast.xml` → syncs the Homebrew cask
+(`Casks/tandemclip.rb`) to the new version + DMG hash. The prepare step records
+an immutable manifest for the app, dSYM archive, DMG, appcast, cask, site, and
+tracked source tree:
 
 ```sh
-# bump CFBundleShortVersionString / CFBundleVersion in Packaging/Info.plist first
+# 1. Bump CFBundleShortVersionString / CFBundleVersion first, then prepare once.
 IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 NOTARY_PROFILE="your-notary-profile" \
+PREPARE_RELEASE=1 PUBLISH=0 \
+Scripts/release.sh
+
+# 2. Upload the printed dSYM archive through Crashbox's protected artifact path
+#    and retain its JSON receipt outside the repository.
+
+# 3. Resume the prepared bytes. This verifies the manifest and receipt twice,
+#    including immediately before the first external write; it does not rebuild.
+CRASHBOX_ARTIFACT_RECEIPT_FILE="/protected/path/receipt.json" \
+TANDEMCLIP_CRASHBOX_PROJECT_ID="project-uuid" \
+RESUME_PREPARED_RELEASE="/path/printed/by/the/prepare/step.prepared.json" \
 PUBLISH=1 PUBLISH_DEST="user@host:/srv/tandemclip/" \
 Scripts/release.sh
 ```
+
+To exercise the complete local verification without publishing, add
+`VERIFY_PREPARED_RELEASE_ONLY=1` to step 3. A resume refuses any changed app,
+dSYM archive, DMG, appcast, cask, site, supporters file, tracked source byte, or
+receipt identity. `FORCE_REBUILD` is deliberately rejected in resume mode.
 
 Every installed copy then auto-updates via Sparkle (feed: `SUFeedURL` in
 `Packaging/Info.plist`).
@@ -262,13 +280,13 @@ To prepare a build, put its public DSN in the **gitignored**
 `make-app.sh` injects it at package time; tracked `Packaging/Info.plist` always
 keeps `CrashboxDSN` empty, so a DSN is never committed. `release.sh` verifies
 the release binary and dSYM UUIDs match, then creates a private dSYM archive and
-prints its SHA-256. Prepare the release once with `PUBLISH=0`, upload that archive
-through Crashbox's protected project-scoped artifact path, and retain the JSON
-receipt outside the repository. A publishing run requires
-`CRASHBOX_ARTIFACT_RECEIPT_FILE` and `TANDEMCLIP_CRASHBOX_PROJECT_ID`; it refuses
-unless the receipt says `ready` for the exact project, release string, and archive
-digest it just built. The release script does not contact a provider or read an
-upload credential.
+prints its SHA-256. `PREPARE_RELEASE=1 PUBLISH=0` also records the immutable
+release manifest. Upload that archive through Crashbox's protected
+project-scoped artifact path and retain the JSON receipt outside the repository.
+The later resume requires `CRASHBOX_ARTIFACT_RECEIPT_FILE` and
+`TANDEMCLIP_CRASHBOX_PROJECT_ID`; it refuses unless the receipt says `ready` for
+the exact project, release string, and archived bytes in the manifest. The
+release script does not contact a provider or read an upload credential.
 
 ## Roadmap
 

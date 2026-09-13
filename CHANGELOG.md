@@ -5,6 +5,10 @@ All notable changes to TandemClip are documented here. The format is based on
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
 ## [0.25.1] — 2026-09-13
+- Release tooling: prepare the notarized app, dSYM archive, DMG, appcast, cask,
+  and site once, pause for the private Crashbox artifact receipt, then resume
+  publication only when every prepared byte and the source tree still match.
+  Resume rejects `FORCE_REBUILD`, so the receipt cannot describe replaced bytes.
 - Crash reporting: native crashes keep their production environment attribution,
   so a Crashbox event can be checked against the release that sent it.
 - Release verification: an exact, reporting-enabled environment gate can trigger
