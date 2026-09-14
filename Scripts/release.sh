@@ -146,10 +146,7 @@ if [[ -n "$RESUME_MANIFEST" ]]; then
     verify_prepared_release
 
     APP_UUIDS="$(dwarfdump --uuid "$APP/Contents/MacOS/tandemclip" | awk '{print $2}' | LC_ALL=C sort)"
-    DSYM_BINARY_MEMBER="$(unzip -Z1 "$DEBUG_ARCHIVE" | awk '
-        /\.dSYM\/Contents\/Resources\/DWARF\/[^/]+$/ { member=$0; count++ }
-        END { if (count == 1) print member }
-    ')"
+    DSYM_BINARY_MEMBER="$(python3 Scripts/dsym-member.py "$DEBUG_ARCHIVE")"
     if [[ -z "$DSYM_BINARY_MEMBER" ]]; then
         echo "error: prepared dSYM archive must contain exactly one DWARF binary." >&2
         exit 1

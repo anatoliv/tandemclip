@@ -9,6 +9,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "Scripts/package-dsym.sh"
+SELECTOR = ROOT / "Scripts/dsym-member.py"
 
 
 class PackageDsymTests(unittest.TestCase):
@@ -50,12 +51,23 @@ class PackageDsymTests(unittest.TestCase):
             ["tandemclip.dSYM/Contents/Resources/DWARF/tandemclip"],
             [name for name in names if "/Contents/Resources/DWARF/" in name and not name.endswith("/")],
         )
+        selected = subprocess.run(
+            ["python3", str(SELECTOR), str(self.archive)],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertEqual(selected.stdout.strip(), "tandemclip.dSYM/Contents/Resources/DWARF/tandemclip")
 
     def test_refuses_ambiguous_dwarf_payload(self):
         (self.dwarf / "second").write_bytes(b"another fixture")
         result = self.package()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exactly one DWARF", result.stderr)
+
+    def test_resume_uses_the_same_portable_member_selector(self):
+        release = (ROOT / "Scripts/release.sh").read_text()
+        self.assertIn('python3 Scripts/dsym-member.py "$DEBUG_ARCHIVE"', release)
+        self.assertNotIn("unzip -Z1", release)
 
 
 if __name__ == "__main__":
