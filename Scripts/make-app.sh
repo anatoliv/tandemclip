@@ -156,8 +156,8 @@ echo "==> Building release binary"
 swift build -c release --build-system native -Xswiftc -g
 BIN_PATH="$(swift build -c release --build-system native --show-bin-path)/${EXE_NAME}"
 
-# Build the dSYM next to the binary inside .build, which is exactly where
-# release.sh points `sentry-cli debug-files upload`. The dSYM is deliberately
+# Build the dSYM next to the binary inside .build, where release.sh packages it
+# for the private, project-scoped Crashbox artifact step. The dSYM is deliberately
 # NOT copied into the .app: it would double the download for no user benefit.
 if command -v dsymutil >/dev/null 2>&1; then
     echo "==> Generating dSYM for crash symbolication"
