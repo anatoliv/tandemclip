@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Sentry
 
@@ -158,13 +159,6 @@ enum CrashReporting {
         request == "1" && reportingActive
     }
 
-    /// Deliberate native crash for the release verification playbook. The exact
-    /// environment gate in AppController keeps this unreachable in normal use.
-    @inline(never)
-    static func captureNativeTest() -> Never {
-        fatalError("TandemClip Crashbox native verification")
-    }
-
     /// Replaces the user's home-directory path with `~` so account names and
     /// local paths don't ride along in a crash report.
     private static func redactHome(_ s: String) -> String {
@@ -190,4 +184,21 @@ enum CrashReporting {
         let b = info?["CFBundleVersion"] as? String ?? "0"
         return BuildIdentity.eventRelease(version: v, build: b, commit: BuildIdentity.sourceCommit)
     }
+}
+
+/// Deliberate native fault for the release verification playbook.
+///
+/// The exact environment/reporting gate in `AppController` keeps this
+/// unreachable in normal use. A stable C symbol lets the release gate prove
+/// that the dSYM maps this exact diagnostic frame back to source. The stored
+/// nonzero address prevents the optimizer from replacing the write with a
+/// compiler-generated Swift trap, which has a function name but no source
+/// line and therefore cannot prove source-level symbolication.
+@_cdecl("tandemclipCrashboxTestCrash")
+@inline(never)
+public func tandemclipCrashboxTestCrash() {
+    let faultAddress = 1
+    let address = UnsafeMutablePointer<UInt8>(bitPattern: faultAddress)!
+    address.pointee = 0
+    abort()
 }

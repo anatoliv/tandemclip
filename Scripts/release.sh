@@ -321,6 +321,7 @@ if [[ -d "$RELEASE_DSYM" ]]; then
         echo "       Refusing to package symbols that could never resolve this release." >&2
         exit 1
     fi
+    Scripts/verify-dsym-source-proof.py "$RELEASE_DSYM"
     SOURCE_COMMIT="$(git rev-parse HEAD)"
     DEBUG_ARCHIVE="${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.dSYM.zip"
     Scripts/package-dsym.sh "$RELEASE_DSYM" "$DEBUG_ARCHIVE"

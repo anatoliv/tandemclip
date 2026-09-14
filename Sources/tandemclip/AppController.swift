@@ -24,7 +24,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             // Let Sentry finish installing its native handler before the
             // playbook's deliberate crash. Normal launches never set this key.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                CrashReporting.captureNativeTest()
+                tandemclipCrashboxTestCrash()
             }
         }
 
