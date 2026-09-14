@@ -326,8 +326,7 @@ if [[ -d "$RELEASE_DSYM" ]]; then
     fi
     SOURCE_COMMIT="$(git rev-parse HEAD)"
     DEBUG_ARCHIVE="${DIST}/${APP_NAME}_${VERSION}_${BUILD_NUM}_${SOURCE_COMMIT}.dSYM.zip"
-    rm -f "$DEBUG_ARCHIVE"
-    ditto -c -k --sequesterRsrc --keepParent "$RELEASE_DSYM" "$DEBUG_ARCHIVE"
+    Scripts/package-dsym.sh "$RELEASE_DSYM" "$DEBUG_ARCHIVE"
     EVENT_RELEASE="com.tandemclip@${VERSION}+${BUILD_NUM}.${SOURCE_COMMIT}"
     echo "==> Crashbox dSYM artifact ready (not uploaded)"
     echo "    archive: $DEBUG_ARCHIVE"

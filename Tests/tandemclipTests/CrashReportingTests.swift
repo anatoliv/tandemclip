@@ -134,6 +134,8 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertTrue(release.contains("PREPARE_RELEASE"))
         XCTAssertTrue(release.contains("RESUME_PREPARED_RELEASE"))
         XCTAssertTrue(release.contains("prepared-release.py"))
+        XCTAssertTrue(release.contains("Scripts/package-dsym.sh"))
+        XCTAssertFalse(release.contains("--sequesterRsrc"))
         XCTAssertTrue(release.contains("--release \"$EVENT_RELEASE\""))
         for legacy in ["TANDEMCLIP_" + "SENTRY_DSN", "Packaging/" + "sentry-dsn.local", "Set :" + "SentryDSN"] {
             XCTAssertFalse(makeApp.contains(legacy), "legacy build input remains: \(legacy)")
