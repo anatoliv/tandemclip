@@ -23,7 +23,7 @@ cleanup() {
     rmdir "$MOUNT" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-hdiutil attach -readonly -nobrowse -noowners -mountpoint "$MOUNT" "$DMG" >/dev/null
+hdiutil attach -readonly -nobrowse -owners off -mountpoint "$MOUNT" "$DMG" >/dev/null
 
 APPS=()
 while IFS= read -r -d '' candidate; do APPS+=("$candidate"); done \

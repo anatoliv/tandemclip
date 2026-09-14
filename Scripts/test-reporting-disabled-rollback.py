@@ -100,6 +100,8 @@ class RollbackBuildGateTests(unittest.TestCase):
         self.assertIn('TANDEMCLIP_CRASHBOX_CONFIG_FILE=/dev/null', builder)
         self.assertIn('verify-reporting-disabled-rollback.sh', builder)
         self.assertIn('notarytool submit', builder)
+        verifier = (ROOT / "Scripts/verify-reporting-disabled-rollback.sh").read_text()
+        self.assertIn('hdiutil attach -readonly -nobrowse -owners off', verifier)
 
 
 if __name__ == "__main__":
