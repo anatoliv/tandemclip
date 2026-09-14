@@ -4,6 +4,11 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.25.2] — 2026-09-14
+- Crash reporting: the guarded native diagnostic now has a stable symbol and a
+  real source-backed fault line, and release preparation refuses a dSYM that
+  cannot prove that mapping before any artifact is published.
+
 ## [0.25.1] — 2026-09-13
 - Release tooling: prepare the notarized app, dSYM archive, DMG, appcast, cask,
   and site once, pause for the private Crashbox artifact receipt, then resume
