@@ -288,6 +288,22 @@ The later resume requires `CRASHBOX_ARTIFACT_RECEIPT_FILE` and
 the exact project, release string, and archived bytes in the manifest. The
 release script does not contact a provider or read an upload credential.
 
+Before a Crashbox cohort, retain a separate reporting-disabled rollback built
+from a clean, exact source commit. This path requires the same Developer ID and
+notary profile as a release, but refuses any DSN and never updates the appcast:
+
+```sh
+IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+NOTARY_PROFILE="your-notary-profile" \
+Scripts/build-reporting-disabled-rollback.sh
+```
+
+The command leaves a commit-named DMG under `dist/rollback/` and verifies its
+bundle/source/version identity, arm64 executable, empty reporting metadata,
+signer, Gatekeeper acceptance, and app/DMG notarization staples. It refuses to
+overwrite an existing retained artifact. The ordinary signed build and release
+paths still require Crashbox; the rollback-only flag cannot override that gate.
+
 ## Roadmap
 
 Text, rich text, images, files, and folders all sync today (each copy carries

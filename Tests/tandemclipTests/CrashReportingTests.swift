@@ -125,6 +125,8 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertTrue(makeApp.contains("Set :CrashboxDSN"))
         XCTAssertTrue(makeApp.contains("crashbox_dsn_is_valid"))
         XCTAssertTrue(makeApp.contains("a distributable release requires a protected Crashbox DSN"))
+        XCTAssertTrue(makeApp.contains("TANDEMCLIP_REPORTING_DISABLED_ROLLBACK"))
+        XCTAssertTrue(makeApp.contains("a reporting-disabled rollback must not carry a Crashbox DSN"))
         XCTAssertTrue(release.contains("REQUIRE_CRASHBOX=\"$BUILD_REQUIRES_CRASHBOX\""))
         XCTAssertTrue(release.contains("CRASHBOX_ARTIFACT_RECEIPT_FILE"))
         XCTAssertTrue(release.contains("TANDEMCLIP_CRASHBOX_PROJECT_ID"))
@@ -149,7 +151,7 @@ final class CrashReportingTests: XCTestCase {
         let script = root.appendingPathComponent("Scripts/make-app.sh").path
         let absent = root.appendingPathComponent(".build/test-missing-crashbox-input").path
 
-        func run(dsn: String?, requireCrashbox: Bool) throws -> (Int32, String) {
+        func run(dsn: String?, requireCrashbox: Bool, rollback: Bool = false) throws -> (Int32, String) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = [script]
@@ -157,6 +159,11 @@ final class CrashReportingTests: XCTestCase {
             environment["VERIFY_CRASHBOX_INPUT_ONLY"] = "1"
             environment["TANDEMCLIP_CRASHBOX_CONFIG_FILE"] = absent
             environment["REQUIRE_CRASHBOX"] = requireCrashbox ? "1" : "0"
+            environment["TANDEMCLIP_REPORTING_DISABLED_ROLLBACK"] = rollback ? "1" : "0"
+            if rollback {
+                environment["IDENTITY"] = "Developer ID Application: Test (ABCDEFGHIJ)"
+                environment["ALLOW_DIRTY_IDENTITY"] = "1"
+            }
             if let dsn {
                 environment["TANDEMCLIP_CRASHBOX_DSN"] = dsn
             } else {
@@ -193,5 +200,25 @@ final class CrashReportingTests: XCTestCase {
         )
         XCTAssertEqual(configured.0, 0)
         XCTAssertTrue(configured.1.contains("crashbox"))
+
+        let rollback = try run(dsn: nil, requireCrashbox: false, rollback: true)
+        XCTAssertEqual(rollback.0, 0)
+        XCTAssertTrue(rollback.1.contains("reporting-disabled-rollback"))
+
+        let rollbackWithDSN = try run(
+            dsn: "https://public@crashbox.example.test/project",
+            requireCrashbox: false,
+            rollback: true
+        )
+        XCTAssertNotEqual(rollbackWithDSN.0, 0)
+        XCTAssertTrue(rollbackWithDSN.1.contains("must not carry a Crashbox DSN"))
+
+        let rollbackCannotOverrideRelease = try run(
+            dsn: nil,
+            requireCrashbox: true,
+            rollback: true
+        )
+        XCTAssertNotEqual(rollbackCannotOverrideRelease.0, 0)
+        XCTAssertTrue(rollbackCannotOverrideRelease.1.contains("cannot use the rollback-only"))
     }
 }

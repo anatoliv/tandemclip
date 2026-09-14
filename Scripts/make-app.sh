@@ -32,6 +32,12 @@ EXE_NAME="tandemclip"                        # Swift product + CFBundleExecutabl
 BUNDLE="build/${APP_NAME}.app"
 IDENTITY="${IDENTITY:-}"                 # empty => ad-hoc signature ("-")
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"     # empty => skip notarization
+REPORTING_DISABLED_ROLLBACK="${TANDEMCLIP_REPORTING_DISABLED_ROLLBACK:-0}"
+
+case "$REPORTING_DISABLED_ROLLBACK" in
+    0|1) : ;;
+    *) echo "error: TANDEMCLIP_REPORTING_DISABLED_ROLLBACK must be exactly 0 or 1." >&2; exit 1 ;;
+esac
 
 # --- Source identity gate -----------------------------------------------------
 # The exact source revision gets baked into the bundle further down (Info.plist
@@ -114,13 +120,32 @@ if [[ -n "${CRASHBOX_DSN_VALUE}" ]] && ! crashbox_dsn_is_valid "${CRASHBOX_DSN_V
     echo "error: Crashbox DSN has an unsafe or malformed shape." >&2
     exit 1
 fi
-if [[ ( -n "${IDENTITY}" || "${REQUIRE_CRASHBOX:-}" == "1" ) && -z "${CRASHBOX_DSN_VALUE}" ]]; then
+if [[ "$REPORTING_DISABLED_ROLLBACK" == "1" ]]; then
+    if [[ -z "${IDENTITY}" ]]; then
+        echo "error: a reporting-disabled rollback must be Developer ID signed." >&2
+        exit 1
+    fi
+    if [[ "${REQUIRE_CRASHBOX:-}" == "1" ]]; then
+        echo "error: a Crashbox-required release cannot use the rollback-only build mode." >&2
+        exit 1
+    fi
+    if [[ -n "${CRASHBOX_DSN_VALUE}" ]]; then
+        echo "error: a reporting-disabled rollback must not carry a Crashbox DSN." >&2
+        exit 1
+    fi
+elif [[ ( -n "${IDENTITY}" || "${REQUIRE_CRASHBOX:-}" == "1" ) && -z "${CRASHBOX_DSN_VALUE}" ]]; then
     echo "error: a distributable release requires a protected Crashbox DSN." >&2
     echo "       Install ${CRASHBOX_DSN_FILE} with mode 0600; local unsigned builds may stay disabled." >&2
     exit 1
 fi
 if [[ "${VERIFY_CRASHBOX_INPUT_ONLY:-}" == "1" ]]; then
-    [[ -n "${CRASHBOX_DSN_VALUE}" ]] && echo crashbox || echo disabled
+    if [[ "$REPORTING_DISABLED_ROLLBACK" == "1" ]]; then
+        echo reporting-disabled-rollback
+    elif [[ -n "${CRASHBOX_DSN_VALUE}" ]]; then
+        echo crashbox
+    else
+        echo disabled
+    fi
     exit 0
 fi
 
