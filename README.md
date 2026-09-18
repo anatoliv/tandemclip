@@ -304,6 +304,29 @@ signer, Gatekeeper acceptance, and app/DMG notarization staples. It refuses to
 overwrite an existing retained artifact. The ordinary signed build and release
 paths still require Crashbox; the rollback-only flag cannot override that gate.
 
+### Source-bound Crashbox rollout proof
+
+The signed Crashbox observation scope is created only after a controller has
+verified the exact candidate and retained reporting-disabled DMGs, exercised
+that rollback, restored the byte-identical candidate, and published the
+controller-derived receipt pair through Crashbox's protected signer. Preflight
+is read-only:
+
+```sh
+Scripts/prove-crashbox-rollout.py preflight \
+  --candidate-dmg /retained/TandemClip_0.25.1_aarch64.dmg \
+  --rollback-dmg /retained/TandemClip_0.25.1_63_COMMIT_reporting_disabled_aarch64.dmg
+```
+
+After separately approving the two TandemClip-only restarts, replace
+`preflight` with `prove`. The controller takes no project, release, proof UUID,
+timestamp, reporting mode, key path, rollback result, or credential argument;
+those values are derived from the verified artifacts or fixed by the protocol.
+It keeps a mode-`0600` transaction journal under Application Support, restores
+the original candidate on failure, and does not activate the measurement scope
+or submit a canary. Those remain explicit follow-up steps using the published
+proof-specific configuration record.
+
 ## Roadmap
 
 Text, rich text, images, files, and folders all sync today (each copy carries
