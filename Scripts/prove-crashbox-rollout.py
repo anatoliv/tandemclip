@@ -432,11 +432,43 @@ def _remote_publish(
     )
     if len(request) > MAX_REQUEST_BYTES:
         raise Refused("publisher_request_invalid")
-    result = _run(
-        ["/usr/bin/ssh", host, "sudo", "/usr/bin/python3", "-c", REMOTE_PUBLISHER],
-        input_bytes=request,
-        timeout=60,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/ssh",
+                host,
+                "sudo",
+                "/usr/bin/python3",
+                "-c",
+                REMOTE_PUBLISHER,
+            ],
+            input=request,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=60,
+            env={
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "LANG": "C",
+                "LC_ALL": "C",
+            },
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused("publisher_command_failed") from exc
+    if result.returncode != 0:
+        try:
+            failure = json.loads(result.stdout)
+        except (UnicodeError, ValueError):
+            failure = None
+        if (
+            isinstance(failure, dict)
+            and set(failure) == {"completed", "error"}
+            and failure.get("completed") is False
+            and isinstance(failure.get("error"), str)
+            and RECEIPT_TOKEN.fullmatch(failure["error"]) is not None
+        ):
+            raise Refused("publisher_" + failure["error"])
+        raise Refused("publisher_failed")
     try:
         value = json.loads(result.stdout)
     except (UnicodeError, ValueError) as exc:

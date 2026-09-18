@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -122,6 +123,22 @@ class ReceiptTests(unittest.TestCase):
         self.assertNotIn(b"dsn", request.lower())
         self.assertNotIn(b"private", request.lower())
         self.assertIn(b"tandemclip-macos", request)
+
+    def test_remote_publish_surfaces_only_a_fixed_validated_error_token(self):
+        fixed = PROOF.subprocess.CompletedProcess(
+            [], 2, b'{"completed":false,"error":"receipt_value_invalid"}\n', b""
+        )
+        untrusted = PROOF.subprocess.CompletedProcess(
+            [], 2, b"raw remote output must stay hidden", b""
+        )
+        with mock.patch.object(PROOF.subprocess, "run", return_value=fixed):
+            with self.assertRaisesRegex(
+                PROOF.Refused, "publisher_receipt_value_invalid"
+            ):
+                PROOF._remote_publish("example", self.pair(), None)
+        with mock.patch.object(PROOF.subprocess, "run", return_value=untrusted):
+            with self.assertRaisesRegex(PROOF.Refused, "^publisher_failed$"):
+                PROOF._remote_publish("example", self.pair(), None)
 
     def test_timestamps_with_microseconds_remain_strict(self):
         base = dt.datetime(2026, 9, 18, 1, 0, tzinfo=dt.UTC)
