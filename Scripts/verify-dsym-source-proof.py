@@ -12,6 +12,7 @@ from pathlib import Path
 
 SYMBOL = "tandemclipCrashboxTestCrash"
 SOURCE_BASENAME = "CrashReporting.swift"
+SOURCE_PATH = "source/Sources/tandemclip/CrashReporting.swift"
 MAX_TOOL_OUTPUT = 1_048_576
 TOOL_TIMEOUT_SECONDS = 15
 MAX_PROBE_BYTES = 4096
@@ -99,7 +100,7 @@ def verify(dsym: Path, source: Path, *, dwarfdump: str) -> tuple[str, int]:
         high = re.search(r"DW_AT_high_pc\s+\(0x([0-9a-fA-F]+)\)", block)
         if source is None or line is None or address is None or high is None:
             continue
-        if Path(source.group(1).replace("\\", "/")).name != SOURCE_BASENAME:
+        if source.group(1) != SOURCE_PATH:
             continue
         if int(line.group(1)) <= 0:
             continue
@@ -117,7 +118,7 @@ def verify(dsym: Path, source: Path, *, dwarfdump: str) -> tuple[str, int]:
         lookup = _run([dwarfdump, "--lookup", f"0x{address:x}", str(dsym)])
         line_matches = re.findall(r"Line info: file '([^']+)', line ([0-9]+)", lookup)
         if any(
-            Path(path.replace("\\", "/")).name == SOURCE_BASENAME
+            path == SOURCE_BASENAME
             and int(line) == expected_line
             for path, line in line_matches
         ):
@@ -127,7 +128,7 @@ def verify(dsym: Path, source: Path, *, dwarfdump: str) -> tuple[str, int]:
         raise ProofError(
             "faulting write has no real CrashReporting.swift dSYM source line"
         )
-    return SOURCE_BASENAME, expected_line
+    return SOURCE_PATH, expected_line
 
 
 def main(argv: list[str] | None = None) -> int:

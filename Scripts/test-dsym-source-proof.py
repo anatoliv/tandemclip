@@ -63,12 +63,12 @@ class DsymSourceProofTests(unittest.TestCase):
               DW_AT_high_pc (0x00000001000479a8)
               DW_AT_linkage_name ("$s10tandemclip0A17CrashboxTestCrashyyF")
               DW_AT_name ("tandemclipCrashboxTestCrash")
-              DW_AT_decl_file ("/src/CrashReporting.swift")
+              DW_AT_decl_file ("source/Sources/tandemclip/CrashReporting.swift")
               DW_AT_decl_line (1)
 0x0020: DW_TAG_subprogram
               DW_AT_linkage_name\t("tandemclipCrashboxTestCrash")
               DW_AT_name ("tandemclipCrashboxTestCrash")
-Line info: file '/src/CrashReporting.swift', line 2, column 0""",
+Line info: file 'CrashReporting.swift', line 2, column 0""",
         )
         result = self.run_verifier()
         self.assertEqual(0, result.returncode, result.stderr)
@@ -91,7 +91,7 @@ Line info: file '/src/CrashReporting.swift', line 2, column 0""",
               DW_AT_low_pc (0x00000001000479a0)
               DW_AT_high_pc (0x00000001000479a8)
               DW_AT_name ("tandemclipCrashboxTestCrash")
-              DW_AT_decl_file ("/src/CrashReporting.swift")
+              DW_AT_decl_file ("source/Sources/tandemclip/CrashReporting.swift")
               DW_AT_decl_line (1)"""
         for output in (stable, stable + "\n" + good + "\n" + good):
             with self.subTest(output=output):
@@ -105,14 +105,15 @@ Line info: file '/src/CrashReporting.swift', line 2, column 0""",
               DW_AT_low_pc (0x00000001000479a0)
               DW_AT_high_pc (0x00000001000479a8)
               DW_AT_name ("tandemclipCrashboxTestCrash")
-              DW_AT_decl_file ("/src/CrashReporting.swift")
+              DW_AT_decl_file ("source/Sources/tandemclip/CrashReporting.swift")
               DW_AT_decl_line (1)
 0x0020: DW_TAG_subprogram
               DW_AT_linkage_name\t("tandemclipCrashboxTestCrash")
 """
         for output in (
             "Line info: file '/<compiler-generated>', line 0, column 0",
-            "Line info: file '/src/CrashReporting.swift', line 0, column 0",
+            "Line info: file 'CrashReporting.swift', line 0, column 0",
+            "Line info: file '/src/CrashReporting.swift', line 2, column 0",
             "Line info: file '/src/Other.swift', line 2, column 0",
             "no line information",
         ):
@@ -141,6 +142,11 @@ Line info: file '/src/CrashReporting.swift', line 2, column 0""",
         proof = release.index('Scripts/verify-dsym-source-proof.py "$RELEASE_DSYM"')
         package = release.index('Scripts/package-dsym.sh "$RELEASE_DSYM" "$DEBUG_ARCHIVE"')
         self.assertLess(proof, package)
+
+    def test_release_build_removes_the_checkout_prefix_from_dwarf(self) -> None:
+        build = (ROOT / "Scripts" / "make-app.sh").read_text(encoding="utf-8")
+        self.assertIn('SOURCE_ROOT="$(pwd -P)"', build)
+        self.assertIn('-Xswiftc -file-prefix-map -Xswiftc "${SOURCE_ROOT}=source"', build)
 
     def test_native_probe_uses_a_source_anchored_fault_not_fatal_error(self) -> None:
         source = (ROOT / "Sources" / "tandemclip" / "CrashReporting.swift").read_text(
