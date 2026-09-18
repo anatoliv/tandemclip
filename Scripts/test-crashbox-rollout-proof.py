@@ -224,6 +224,15 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(observed_value, value)
         self.assertEqual(corrected, pair)
 
+        published_path, _, published_pair = PROOF._resume_journal(
+            state,
+            candidate=candidate,
+            rollback=rollback,
+            previous=PROOF._receipt_archive(pair),
+        )
+        self.assertEqual(published_path, journal)
+        self.assertEqual(published_pair, pair)
+
     def test_reporting_disabled_bundle_is_replaced_by_saved_candidate(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

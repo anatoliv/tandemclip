@@ -87,6 +87,17 @@ def _canonical(value: object) -> bytes:
     ).encode("ascii")
 
 
+def _receipt_archive(pair: dict[str, object]) -> str:
+    configuration = _canonical(pair["configuration"])
+    rollback = _canonical(pair["rollback"])
+    return "sha256:" + hashlib.sha256(
+        b"crashbox-rollout-receipt-archive-v1\0"
+        + configuration
+        + b"\0"
+        + rollback
+    ).hexdigest()
+
+
 def _timestamp(moment: dt.datetime | None = None) -> str:
     value = (moment or dt.datetime.now(dt.UTC)).astimezone(dt.UTC)
     rendered = value.strftime("%Y-%m-%dT%H:%M:%S")
@@ -708,12 +719,20 @@ def _resume_journal(
         legacy_identity = _legacy_candidate_identity(candidate)
         legacy["configuration"]["candidate_identity"] = legacy_identity
         legacy["rollback"]["candidate_identity"] = legacy_identity
+        expected_previous = value.get("previous_receipts_archive")
         if (
             value.get("phase") != "failed"
             or value.get("project") != PROJECT
             or value.get("candidate_source") != candidate.get("source_commit")
             or value.get("rollback_source") != rollback.get("source_commit")
-            or value.get("previous_receipts_archive") != previous
+            or (
+                expected_previous is not None
+                and (
+                    not isinstance(expected_previous, str)
+                    or SHA256.fullmatch(expected_previous) is None
+                )
+            )
+            or previous not in (expected_previous, _receipt_archive(corrected))
             or value.get("receipts") not in (legacy, corrected)
             or "publication" in value
         ):
@@ -739,7 +758,9 @@ def _resume(args: argparse.Namespace) -> dict[str, object]:
         retained = _verify_app(rollback_slot, reporting=False)
         if retained.get("tree_sha256") != rollback.get("tree_sha256"):
             raise Refused("retained_rollback_changed")
-    published = _remote_publish(args.publish_host, pair, previous)
+    expected_previous = transaction.get("previous_receipts_archive")
+    assert expected_previous is None or isinstance(expected_previous, str)
+    published = _remote_publish(args.publish_host, pair, expected_previous)
     transaction.update(
         phase="published",
         candidate_identity=candidate["release"],
