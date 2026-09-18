@@ -326,6 +326,11 @@ If publication fails after the candidate has been restored, use `resume` with
 the same two DMGs. It accepts only one exact mode-0600 failed journal, rechecks
 the artifacts, installed candidate, running process, and remote archive, and
 retries publication without restarting TandemClip.
+`supersede` is narrower still: it accepts only the one signed proof produced by
+the retired colon-alias controller, proves that alias is the server's current
+receipt pair, and republishes the same measured transition under a fresh proof
+UUID with the exact `name@version+build.commit` release emitted by TandemClip.
+It does not restart the app or rewrite the superseded proof-specific records.
 It keeps a mode-`0600` transaction journal under Application Support, restores
 the original candidate on failure, and does not activate the measurement scope
 or submit a canary. Those remain explicit follow-up steps using the published

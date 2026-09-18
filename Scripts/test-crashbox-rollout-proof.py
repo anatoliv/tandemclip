@@ -35,7 +35,7 @@ class IdentityTests(unittest.TestCase):
     def test_candidate_identity_is_derived_and_never_contains_the_dsn(self):
         identity = PROOF._identity_from_info(self.info(), reporting=True)
         self.assertEqual(
-            identity["release"], "com.tandemclip:0.25.1:63:" + "a" * 40
+            identity["release"], "com.tandemclip@0.25.1+63." + "a" * 40
         )
         self.assertRegex(identity["release"], PROOF.RECEIPT_TOKEN)
         self.assertNotIn("dsn", " ".join(identity).lower())
@@ -62,7 +62,7 @@ class ReceiptTests(unittest.TestCase):
     def setUp(self):
         self.proof = str(uuid.UUID("11111111-2222-4333-8444-555555555555"))
         self.candidate = {
-            "release": "com.tandemclip:0.25.1:63:" + "a" * 40,
+            "release": "com.tandemclip@0.25.1+63." + "a" * 40,
         }
         self.first = "2026-09-18T01:00:00Z"
         self.rollback = "2026-09-18T01:01:00Z"
@@ -183,7 +183,7 @@ class RecoveryTests(unittest.TestCase):
             "version": "0.25.1",
             "build": "63",
             "source_commit": "a" * 40,
-            "release": "com.tandemclip:0.25.1:63:" + "a" * 40,
+            "release": "com.tandemclip@0.25.1+63." + "a" * 40,
         }
         rollback = {"source_commit": "b" * 40}
         pair = PROOF._receipt_pair(
@@ -194,7 +194,7 @@ class RecoveryTests(unittest.TestCase):
             changed_at="2026-09-18T01:02:00Z",
         )
         legacy = json.loads(json.dumps(pair))
-        legacy_identity = "com.tandemclip@0.25.1+63." + "a" * 40
+        legacy_identity = "com.tandemclip:0.25.1:63:" + "a" * 40
         legacy["configuration"]["candidate_identity"] = legacy_identity
         legacy["rollback"]["candidate_identity"] = legacy_identity
         value = {
@@ -232,6 +232,21 @@ class RecoveryTests(unittest.TestCase):
         )
         self.assertEqual(published_path, journal)
         self.assertEqual(published_pair, pair)
+
+        value.update(
+            phase="published",
+            publication={"published": True, "proof_id": proof_id},
+        )
+        journal.write_text(json.dumps(value), encoding="ascii")
+        os.chmod(journal, 0o600)
+        superseded_path, superseded_value = PROOF._superseded_journal(
+            state,
+            candidate=candidate,
+            rollback=rollback,
+            current_archive=PROOF._receipt_archive(legacy),
+        )
+        self.assertEqual(superseded_path, journal)
+        self.assertEqual(superseded_value, value)
 
     def test_reporting_disabled_bundle_is_replaced_by_saved_candidate(self):
         temporary = tempfile.TemporaryDirectory()

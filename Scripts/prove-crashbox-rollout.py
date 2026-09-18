@@ -49,7 +49,7 @@ VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 BUILD = re.compile(r"^[0-9]+$")
 TEAM = re.compile(r"^[A-Z0-9]{10}$")
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
-RECEIPT_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
+RECEIPT_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@/+~-]{0,199}$")
 
 
 class Refused(Exception):
@@ -203,7 +203,7 @@ def _identity_from_info(info: dict[str, Any], *, reporting: bool) -> dict[str, o
         "version": version,
         "build": build,
         "source_commit": source,
-        "release": f"com.tandemclip:{version}:{build}:{source}",
+        "release": f"com.tandemclip@{version}+{build}.{source}",
         "reporting_configured": reporting,
     }
 
@@ -328,7 +328,7 @@ def _receipt_pair(
     release = candidate.get("release")
     if (
         not isinstance(release, str)
-        or not release.startswith("com.tandemclip:")
+        or not release.startswith("com.tandemclip@")
         or RECEIPT_TOKEN.fullmatch(release) is None
     ):
         raise Refused("candidate_identity_invalid")
@@ -659,13 +659,13 @@ def _preflight(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _legacy_candidate_identity(candidate: dict[str, object]) -> str:
+def _aliased_candidate_identity(candidate: dict[str, object]) -> str:
     version = candidate.get("version")
     build = candidate.get("build")
     source = candidate.get("source_commit")
     if not all(isinstance(value, str) for value in (version, build, source)):
         raise Refused("candidate_identity_invalid")
-    return f"com.tandemclip@{version}+{build}.{source}"
+    return f"com.tandemclip:{version}:{build}:{source}"
 
 
 def _resume_journal(
@@ -715,10 +715,10 @@ def _resume_journal(
             )
         except Refused:
             continue
-        legacy = copy.deepcopy(corrected)
-        legacy_identity = _legacy_candidate_identity(candidate)
-        legacy["configuration"]["candidate_identity"] = legacy_identity
-        legacy["rollback"]["candidate_identity"] = legacy_identity
+        alias = copy.deepcopy(corrected)
+        alias_identity = _aliased_candidate_identity(candidate)
+        alias["configuration"]["candidate_identity"] = alias_identity
+        alias["rollback"]["candidate_identity"] = alias_identity
         expected_previous = value.get("previous_receipts_archive")
         if (
             value.get("phase") != "failed"
@@ -733,7 +733,7 @@ def _resume_journal(
                 )
             )
             or previous not in (expected_previous, _receipt_archive(corrected))
-            or value.get("receipts") not in (legacy, corrected)
+            or value.get("receipts") not in (alias, corrected)
             or "publication" in value
         ):
             continue
@@ -776,6 +776,142 @@ def _resume(args: argparse.Namespace) -> dict[str, object]:
         "dry_run": False,
         "restarted": False,
         "resumed": True,
+        "proof_id": proof_id,
+        "project": PROJECT,
+        "candidate_identity": candidate["release"],
+        "configuration_record": published.get("configuration_record"),
+        "rollback_record": published.get("rollback_record"),
+        "journal": str(journal),
+    }
+
+
+def _superseded_journal(
+    state_directory: Path,
+    *,
+    candidate: dict[str, object],
+    rollback: dict[str, object],
+    current_archive: str | None,
+) -> tuple[Path, dict[str, object]]:
+    eligible: list[tuple[Path, dict[str, object]]] = []
+    try:
+        paths = sorted(state_directory.glob("proof-*.json"))
+    except OSError as exc:
+        raise Refused("superseded_journal_unavailable") from exc
+    for path in paths:
+        try:
+            metadata = path.lstat()
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or stat.S_ISLNK(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or not 0 < metadata.st_size <= MAX_REQUEST_BYTES
+            ):
+                continue
+            value = json.loads(path.read_text(encoding="ascii"))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        proof_id = value.get("proof_id")
+        candidate_at = value.get("candidate_first_activated_at")
+        rollback_at = value.get("rollback_completed_at")
+        changed_at = value.get("configuration_changed_at")
+        if not all(
+            isinstance(item, str)
+            for item in (proof_id, candidate_at, rollback_at, changed_at)
+        ):
+            continue
+        try:
+            exact = _receipt_pair(
+                candidate,
+                proof_id=proof_id,
+                candidate_at=candidate_at,
+                rollback_at=rollback_at,
+                changed_at=changed_at,
+            )
+        except Refused:
+            continue
+        alias = copy.deepcopy(exact)
+        alias_identity = _aliased_candidate_identity(candidate)
+        alias["configuration"]["candidate_identity"] = alias_identity
+        alias["rollback"]["candidate_identity"] = alias_identity
+        publication = value.get("publication")
+        if (
+            value.get("phase") != "published"
+            or value.get("project") != PROJECT
+            or value.get("candidate_source") != candidate.get("source_commit")
+            or value.get("rollback_source") != rollback.get("source_commit")
+            or value.get("candidate_identity") != alias_identity
+            or value.get("receipts") != alias
+            or current_archive != _receipt_archive(alias)
+            or not isinstance(publication, dict)
+            or publication.get("published") is not True
+            or publication.get("proof_id") != proof_id
+        ):
+            continue
+        eligible.append((path, value))
+    if len(eligible) != 1:
+        raise Refused("superseded_journal_ambiguous")
+    return eligible[0]
+
+
+def _supersede(args: argparse.Namespace) -> dict[str, object]:
+    candidate, rollback, previous, controller = _inspect(args)
+    source_journal, source = _superseded_journal(
+        args.state_directory,
+        candidate=candidate,
+        rollback=rollback,
+        current_archive=previous,
+    )
+    proof_id = str(uuid.uuid4())
+    pair = _receipt_pair(
+        candidate,
+        proof_id=proof_id,
+        candidate_at=str(source["candidate_first_activated_at"]),
+        rollback_at=str(source["rollback_completed_at"]),
+        changed_at=str(source["configuration_changed_at"]),
+    )
+    journal = args.state_directory / f"proof-{proof_id}.json"
+    transaction: dict[str, object] = {
+        "schema_version": 1,
+        "phase": "prepared",
+        "proof_id": proof_id,
+        "supersedes_proof_id": source["proof_id"],
+        "supersedes_journal": str(source_journal),
+        "project": PROJECT,
+        "candidate_identity": candidate["release"],
+        "candidate_source": candidate["source_commit"],
+        "rollback_source": rollback["source_commit"],
+        "controller_commit": controller,
+        "previous_receipts_archive": previous,
+        "candidate_first_activated_at": source["candidate_first_activated_at"],
+        "rollback_completed_at": source["rollback_completed_at"],
+        "configuration_changed_at": source["configuration_changed_at"],
+        "receipts": pair,
+    }
+    _write_json(journal, transaction, exclusive=True)
+    try:
+        published = _remote_publish(args.publish_host, pair, previous)
+    except Exception as error:
+        transaction.update(
+            phase="failed",
+            error=(
+                error.args[0]
+                if isinstance(error, Refused) and error.args
+                else "rollout_failed"
+            ),
+        )
+        with contextlib.suppress(Exception):
+            _write_json(journal, transaction, exclusive=False)
+        raise
+    transaction.update(phase="published", publication=published)
+    _write_json(journal, transaction, exclusive=False)
+    return {
+        "completed": True,
+        "dry_run": False,
+        "restarted": False,
+        "superseded": source["proof_id"],
         "proof_id": proof_id,
         "project": PROJECT,
         "candidate_identity": candidate["release"],
@@ -866,7 +1002,9 @@ def _prove(args: argparse.Namespace) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("preflight", "prove", "resume"))
+    parser.add_argument(
+        "action", choices=("preflight", "prove", "resume", "supersede")
+    )
     parser.add_argument("--candidate-dmg", type=Path, required=True)
     parser.add_argument("--rollback-dmg", type=Path, required=True)
     parser.add_argument("--publish-host", default="web-01")
@@ -888,6 +1026,8 @@ def main(argv: list[str] | None = None) -> int:
             value = _preflight(args)
         elif args.action == "resume":
             value = _resume(args)
+        elif args.action == "supersede":
+            value = _supersede(args)
         else:
             value = _prove(args)
     except Refused as error:
