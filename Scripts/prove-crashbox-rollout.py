@@ -16,6 +16,7 @@ failure the controller restores the original candidate and retains the journal.
 from __future__ import annotations
 
 import argparse
+import copy
 import contextlib
 import datetime as dt
 import hashlib
@@ -47,6 +48,7 @@ VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 BUILD = re.compile(r"^[0-9]+$")
 TEAM = re.compile(r"^[A-Z0-9]{10}$")
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
+RECEIPT_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 
 
 class Refused(Exception):
@@ -189,7 +191,7 @@ def _identity_from_info(info: dict[str, Any], *, reporting: bool) -> dict[str, o
         "version": version,
         "build": build,
         "source_commit": source,
-        "release": f"com.tandemclip@{version}+{build}.{source}",
+        "release": f"com.tandemclip:{version}:{build}:{source}",
         "reporting_configured": reporting,
     }
 
@@ -312,7 +314,11 @@ def _receipt_pair(
     if str(parsed) != proof_id:
         raise Refused("proof_id_invalid")
     release = candidate.get("release")
-    if not isinstance(release, str) or not release.startswith("com.tandemclip@"):
+    if (
+        not isinstance(release, str)
+        or not release.startswith("com.tandemclip:")
+        or RECEIPT_TOKEN.fullmatch(release) is None
+    ):
         raise Refused("candidate_identity_invalid")
     moments = []
     for value in (candidate_at, rollback_at, changed_at):
@@ -612,6 +618,122 @@ def _preflight(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _legacy_candidate_identity(candidate: dict[str, object]) -> str:
+    version = candidate.get("version")
+    build = candidate.get("build")
+    source = candidate.get("source_commit")
+    if not all(isinstance(value, str) for value in (version, build, source)):
+        raise Refused("candidate_identity_invalid")
+    return f"com.tandemclip@{version}+{build}.{source}"
+
+
+def _resume_journal(
+    state_directory: Path,
+    *,
+    candidate: dict[str, object],
+    rollback: dict[str, object],
+    previous: str | None,
+) -> tuple[Path, dict[str, object], dict[str, object]]:
+    eligible: list[tuple[Path, dict[str, object], dict[str, object]]] = []
+    try:
+        paths = sorted(state_directory.glob("proof-*.json"))
+    except OSError as exc:
+        raise Refused("resume_journal_unavailable") from exc
+    for path in paths:
+        try:
+            metadata = path.lstat()
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or stat.S_ISLNK(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+                or not 0 < metadata.st_size <= MAX_REQUEST_BYTES
+            ):
+                continue
+            value = json.loads(path.read_text(encoding="ascii"))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        proof_id = value.get("proof_id")
+        candidate_at = value.get("candidate_first_activated_at")
+        rollback_at = value.get("rollback_completed_at")
+        changed_at = value.get("configuration_changed_at")
+        if not all(
+            isinstance(item, str)
+            for item in (proof_id, candidate_at, rollback_at, changed_at)
+        ):
+            continue
+        try:
+            corrected = _receipt_pair(
+                candidate,
+                proof_id=proof_id,
+                candidate_at=candidate_at,
+                rollback_at=rollback_at,
+                changed_at=changed_at,
+            )
+        except Refused:
+            continue
+        legacy = copy.deepcopy(corrected)
+        legacy_identity = _legacy_candidate_identity(candidate)
+        legacy["configuration"]["candidate_identity"] = legacy_identity
+        legacy["rollback"]["candidate_identity"] = legacy_identity
+        if (
+            value.get("phase") != "failed"
+            or value.get("project") != PROJECT
+            or value.get("candidate_source") != candidate.get("source_commit")
+            or value.get("rollback_source") != rollback.get("source_commit")
+            or value.get("previous_receipts_archive") != previous
+            or value.get("receipts") not in (legacy, corrected)
+            or "publication" in value
+        ):
+            continue
+        eligible.append((path, value, corrected))
+    if len(eligible) != 1:
+        raise Refused("resume_journal_ambiguous")
+    return eligible[0]
+
+
+def _resume(args: argparse.Namespace) -> dict[str, object]:
+    candidate, rollback, previous, controller = _inspect(args)
+    journal, transaction, pair = _resume_journal(
+        args.state_directory,
+        candidate=candidate,
+        rollback=rollback,
+        previous=previous,
+    )
+    proof_id = transaction["proof_id"]
+    assert isinstance(proof_id, str)
+    rollback_slot = INSTALLED_APP.parent / f".TandemClip.rollout.{proof_id}.rollback.app"
+    if rollback_slot.exists():
+        retained = _verify_app(rollback_slot, reporting=False)
+        if retained.get("tree_sha256") != rollback.get("tree_sha256"):
+            raise Refused("retained_rollback_changed")
+    published = _remote_publish(args.publish_host, pair, previous)
+    transaction.update(
+        phase="published",
+        candidate_identity=candidate["release"],
+        receipts=pair,
+        publication=published,
+        resumed_by_controller_commit=controller,
+    )
+    _write_json(journal, transaction, exclusive=False)
+    if rollback_slot.exists():
+        shutil.rmtree(rollback_slot)
+    return {
+        "completed": True,
+        "dry_run": False,
+        "restarted": False,
+        "resumed": True,
+        "proof_id": proof_id,
+        "project": PROJECT,
+        "candidate_identity": candidate["release"],
+        "configuration_record": published.get("configuration_record"),
+        "rollback_record": published.get("rollback_record"),
+        "journal": str(journal),
+    }
+
+
 def _prove(args: argparse.Namespace) -> dict[str, object]:
     candidate, rollback, previous, controller = _inspect(args)
     proof_id = str(uuid.uuid4())
@@ -693,7 +815,7 @@ def _prove(args: argparse.Namespace) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("preflight", "prove"))
+    parser.add_argument("action", choices=("preflight", "prove", "resume"))
     parser.add_argument("--candidate-dmg", type=Path, required=True)
     parser.add_argument("--rollback-dmg", type=Path, required=True)
     parser.add_argument("--publish-host", default="web-01")
@@ -711,7 +833,12 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        value = _preflight(args) if args.action == "preflight" else _prove(args)
+        if args.action == "preflight":
+            value = _preflight(args)
+        elif args.action == "resume":
+            value = _resume(args)
+        else:
+            value = _prove(args)
     except Refused as error:
         print(
             _canonical({"completed": False, "error": str(error)}).decode("ascii"),

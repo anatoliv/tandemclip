@@ -322,6 +322,10 @@ After separately approving the two TandemClip-only restarts, replace
 `preflight` with `prove`. The controller takes no project, release, proof UUID,
 timestamp, reporting mode, key path, rollback result, or credential argument;
 those values are derived from the verified artifacts or fixed by the protocol.
+If publication fails after the candidate has been restored, use `resume` with
+the same two DMGs. It accepts only one exact mode-0600 failed journal, rechecks
+the artifacts, installed candidate, running process, and remote archive, and
+retries publication without restarting TandemClip.
 It keeps a mode-`0600` transaction journal under Application Support, restores
 the original candidate on failure, and does not activate the measurement scope
 or submit a canary. Those remain explicit follow-up steps using the published

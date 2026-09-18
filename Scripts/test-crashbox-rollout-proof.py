@@ -2,6 +2,8 @@
 
 import datetime as dt
 import importlib.util
+import json
+import os
 import tempfile
 import unittest
 import uuid
@@ -32,8 +34,9 @@ class IdentityTests(unittest.TestCase):
     def test_candidate_identity_is_derived_and_never_contains_the_dsn(self):
         identity = PROOF._identity_from_info(self.info(), reporting=True)
         self.assertEqual(
-            identity["release"], "com.tandemclip@0.25.1+63." + "a" * 40
+            identity["release"], "com.tandemclip:0.25.1:63:" + "a" * 40
         )
+        self.assertRegex(identity["release"], PROOF.RECEIPT_TOKEN)
         self.assertNotIn("dsn", " ".join(identity).lower())
         self.assertNotIn("example.test", repr(identity))
 
@@ -58,7 +61,7 @@ class ReceiptTests(unittest.TestCase):
     def setUp(self):
         self.proof = str(uuid.UUID("11111111-2222-4333-8444-555555555555"))
         self.candidate = {
-            "release": "com.tandemclip@0.25.1+63." + "a" * 40,
+            "release": "com.tandemclip:0.25.1:63:" + "a" * 40,
         }
         self.first = "2026-09-18T01:00:00Z"
         self.rollback = "2026-09-18T01:01:00Z"
@@ -149,6 +152,56 @@ class ReceiptTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_resume_selects_only_the_exact_failed_post_reactivation_journal(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        state = Path(temporary.name)
+        proof_id = "11111111-2222-4333-8444-555555555555"
+        candidate = {
+            "version": "0.25.1",
+            "build": "63",
+            "source_commit": "a" * 40,
+            "release": "com.tandemclip:0.25.1:63:" + "a" * 40,
+        }
+        rollback = {"source_commit": "b" * 40}
+        pair = PROOF._receipt_pair(
+            candidate,
+            proof_id=proof_id,
+            candidate_at="2026-09-18T01:00:00Z",
+            rollback_at="2026-09-18T01:01:00Z",
+            changed_at="2026-09-18T01:02:00Z",
+        )
+        legacy = json.loads(json.dumps(pair))
+        legacy_identity = "com.tandemclip@0.25.1+63." + "a" * 40
+        legacy["configuration"]["candidate_identity"] = legacy_identity
+        legacy["rollback"]["candidate_identity"] = legacy_identity
+        value = {
+            "phase": "failed",
+            "proof_id": proof_id,
+            "project": "tandemclip-macos",
+            "candidate_identity": legacy_identity,
+            "candidate_source": "a" * 40,
+            "rollback_source": "b" * 40,
+            "previous_receipts_archive": "sha256:" + "c" * 64,
+            "candidate_first_activated_at": "2026-09-18T01:00:00Z",
+            "rollback_completed_at": "2026-09-18T01:01:00Z",
+            "configuration_changed_at": "2026-09-18T01:02:00Z",
+            "receipts": legacy,
+        }
+        journal = state / f"proof-{proof_id}.json"
+        journal.write_text(json.dumps(value), encoding="ascii")
+        os.chmod(journal, 0o600)
+
+        observed_path, observed_value, corrected = PROOF._resume_journal(
+            state,
+            candidate=candidate,
+            rollback=rollback,
+            previous="sha256:" + "c" * 64,
+        )
+        self.assertEqual(observed_path, journal)
+        self.assertEqual(observed_value, value)
+        self.assertEqual(corrected, pair)
+
     def test_reporting_disabled_bundle_is_replaced_by_saved_candidate(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
