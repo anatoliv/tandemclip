@@ -25,6 +25,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -432,16 +433,13 @@ def _remote_publish(
     )
     if len(request) > MAX_REQUEST_BYTES:
         raise Refused("publisher_request_invalid")
+    remote_command = " ".join(
+        shlex.quote(value)
+        for value in ("sudo", "/usr/bin/python3", "-c", REMOTE_PUBLISHER)
+    )
     try:
         result = subprocess.run(
-            [
-                "/usr/bin/ssh",
-                host,
-                "sudo",
-                "/usr/bin/python3",
-                "-c",
-                REMOTE_PUBLISHER,
-            ],
+            ["/usr/bin/ssh", host, remote_command],
             input=request,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

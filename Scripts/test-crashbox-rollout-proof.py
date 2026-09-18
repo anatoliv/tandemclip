@@ -131,11 +131,16 @@ class ReceiptTests(unittest.TestCase):
         untrusted = PROOF.subprocess.CompletedProcess(
             [], 2, b"raw remote output must stay hidden", b""
         )
-        with mock.patch.object(PROOF.subprocess, "run", return_value=fixed):
+        with mock.patch.object(PROOF.subprocess, "run", return_value=fixed) as run:
             with self.assertRaisesRegex(
                 PROOF.Refused, "publisher_receipt_value_invalid"
             ):
                 PROOF._remote_publish("example", self.pair(), None)
+            command = run.call_args.args[0]
+            self.assertEqual(command[:2], ["/usr/bin/ssh", "example"])
+            self.assertEqual(len(command), 3)
+            self.assertTrue(command[2].startswith("sudo /usr/bin/python3 -c '"))
+            self.assertIn("import hashlib,json,os", command[2])
         with mock.patch.object(PROOF.subprocess, "run", return_value=untrusted):
             with self.assertRaisesRegex(PROOF.Refused, "^publisher_failed$"):
                 PROOF._remote_publish("example", self.pair(), None)
