@@ -304,6 +304,38 @@ signer, Gatekeeper acceptance, and app/DMG notarization staples. It refuses to
 overwrite an existing retained artifact. The ordinary signed build and release
 paths still require Crashbox; the rollback-only flag cannot override that gate.
 
+### Source-bound Crashbox rollout proof
+
+The signed Crashbox observation scope is created only after a controller has
+verified the exact candidate and retained reporting-disabled DMGs, exercised
+that rollback, restored the byte-identical candidate, and published the
+controller-derived receipt pair through Crashbox's protected signer. Preflight
+is read-only:
+
+```sh
+Scripts/prove-crashbox-rollout.py preflight \
+  --candidate-dmg /retained/TandemClip_0.25.1_aarch64.dmg \
+  --rollback-dmg /retained/TandemClip_0.25.1_63_COMMIT_reporting_disabled_aarch64.dmg
+```
+
+After separately approving the two TandemClip-only restarts, replace
+`preflight` with `prove`. The controller takes no project, release, proof UUID,
+timestamp, reporting mode, key path, rollback result, or credential argument;
+those values are derived from the verified artifacts or fixed by the protocol.
+If publication fails after the candidate has been restored, use `resume` with
+the same two DMGs. It accepts only one exact mode-0600 failed journal, rechecks
+the artifacts, installed candidate, running process, and remote archive, and
+retries publication without restarting TandemClip.
+`supersede` is narrower still: it accepts only the one signed proof produced by
+the retired colon-alias controller, proves that alias is the server's current
+receipt pair, and republishes the same measured transition under a fresh proof
+UUID with the exact `name@version+build.commit` release emitted by TandemClip.
+It does not restart the app or rewrite the superseded proof-specific records.
+It keeps a mode-`0600` transaction journal under Application Support, restores
+the original candidate on failure, and does not activate the measurement scope
+or submit a canary. Those remain explicit follow-up steps using the published
+proof-specific configuration record.
+
 ## Roadmap
 
 Text, rich text, images, files, and folders all sync today (each copy carries

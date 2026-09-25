@@ -26,6 +26,7 @@ if command -v caffeinate >/dev/null; then
 fi
 
 cd "$(dirname "$0")/.."
+SOURCE_ROOT="$(pwd -P)"
 
 APP_NAME="TandemClip"                        # display / .app bundle name
 EXE_NAME="tandemclip"                        # Swift product + CFBundleExecutable
@@ -153,7 +154,12 @@ echo "==> Building release binary"
 # -Xswiftc -g emits DWARF so dsymutil can produce a real dSYM. Without it the
 # binary carries only symtab+unwind, and Crashbox can resolve function names but
 # never file/line — which is most of the value of a crash report.
-swift build -c release --build-system native -Xswiftc -g
+# Remap the checkout prefix out of DWARF. Crashbox deliberately refuses absolute
+# source paths in signed export evidence, and a dSYM must not disclose a builder's
+# local filesystem layout anyway. Use Swift's comprehensive file-prefix map and
+# a stable virtual root so every emitted source reference is repository-relative.
+swift build -c release --build-system native -Xswiftc -g \
+    -Xswiftc -file-prefix-map -Xswiftc "${SOURCE_ROOT}=source"
 BIN_PATH="$(swift build -c release --build-system native --show-bin-path)/${EXE_NAME}"
 
 # Build the dSYM next to the binary inside .build, where release.sh packages it

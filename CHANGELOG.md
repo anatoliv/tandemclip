@@ -4,6 +4,11 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.25.3] — 2026-09-18
+- Crash reporting: release dSYMs replace the builder's absolute checkout path
+  with a stable repository-relative source path, and release preparation now
+  refuses absolute-path source proof before an artifact can be published.
+
 ## [0.25.2] — 2026-09-14
 - Crash reporting: the guarded native diagnostic now has a stable symbol and a
   real source-backed fault line, and release preparation refuses a dSYM that
