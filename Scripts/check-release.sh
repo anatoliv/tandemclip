@@ -80,6 +80,7 @@ if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-rollout-proof.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-package-dsym.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-dsym-source-proof.py
+    bash Scripts/test-notarize-retry.sh
     echo "preflight ok: $VERSION ($BUILD_NUM) — changelog, build number, design tokens"
     exit 0
 fi
