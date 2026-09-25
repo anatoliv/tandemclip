@@ -383,31 +383,16 @@ if [[ -n "$IDENTITY" ]]; then
 fi
 if [[ -n "$NOTARY_PROFILE" ]]; then
     echo "==> Notarizing DMG"
-    # `--timeout` covers the *wait for Apple's verdict*, not the upload — and the
-    # upload is what hangs. `notarytool submit` sits at "initiating connection to
-    # the Apple notary service" with nothing ever reaching `notarytool history`,
-    # so the flag never fires and the release appears to be working. Observed
-    # twice in one afternoon at 69 and 18 minutes, both killed by hand. An outer
-    # wall clock plus retries turns an hour of silence into a hiccup, and fails
-    # loudly instead of appearing to work.
+    # Each attempt runs under an outer wall clock, because the upload is what hangs
+    # and notarytool's own --timeout never fires on it. The clock reaps only its own
+    # attempt; nothing here signals another lane's notarization (TBX-6235). Details in
+    # Scripts/notarize-retry.sh.
     #
     # Diagnosis if all attempts fail: `xcrun notarytool history --keychain-profile
     # "$NOTARY_PROFILE" | head -20`. If this DMG is absent from that list, nothing
     # ever uploaded and waiting longer cannot help.
-    command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }  # coreutils absent: run bare
-    notarize_with_retry() {
-        local attempt
-        for attempt in 1 2 3; do
-            if timeout 900 xcrun notarytool submit "$DMG" \
-                 --keychain-profile "$NOTARY_PROFILE" --wait --timeout 12m; then
-                return 0
-            fi
-            echo "    WARNING: notarization attempt $attempt did not complete within 15 minutes — retrying" >&2
-            pkill -f "notarytool submit" 2>/dev/null || true
-        done
-        return 1
-    }
-    if ! notarize_with_retry; then
+    . Scripts/notarize-retry.sh
+    if ! notarize_with_retry "$DMG" "$NOTARY_PROFILE"; then
         echo "error: notarization failed after 3 attempts (15 min wall clock each)." >&2
         echo "       Check whether the upload ever landed:" >&2
         echo "         xcrun notarytool history --keychain-profile $NOTARY_PROFILE | head -20" >&2
