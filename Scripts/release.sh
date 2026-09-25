@@ -109,6 +109,20 @@ if [[ "$PUBLISH" == "1" && -z "$RESUME_MANIFEST" && -n "$(git status --porcelain
     exit 1
 fi
 
+# 0a1b. Ship only what origin/main already contains (ESTATE E19, TBX-7466).
+#       0.25.3 went out from an unmerged branch: the appcast served it while
+#       main's cask still said 0.25.1, so the next release from main would have
+#       quietly taken it back. Checked on both halves of a publication, before
+#       the build and before the resume, so a refusal costs seconds, not a
+#       notarization. PREPARE_RELEASE=1 fixes the bytes that will ship; the
+#       resume (PUBLISH=1, including its VERIFY_PREPARED_RELEASE_ONLY rehearsal)
+#       ships them. A plain local build publishes nothing and is not checked.
+#       Emergency override: ALLOW_UNMERGED_RELEASE="<reason>" (logged).
+if [[ "$PUBLISH" == "1" || "$PREPARE_RELEASE" == "1" ]]; then
+    . Scripts/release-main-guard.sh
+    release_main_guard . || exit 1
+fi
+
 prepared_release() {
     python3 Scripts/prepared-release.py "$1" \
         --manifest "$2" \
