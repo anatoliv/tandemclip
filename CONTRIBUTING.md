@@ -65,7 +65,9 @@ release — this is the only path that reaches users:
    `PUBLISH_DEST` (see the README's *Releasing* section). One command builds →
    notarizes → publishes the DMG + `appcast.xml` to the web host → **rewrites
    `Casks/tandemclip.rb`** with the new version and the new DMG's `sha256`.
-4. `git add Casks/tandemclip.rb`, commit, push, then tag `vX.Y.Z`.
+4. `git add Casks/tandemclip.rb`, commit, push, then tag `vX.Y.Z`. Don't skip the
+   tag: the next release's preflight refuses to run while the version the cask
+   pins has no tag.
 
 After that, existing users auto-update via Sparkle (from `appcast.xml`), and
 Homebrew users get it on their next `brew update && brew upgrade`.
