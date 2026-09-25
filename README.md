@@ -314,9 +314,13 @@ is read-only:
 
 ```sh
 Scripts/prove-crashbox-rollout.py preflight \
+  --publish-host your-crashbox-host \
   --candidate-dmg /retained/TandemClip_0.25.1_aarch64.dmg \
   --rollback-dmg /retained/TandemClip_0.25.1_63_COMMIT_reporting_disabled_aarch64.dmg
 ```
+
+The publisher host has no default. Pass `--publish-host`, or set
+`TANDEMCLIP_CRASHBOX_PUBLISH_HOST`; the controller refuses to start without one.
 
 After separately approving the two TandemClip-only restarts, replace
 `preflight` with `prove`. The controller takes no project, release, proof UUID,

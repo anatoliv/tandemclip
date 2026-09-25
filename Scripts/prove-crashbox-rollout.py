@@ -41,6 +41,7 @@ UNIT = "TandemClip.app"
 BUNDLE_ID = "com.tandemclip"
 INSTALLED_APP = Path("/Applications/TandemClip.app")
 PUBLISHER = "/usr/local/libexec/crashbox-publish-receipts"
+PUBLISH_HOST_ENV = "TANDEMCLIP_CRASHBOX_PUBLISH_HOST"
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_APP_ENTRIES = 20_000
 MAX_APP_BYTES = 1024 * 1024 * 1024
@@ -1007,7 +1008,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--candidate-dmg", type=Path, required=True)
     parser.add_argument("--rollback-dmg", type=Path, required=True)
-    parser.add_argument("--publish-host", default="web-01")
+    # The SSH host that runs Crashbox's protected publisher. There is no default:
+    # the host is operator configuration, so it comes from the flag or from
+    # TANDEMCLIP_CRASHBOX_PUBLISH_HOST, and the run refuses when neither is set.
+    parser.add_argument(
+        "--publish-host",
+        default=os.environ.get(PUBLISH_HOST_ENV) or None,
+        help=f"SSH host for the Crashbox publisher (or set {PUBLISH_HOST_ENV})",
+    )
     parser.add_argument(
         "--state-directory",
         type=Path,
@@ -1019,8 +1027,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if not args.publish_host:
+        parser.error(f"--publish-host is required (or set {PUBLISH_HOST_ENV})")
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    args = _parse_args(argv)
     try:
         if args.action == "preflight":
             value = _preflight(args)

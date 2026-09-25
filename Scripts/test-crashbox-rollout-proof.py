@@ -288,5 +288,34 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual((rollback_slot / "kind").read_text(), "rollback")
 
 
+class PublishHostTests(unittest.TestCase):
+    ARGS = [
+        "preflight",
+        "--candidate-dmg", "/retained/candidate.dmg",
+        "--rollback-dmg", "/retained/rollback.dmg",
+    ]
+
+    def test_publish_host_has_no_built_in_default(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("sys.stderr"):
+                with self.assertRaises(SystemExit) as refused:
+                    PROOF._parse_args(self.ARGS)
+        self.assertEqual(refused.exception.code, 2)
+
+    def test_publish_host_comes_from_the_environment(self):
+        with mock.patch.dict(
+            os.environ, {PROOF.PUBLISH_HOST_ENV: "publisher.example"}, clear=True
+        ):
+            args = PROOF._parse_args(self.ARGS)
+        self.assertEqual(args.publish_host, "publisher.example")
+
+    def test_publish_host_flag_overrides_the_environment(self):
+        with mock.patch.dict(
+            os.environ, {PROOF.PUBLISH_HOST_ENV: "publisher.example"}, clear=True
+        ):
+            args = PROOF._parse_args(self.ARGS + ["--publish-host", "other.example"])
+        self.assertEqual(args.publish_host, "other.example")
+
+
 if __name__ == "__main__":
     unittest.main()
