@@ -3,13 +3,13 @@
 # refuse them (TBX-7466, ESTATE E19).
 #
 # Throwaway repos only: a bare "origin", a clone that releases, and a second clone that
-# pushes behind its back. No network. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy
+# pushes behind its back. No network: the merge-back card goes to a stub Tonebox on 127.0.0.1. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy
 # to prove a check can fail. The same file is copied into every repo that carries the guard.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GUARD="${RELEASE_MAIN_GUARD_SUBJECT:-$HERE/release-main-guard.sh}"
 [ -f "$GUARD" ] || { echo "FAIL  no guard at $GUARD"; exit 1; }
-unset ALLOW_UNMERGED_RELEASE RELEASE_MAIN_GUARD_REMOTE RELEASE_MAIN_GUARD_BRANCH
+unset ALLOW_UNMERGED_RELEASE RELEASE_MAIN_GUARD_REMOTE RELEASE_MAIN_GUARD_BRANCH RELEASE_MAIN_GUARD_TONEBOX_CONFIG
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf 'ok    %s\n' "$1"; }
@@ -122,6 +122,96 @@ git -C "$WORK/rel" worktree add -q "$WORK/wt" -b wt-branch origin/main 2>/dev/nu
 git -C "$WORK/wt" commit -q --allow-empty -m "worktree hotfix"
 out="$(cd "$WORK/wt" && ALLOW_UNMERGED_RELEASE="worktree case" bash -c '. "$1" && release_main_guard' _ "$GUARD" 2>&1)"; rc=$?
 if [ "$rc" = 0 ] && grep -qF "worktree case" "$LOG"; then ok "a worktree override lands in the shared log"; else bad "a worktree override did not reach $LOG. Got: $(head -c 400 <<<"$out")"; fi
+
+# 14-17. The override files its merge-back card in Tonebox when it can, and prints it when
+#        it cannot. A stub MCP server on 127.0.0.1 stands in for Tonebox and records calls.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "skip  merge-back card filing (no python3 here, so the guard only prints the card)"
+else
+  STUB_LOG="$WORK/stub-calls.jsonl"; : >"$STUB_LOG"
+  python3 - "$WORK/stub-port" "$STUB_LOG" <<'PY' &
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+port_file, log = sys.argv[1], sys.argv[2]
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        with open(log, "a") as f:
+            f.write(json.dumps({"auth": self.headers.get("Authorization"), "session": self.headers.get("Mcp-Session-Id"),
+                                "method": req["method"], "params": req.get("params")}) + "\n")
+        if req["method"] == "initialize":
+            result = {"protocolVersion": "2025-06-18", "capabilities": {}}
+        elif req["params"]["name"] == "list_projects":
+            text = {"projects": [{"name": "Other", "archived": False}, {"name": "Origin", "archived": False}]}
+            result = {"content": [{"type": "text", "text": json.dumps(text)}]}
+        else:
+            text = {"created": True, "task": {"human_id": "TBX-9999", "text": req["params"]["arguments"]["text"]}}
+            result = {"content": [{"type": "text", "text": json.dumps(text)}]}
+        body = "event: message\ndata: " + json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Mcp-Session-Id", "stub-session")
+        self.end_headers()
+        self.wfile.write(body.encode())
+srv = HTTPServer(("127.0.0.1", 0), H)
+open(port_file, "w").write(str(srv.server_address[1]))
+srv.serve_forever()
+PY
+  STUB_PID=$!
+  trap 'kill "$STUB_PID" 2>/dev/null; rm -rf "$WORK"' EXIT INT TERM
+  for _ in $(seq 50); do [ -s "$WORK/stub-port" ] && break; sleep 0.1; done
+  PORT="$(cat "$WORK/stub-port" 2>/dev/null)"
+  printf '{"mcpServers":{"tonebox":{"type":"http","url":"http://127.0.0.1:%s","headers":{"Authorization":"Bearer stub-secret-token"}}}}\n' "$PORT" >"$WORK/tonebox.json"
+  # A port nothing listens on: bind one, note it, close it.
+  DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
+  printf '{"mcpServers":{"tonebox":{"type":"http","url":"http://127.0.0.1:%s"}}}\n' "$DEAD_PORT" >"$WORK/dead.json"
+  git -C "$WORK/rel" checkout -q -b card-cases origin/main 2>/dev/null
+  git -C "$WORK/rel" commit -q --allow-empty -m "card hotfix"
+  CARD_SHORT="$(git -C "$WORK/rel" rev-parse --short=12 HEAD)"
+  override() {   # <reason> [env assignments...]
+    local why="$1"; shift
+    (cd "$WORK/rel" && env ALLOW_UNMERGED_RELEASE="$why" "$@" bash -c '. "$1" && release_main_guard' _ "$GUARD" 2>&1)
+  }
+
+  # 14. Reachable: filed as a quick task in the project named like the repo, with the token.
+  : >"$STUB_LOG"
+  out="$(override "card case reachable" RELEASE_MAIN_GUARD_TONEBOX_CONFIG="$WORK/tonebox.json")"; rc=$?
+  expect_admitted "a reachable Tonebox gets the merge-back card filed" "$rc" "$out" "Filed in Tonebox as TBX-9999 in project Origin"
+  filed="$(python3 -c 'import json,sys
+for l in open(sys.argv[1]):
+    c = json.loads(l)
+    if c["method"] == "tools/call" and c["params"]["name"] == "quick_task":
+        a = c["params"]["arguments"]; print(c["auth"], c["session"], a.get("project"), a.get("priority"), "|", a["text"])' "$STUB_LOG")"
+  if grep -qF "Bearer stub-secret-token stub-session Origin high | Merge hotfix $CARD_SHORT into main of origin" <<<"$filed" \
+     && grep -qF "Reason: card case reachable" <<<"$filed"; then
+    ok "the card names the hotfix, the repo and the reason, and goes to the matching project with the configured token"
+  else bad "the stub did not receive the expected quick_task. Got: $filed"; fi
+  if grep -qF "stub-secret-token" <<<"$out"; then bad "the guard printed the Tonebox token"; else ok "the Tonebox token is never printed"; fi
+
+  # 15. Not reachable: the release is still admitted and the card text is printed to file.
+  out="$(override "card case dead" RELEASE_MAIN_GUARD_TONEBOX_CONFIG="$WORK/dead.json")"; rc=$?
+  expect_admitted "an unreachable Tonebox falls back to printing the card" "$rc" "$out" "Tonebox was not reachable from here, so file this card now:"
+  expect_admitted "and the printed card names the hotfix and the reason" "$rc" "$out" "Merge hotfix $CARD_SHORT into main of origin"
+
+  # 16. A checkout whose origin is a local path (every test repo) never files by default,
+  #     even with a live Tonebox in ~/.claude.json.
+  cp "$WORK/tonebox.json" "$HOME/.claude.json"; : >"$STUB_LOG"
+  out="$(override "card case local origin")"; rc=$?
+  if [ "$rc" = 0 ] && [ ! -s "$STUB_LOG" ] && grep -qF "file this card now:" <<<"$out"; then
+    ok "a local-path origin does not file a card from ~/.claude.json, it prints it"
+  else bad "a local-path origin reached Tonebox or did not print the card. Calls: $(wc -l <"$STUB_LOG")"; fi
+
+  # 17. A real-looking origin URL (rewritten to the local bare repo for the fetch) files from
+  #     ~/.claude.json, and <name>-private matches the project <Name>.
+  git -C "$WORK/rel" config url."$WORK/origin.git".insteadOf "https://git.example.invalid/acme/origin-private.git"
+  git -C "$WORK/rel" remote set-url origin "https://git.example.invalid/acme/origin-private.git"
+  : >"$STUB_LOG"
+  out="$(override "card case default config")"; rc=$?
+  expect_admitted "with a hosted origin, the card is filed through ~/.claude.json" "$rc" "$out" "Filed in Tonebox as TBX-9999 in project Origin"
+  git -C "$WORK/rel" remote set-url origin "$WORK/origin.git"
+  rm -f "$HOME/.claude.json"
+fi
 
 echo "release-main-guard: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

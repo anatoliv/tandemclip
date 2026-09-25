@@ -16,9 +16,18 @@
 #
 # Emergency hotfix override (explicit, logged, never silent):
 #   ALLOW_UNMERGED_RELEASE="<why this cannot wait for a merge>" <release command>
-# admits the release, appends a line to <git common dir>/unmerged-releases.log and prints a
-# merge-back note to file as a card straight away. Every later run warns about logged
-# hotfixes origin/main still lacks, because a release from main would take them back.
+# admits the release, appends a line to <git common dir>/unmerged-releases.log and files a
+# merge-back card. Every later run warns about logged hotfixes origin/main still lacks,
+# because a release from main would take them back.
+#
+# Filing the card: on the owner's Mac the card goes to the local Tonebox server, read from
+# mcpServers.tonebox in ~/.claude.json (the same entry agents use), as a high-priority quick
+# task in the project named like the origin repo (threadstow-private -> Threadstow), or
+# unfiled when no project matches. Where that is not reachable (a deploy host, no
+# python3, Tonebox not running) the card text is printed to file by hand instead, and the
+# release is admitted either way. A checkout whose origin is a local path (a test's
+# throwaway repo) never files, unless RELEASE_MAIN_GUARD_TONEBOX_CONFIG names a config
+# explicitly; pointing that at a file that does not exist turns filing off.
 #
 # RELEASE_MAIN_GUARD_REMOTE (default origin) and RELEASE_MAIN_GUARD_BRANCH (default main)
 # exist for tests and for a checkout whose trunk lives under another name.
@@ -28,7 +37,7 @@ release_main_guard() {
   local remote="${RELEASE_MAIN_GUARD_REMOTE:-origin}"
   local branch="${RELEASE_MAIN_GUARD_BRANCH:-main}"
   local ref="refs/remotes/$remote/$branch" trunk="$remote/$branch"
-  local head short fetched=1 missing="" log common now who reason entry c when why
+  local head short fetched=1 missing="" log common now who reason entry c when why card filed url name
 
   head="$(git -C "$dir" rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null)" || {
     echo "RELEASE REFUSED: $dir is not a git checkout with a commit, so nothing shows it is on $trunk." >&2
@@ -97,6 +106,13 @@ release_main_guard() {
     echo "RELEASE REFUSED: the override could not be logged to $log, and an unlogged override is not allowed." >&2
     return 1
   }
+  # The repo's name from its origin URL (threadstow-private.git -> threadstow), which a
+  # worktree's directory name is not.
+  url="$(git -C "$dir" config --get "remote.$remote.url" 2>/dev/null)" || url=""
+  name="${url%/}"; name="${name##*/}"; name="${name##*:}"; name="${name%.git}"; name="${name%-private}"
+  [ -n "$name" ] || name="$(basename "$(cd "$dir" && pwd)")"
+  card="Merge hotfix $short into main of $name: released unmerged at $now by $who. Reason: $reason"
+  filed="$(release_main_guard_file_card "$url" "$name" "$card")" || filed=""
   {
     echo
     echo "=============================================================================="
@@ -106,12 +122,69 @@ release_main_guard() {
     [ "$fetched" = 1 ] || echo "  (the fetch of $trunk failed, so containment was not checked at all)"
     [ -z "$missing" ] || { echo "  Commits $trunk does not have:"; printf '%s\n' "$missing"; }
     echo "  Logged: $log"
-    echo "  MERGE-BACK REQUIRED. File this card now:"
-    echo "    Merge hotfix $short into main: released unmerged at $now by $who. Reason: $reason"
+    if [ -n "$filed" ]; then
+      echo "  MERGE-BACK REQUIRED. Filed in Tonebox as $filed:"
+    else
+      echo "  MERGE-BACK REQUIRED. Tonebox was not reachable from here, so file this card now:"
+    fi
+    echo "    $card"
     echo "  Until $trunk contains it, every release from main takes this fix back."
     echo
   } >&2
   return 0
+}
+
+# release_main_guard_file_card <origin url> <repo name> <card text>: file the merge-back
+# card in the local Tonebox. Prints where it landed and returns 0, or returns 1 having
+# filed nothing. Never prints the server's credentials.
+release_main_guard_file_card() {
+  local url="$1" repo="$2" text="$3" cfg="${RELEASE_MAIN_GUARD_TONEBOX_CONFIG:-}"
+  if [ -z "$cfg" ]; then
+    case "$url" in ""|/*|./*|../*|file:*) return 1 ;; esac
+    cfg="${HOME:-/nonexistent}/.claude.json"
+  fi
+  [ -r "$cfg" ] && command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$cfg" "$repo" "$text" 2>/dev/null <<'PY'
+import json, re, sys, urllib.request
+cfg_path, repo, text = sys.argv[1:4]
+cfg = json.load(open(cfg_path))["mcpServers"]["tonebox"]
+headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+headers.update(cfg.get("headers") or {})
+session = [None]
+def rpc(i, method, params):
+    h = dict(headers)
+    if session[0]:
+        h["Mcp-Session-Id"] = session[0]
+    body = json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params}).encode()
+    with urllib.request.urlopen(urllib.request.Request(cfg["url"], data=body, headers=h), timeout=5) as r:
+        raw = r.read().decode()
+        session[0] = r.headers.get("Mcp-Session-Id") or session[0]
+    if not raw.lstrip().startswith("{"):
+        raw = "\n".join(l[5:].strip() for l in raw.splitlines() if l.startswith("data:"))
+    res = json.loads(raw)
+    if "error" in res or res["result"].get("isError"):
+        raise RuntimeError(method)
+    return res["result"]
+def call(i, name, args):
+    out = rpc(i, "tools/call", {"name": name, "arguments": args})
+    return "".join(p.get("text", "") for p in out.get("content", []) if p.get("type") == "text")
+rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                      "clientInfo": {"name": "release-main-guard", "version": "1"}})
+key = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
+project = None
+try:
+    for p in json.loads(call(2, "list_projects", {})).get("projects", []):
+        if repo and key(p.get("name", "")) == key(repo) and not p.get("archived"):
+            project = p["name"]
+except Exception:
+    pass
+args = {"text": text, "priority": "high", "labels": ["release", "merge-back"]}
+if project:
+    args["project"] = project
+out = call(3, "quick_task", args)
+m = re.search(r'"human_id"\s*:\s*"([^"]+)"', out)
+print((m.group(1) if m else "a quick task") + (" in project " + project if project else " (unfiled: no project matches " + repr(repo) + ")"))
+PY
 }
 
 # Executed rather than sourced: run the guard on the given checkout (default: here).
