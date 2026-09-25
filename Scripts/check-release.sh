@@ -31,6 +31,21 @@ fi
 # error is shown, and the appcast looks perfectly correct. Every other check in
 # this file compares the release against *itself* and cannot see it. This one
 # compares it against the last release that actually shipped.
+#
+# "The last release that shipped" is read from tags, and tagging is a manual step
+# (CONTRIBUTING.md), so first check the tags are complete. The committed cask pins
+# the release users are on; if that version has no tag, this guard would compare
+# against an older one and pass a build number that is not really new. 0.25.1 and
+# 0.25.3 both shipped untagged and sat that way for a week (TBX-7509).
+CASK_VERSION="$(sed -nE 's/^[[:space:]]*version "([^",]+).*/\1/p' Casks/tandemclip.rb 2>/dev/null | head -1)"
+if [[ -n "$CASK_VERSION" && "$CASK_VERSION" != "$VERSION" ]] \
+   && ! git rev-parse -q --verify "refs/tags/v${CASK_VERSION}" >/dev/null; then
+    echo "error: v${CASK_VERSION} is live (Casks/tandemclip.rb pins it) but has no git tag." >&2
+    echo "       Tag the commit that published it before cutting another release:" >&2
+    echo "         git tag -a v${CASK_VERSION} <publish commit> -m 'TandemClip ${CASK_VERSION}' && git push origin v${CASK_VERSION}" >&2
+    echo "       (git fetch --tags first if it may exist on origin already.)" >&2
+    exit 1
+fi
 PREV_TAG="$(git tag --list 'v*' --sort=-v:refname 2>/dev/null | grep -v "^v${VERSION}\$" | head -1 || true)"
 if [[ -n "$PREV_TAG" ]]; then
     PREV_PLIST="$(mktemp -t tandemclip-prevplist)"
