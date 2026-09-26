@@ -119,7 +119,7 @@ fi
 #       ships them. A plain local build publishes nothing and is not checked.
 #       Emergency override: ALLOW_UNMERGED_RELEASE="<reason>" (logged).
 if [[ "$PUBLISH" == "1" || "$PREPARE_RELEASE" == "1" ]]; then
-    . Scripts/release-main-guard.sh
+    . Scripts/release-kit/lib/main-guard.sh
     release_main_guard . || exit 1
 fi
 
@@ -386,17 +386,10 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
     # Each attempt runs under an outer wall clock, because the upload is what hangs
     # and notarytool's own --timeout never fires on it. The clock reaps only its own
     # attempt; nothing here signals another lane's notarization (TBX-6235). Details in
-    # Scripts/notarize-retry.sh.
-    #
-    # Diagnosis if all attempts fail: `xcrun notarytool history --keychain-profile
-    # "$NOTARY_PROFILE" | head -20`. If this DMG is absent from that list, nothing
-    # ever uploaded and waiting longer cannot help.
-    . Scripts/notarize-retry.sh
-    if ! notarize_with_retry "$DMG" "$NOTARY_PROFILE"; then
-        echo "error: notarization failed after 3 attempts (15 min wall clock each)." >&2
-        echo "       Check whether the upload ever landed:" >&2
-        echo "         xcrun notarytool history --keychain-profile $NOTARY_PROFILE | head -20" >&2
-        echo "       Absent from that list = nothing uploaded. Nothing was published or tagged." >&2
+    # the release kit's lib/notarize.sh.
+    . Scripts/release-kit/lib/notarize.sh
+    if ! rk_notarize "$DMG" "$NOTARY_PROFILE"; then
+        echo "error: DMG notarization failed (diagnosis above). Nothing was published or tagged." >&2
         exit 1
     fi
     xcrun stapler staple "$DMG"
@@ -437,7 +430,7 @@ if [[ -f "$CASK" ]]; then
         -e "s/^  sha256 \"[0-9a-f]{64}\"/  sha256 \"${SHA}\"/" \
         "$CASK"
     echo "==> Cask synced: $CASK -> v$VERSION"
-    echo "    (commit Casks/tandemclip.rb alongside the version bump)"
+    echo "    (a publish commits it at the end; a local build leaves it for you)"
 fi
 
 # 4c. Sync the landing page to this release, for the same reason as the cask and
@@ -457,7 +450,7 @@ if [[ -f "$SITE_SRC" ]]; then
         -e "s/Version [0-9]+\.[0-9]+\.[0-9]+/Version ${VERSION}/g" \
         "$SITE_SRC"
     echo "==> Site synced: $SITE_SRC -> v$VERSION"
-    echo "    (commit site/index.html alongside the version bump)"
+    echo "    (a publish commits it at the end; a local build leaves it for you)"
 fi
 
 # 4d. Gate: every version-pinned surface must agree with this release before any
@@ -574,5 +567,19 @@ if [[ "$PUBLISH" == "1" ]]; then
             exit 1
         fi
         echo "    appcast verified: build $REMOTE_APPCAST_BUILD live"
+    fi
+
+    # 5c. Record the release, last: commit the cask and landing-page bump this run
+    #     wrote, push it to main, and tag that commit v$VERSION. This used to be a
+    #     manual step after the script (CONTRIBUTING.md), and 0.25.1 and 0.25.3 both
+    #     went out without it (TBX-7509). Only verified releases get here, and the
+    #     next preflight refuses to cut another while this one is untagged, so a
+    #     failure here is loud rather than forgotten.
+    echo "==> Recording the release on main"
+    . Scripts/release-kit/lib/tags.sh
+    if ! rk_record_release "$VERSION" "release: publish TandemClip $VERSION" "$CASK" "$SITE_SRC"; then
+        echo "error: v$VERSION is LIVE but not recorded (see above). Do not cut another release" >&2
+        echo "       until its publish commit is on main and tagged." >&2
+        exit 1
     fi
 fi

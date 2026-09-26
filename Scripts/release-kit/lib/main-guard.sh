@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# release-main-guard.sh: refuse to ship a commit that origin/main does not contain.
+# main-guard.sh: refuse to ship a commit that origin/main does not contain.
 #
 # ESTATE E19 / TBX-7466. Six projects had production running a commit that main did not
 # have, so the next routine release from main quietly took the fix back. Every release
 # script checked for a clean tree; none checked that the commit it shipped was merged.
 #
-# The same file is copied into every repo that ships (the repos are independent, so there
-# is no shared import). Keep the copies identical. Two ways to use it:
-#   . scripts/release-main-guard.sh; release_main_guard || exit 1     from a bash script
-#   scripts/release-main-guard.sh [repo-dir]                            from anything else
+# Part of the release kit (~/Projects/_release, design in ~/Projects/_method/release-kit.md).
+# Projects vendor it under scripts/release-kit/ and a pin check refuses local edits; change
+# it in the kit and re-sync. Two ways to use it:
+#   . scripts/release-kit/lib/main-guard.sh; release_main_guard || exit 1   from a bash script
+#   scripts/release-kit/lib/main-guard.sh [repo-dir]                          from anything else
 #
 # It fetches main from origin, then admits HEAD only when HEAD is an ancestor of
 # origin/main. A refusal names the commits origin/main is missing. A failed fetch refuses

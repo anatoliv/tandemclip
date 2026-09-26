@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# test-release-main-guard.sh: plant unmerged commits and watch scripts/release-main-guard.sh
-# refuse them (TBX-7466, ESTATE E19).
+# test-main-guard.sh: plant unmerged commits and watch lib/main-guard.sh refuse them
+# (TBX-7466, ESTATE E19).
 #
 # Throwaway repos only: a bare "origin", a clone that releases, and a second clone that
-# pushes behind its back. No network: the merge-back card goes to a stub Tonebox on 127.0.0.1. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy
-# to prove a check can fail. The same file is copied into every repo that carries the guard.
+# pushes behind its back. No network: the merge-back card goes to a stub Tonebox on
+# 127.0.0.1. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy to prove a check can fail.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-GUARD="${RELEASE_MAIN_GUARD_SUBJECT:-$HERE/release-main-guard.sh}"
+GUARD="${RELEASE_MAIN_GUARD_SUBJECT:-$HERE/../lib/main-guard.sh}"
 [ -f "$GUARD" ] || { echo "FAIL  no guard at $GUARD"; exit 1; }
 unset ALLOW_UNMERGED_RELEASE RELEASE_MAIN_GUARD_REMOTE RELEASE_MAIN_GUARD_BRANCH RELEASE_MAIN_GUARD_TONEBOX_CONFIG
 
