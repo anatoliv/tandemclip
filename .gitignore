@@ -24,11 +24,10 @@ Packaging/crashbox-dsn.local
 # release path never reads it; the entry stays so a restored copy is never committed.
 Packaging/sentry-dsn.local
 
-# Learning log is business analysis (internal ticket IDs, infra detail) and this
-# repo publishes DIRECTLY to a public remote. Canonical copy is private:
-# ~/Projects/_learnings/logs/tandemclip/learning-log.md — this path is a symlink.
+# Learning log is business analysis (internal ticket IDs, infra detail). This path
+# is a symlink into a private store outside the repository; never track it.
 docs/learning-log.md
 
-# Local ops tooling: mirrors this repo to the PRIVATE backup remote.
-# Untracked because origin here is the PUBLIC repo. See TBX-3882.
+# Local ops tooling from before the private origin (it mirrored to a backup remote).
+# Kept ignored so a leftover copy is never committed.
 Scripts/backup-repo.sh

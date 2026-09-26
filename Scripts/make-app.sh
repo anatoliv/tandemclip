@@ -254,7 +254,7 @@ if [[ -n "${NOTARY_PROFILE}" ]]; then
     ZIP="build/${APP_NAME}.zip"
     ditto -c -k --keepParent "${BUNDLE}" "${ZIP}"
     # Bounded and retried like the DMG step. This submission ran with no outer clock
-    # at all until the release kit (TBX-7517): the upload is what hangs, and
+    # at all until the release kit: the upload is what hangs, and
     # notarytool's own --timeout does not cover it.
     . Scripts/release-kit/lib/notarize.sh
     if ! rk_notarize "${ZIP}" "${NOTARY_PROFILE}"; then

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-release-entry-main-guard.sh: drive the real Scripts/release.sh against a planted
-# unmerged commit and prove it refuses before any side effect (TBX-7466, ESTATE E19).
+# unmerged commit and prove it refuses before any side effect.
 #
 # Hermetic: a throwaway repo holding this checkout's Scripts/ and Packaging/Info.plist, a
 # bare local "origin", a temp HOME, and every side-effecting tool stubbed on PATH to log

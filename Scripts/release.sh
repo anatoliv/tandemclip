@@ -109,7 +109,7 @@ if [[ "$PUBLISH" == "1" && -z "$RESUME_MANIFEST" && -n "$(git status --porcelain
     exit 1
 fi
 
-# 0a1b. Ship only what origin/main already contains (ESTATE E19, TBX-7466).
+# 0a1b. Ship only what origin/main already contains.
 #       0.25.3 went out from an unmerged branch: the appcast served it while
 #       main's cask still said 0.25.1, so the next release from main would have
 #       quietly taken it back. Checked on both halves of a publication, before
@@ -155,6 +155,9 @@ if [[ -n "$RESUME_MANIFEST" ]]; then
     EVENT_RELEASE="com.tandemclip@${VERSION}+${BUILD_NUM}.${SOURCE_COMMIT}"
     if [[ -z "${CRASHBOX_ARTIFACT_RECEIPT_FILE:-}" || -z "${TANDEMCLIP_CRASHBOX_PROJECT_ID:-}" ]]; then
         echo "error: resume requires CRASHBOX_ARTIFACT_RECEIPT_FILE and TANDEMCLIP_CRASHBOX_PROJECT_ID." >&2
+        echo "       Upload the prepared dSYM archive with" >&2
+        echo "         Scripts/upload-dsym.sh ${DEBUG_ARCHIVE} tandemclip-macos" >&2
+        echo "       It keeps the receipt under dist/ and prints the CRASHBOX_ARTIFACT_RECEIPT_FILE=... line to use." >&2
         exit 1
     fi
     verify_prepared_release
@@ -195,11 +198,11 @@ else
 #      A running copy holds files open in the tree `hdiutil create` reads, which
 #      produces a CORRUPT DMG — and a corrupt DMG makes `notarytool submit` hang
 #      exactly like a dead connection: nothing reaches Apple, no error is
-#      printed, and every network check comes back clean. Baton lost two
+#      printed, and every network check comes back clean. A sibling app lost two
 #      debugging sessions to precisely this, chasing connectivity and even a VPN
 #      that was not in the route, when the image was simply bad.
 #
-#      Deliberately narrower than Baton's guard, which refuses ANY running copy.
+#      Deliberately narrower than that app's guard, which refuses ANY running copy.
 #      TandemClip is an always-resident menu-bar agent, so a copy running from
 #      /Applications is the normal state of every Mac it is installed on and
 #      blocking on it would mean quitting clipboard sync for every release. That
@@ -385,7 +388,7 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
     echo "==> Notarizing DMG"
     # Each attempt runs under an outer wall clock, because the upload is what hangs
     # and notarytool's own --timeout never fires on it. The clock reaps only its own
-    # attempt; nothing here signals another lane's notarization (TBX-6235). Details in
+    # attempt; nothing here signals another lane's notarization. Details in
     # the release kit's lib/notarize.sh.
     . Scripts/release-kit/lib/notarize.sh
     if ! rk_notarize "$DMG" "$NOTARY_PROFILE"; then
@@ -470,8 +473,9 @@ if [[ "$PREPARE_RELEASE" == "1" ]]; then
     prepared_release write "$PREPARED_MANIFEST"
     echo "==> Prepared release paused before publication"
     echo "    manifest: $PREPARED_MANIFEST"
-    echo "    Upload the dSYM archive privately, retain its Crashbox receipt, then"
-    echo "    resume these exact bytes with PUBLISH=1 RESUME_PREPARED_RELEASE=$PREPARED_MANIFEST."
+    echo "    Upload the dSYM archive with Scripts/upload-dsym.sh $DEBUG_ARCHIVE tandemclip-macos,"
+    echo "    then resume these exact bytes with the CRASHBOX_ARTIFACT_RECEIPT_FILE line it prints and"
+    echo "    PUBLISH=1 RESUME_PREPARED_RELEASE=$PREPARED_MANIFEST."
 fi
 fi
 
@@ -572,7 +576,7 @@ if [[ "$PUBLISH" == "1" ]]; then
     # 5c. Record the release, last: commit the cask and landing-page bump this run
     #     wrote, push it to main, and tag that commit v$VERSION. This used to be a
     #     manual step after the script (CONTRIBUTING.md), and 0.25.1 and 0.25.3 both
-    #     went out without it (TBX-7509). Only verified releases get here, and the
+    #     went out without it. Only verified releases get here, and the
     #     next preflight refuses to cut another while this one is untagged, so a
     #     failure here is loud rather than forgotten.
     echo "==> Recording the release on main"
@@ -582,4 +586,9 @@ if [[ "$PUBLISH" == "1" ]]; then
         echo "       until its publish commit is on main and tagged." >&2
         exit 1
     fi
+    # The Homebrew tap is the PUBLIC repository's Casks/, and the public repository is a
+    # mirror refreshed by a separate private step. Until that runs, brew users are still
+    # offered the previous release even though Sparkle and the site already serve this one.
+    echo "==> NOT DONE: the Homebrew tap still pins the previous release."
+    echo "    Refresh the public mirror now so brew install gets $VERSION."
 fi

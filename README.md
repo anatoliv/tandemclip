@@ -245,12 +245,17 @@ NOTARY_PROFILE="your-notary-profile" \
 PREPARE_RELEASE=1 PUBLISH=0 \
 Scripts/release.sh
 
-# 2. Upload the printed dSYM archive through Crashbox's protected artifact path
-#    and retain its JSON receipt outside the repository.
+# 2. Upload the printed dSYM archive to Crashbox. This runs the upload over SSH
+#    as the crashbox service account (no token), checks Crashbox's coverage
+#    verdict for the exact release, keeps the receipt at 0600 under the
+#    gitignored dist/, and prints the CRASHBOX_ARTIFACT_RECEIPT_FILE=... line.
+CRASHBOX_SSH_HOST="<the Crashbox host>" \
+TANDEMCLIP_CRASHBOX_PROJECT_ID="project-uuid" \
+Scripts/upload-dsym.sh dist/TandemClip_<version>_<build>_<commit>.dSYM.zip tandemclip-macos
 
 # 3. Resume the prepared bytes. This verifies the manifest and receipt twice,
 #    including immediately before the first external write; it does not rebuild.
-CRASHBOX_ARTIFACT_RECEIPT_FILE="/protected/path/receipt.json" \
+CRASHBOX_ARTIFACT_RECEIPT_FILE="<the path step 2 printed>" \
 TANDEMCLIP_CRASHBOX_PROJECT_ID="project-uuid" \
 RESUME_PREPARED_RELEASE="/path/printed/by/the/prepare/step.prepared.json" \
 PUBLISH=1 PUBLISH_DEST="user@host:/srv/tandemclip/" \
@@ -299,8 +304,9 @@ To prepare a build, put its public DSN in the **gitignored**
 keeps `CrashboxDSN` empty, so a DSN is never committed. `release.sh` verifies
 the release binary and dSYM UUIDs match, then creates a private dSYM archive and
 prints its SHA-256. `PREPARE_RELEASE=1 PUBLISH=0` also records the immutable
-release manifest. Upload that archive through Crashbox's protected
-project-scoped artifact path and retain the JSON receipt outside the repository.
+release manifest. Upload that archive with `Scripts/upload-dsym.sh <archive>
+tandemclip-macos`, which keeps the JSON receipt at mode `0600` under the
+gitignored `dist/` and refuses unless Crashbox reports the exact release covered.
 The later resume requires `CRASHBOX_ARTIFACT_RECEIPT_FILE` and
 `TANDEMCLIP_CRASHBOX_PROJECT_ID`; it refuses unless the receipt says `ready` for
 the exact project, release string, and archived bytes in the manifest. The
@@ -321,42 +327,6 @@ bundle/source/version identity, arm64 executable, empty reporting metadata,
 signer, Gatekeeper acceptance, and app/DMG notarization staples. It refuses to
 overwrite an existing retained artifact. The ordinary signed build and release
 paths still require Crashbox; the rollback-only flag cannot override that gate.
-
-### Source-bound Crashbox rollout proof
-
-The signed Crashbox observation scope is created only after a controller has
-verified the exact candidate and retained reporting-disabled DMGs, exercised
-that rollback, restored the byte-identical candidate, and published the
-controller-derived receipt pair through Crashbox's protected signer. Preflight
-is read-only:
-
-```sh
-Scripts/prove-crashbox-rollout.py preflight \
-  --publish-host your-crashbox-host \
-  --candidate-dmg /retained/TandemClip_0.25.1_aarch64.dmg \
-  --rollback-dmg /retained/TandemClip_0.25.1_63_COMMIT_reporting_disabled_aarch64.dmg
-```
-
-The publisher host has no default. Pass `--publish-host`, or set
-`TANDEMCLIP_CRASHBOX_PUBLISH_HOST`; the controller refuses to start without one.
-
-After separately approving the two TandemClip-only restarts, replace
-`preflight` with `prove`. The controller takes no project, release, proof UUID,
-timestamp, reporting mode, key path, rollback result, or credential argument;
-those values are derived from the verified artifacts or fixed by the protocol.
-If publication fails after the candidate has been restored, use `resume` with
-the same two DMGs. It accepts only one exact mode-0600 failed journal, rechecks
-the artifacts, installed candidate, running process, and remote archive, and
-retries publication without restarting TandemClip.
-`supersede` is narrower still: it accepts only the one signed proof produced by
-the retired colon-alias controller, proves that alias is the server's current
-receipt pair, and republishes the same measured transition under a fresh proof
-UUID with the exact `name@version+build.commit` release emitted by TandemClip.
-It does not restart the app or rewrite the superseded proof-specific records.
-It keeps a mode-`0600` transaction journal under Application Support, restores
-the original candidate on failure, and does not activate the measurement scope
-or submit a canary. Those remain explicit follow-up steps using the published
-proof-specific configuration record.
 
 ## Roadmap
 
@@ -404,8 +374,10 @@ Please keep changes focused, run the tests, and match the existing style. The
 design system (`docs/design/DESIGN_SYSTEM.md`) is enforced by a drift lint in
 `Scripts/check-release.sh`, views draw from `Tokens`, not raw numbers.
 
-This repo is published directly (there's no sanitizing mirror), so enable the
-secret-scan **pre-push guard** once after cloning:
+This repository is a published mirror of the maintainer's working repository,
+refreshed as changes land. Pull requests are welcome here. An accepted one is
+applied upstream and arrives with the next refresh, so GitHub shows it as closed
+rather than merged. Enable the secret-scan **pre-push guard** once after cloning:
 
 ```sh
 git config core.hooksPath .githooks   # blocks pushing LAN IPs, tokens, DSNs, private keys

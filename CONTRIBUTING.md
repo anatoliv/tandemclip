@@ -32,6 +32,9 @@ open build/TandemClip.app
   `docs/design/DESIGN_SYSTEM.md`.
 - For user-facing changes, add a line to `CHANGELOG.md` under an "Unreleased"
   heading.
+- This repository is a published mirror of the maintainer's working repository.
+  An accepted pull request is applied there and reaches this repository with the
+  next refresh, so GitHub shows it as closed rather than merged.
 
 ## The pre-publish gate
 
@@ -75,8 +78,11 @@ The guards live in the vendored release kit, `Scripts/release-kit/`. Don't edit
 those files: the preflight checks them against their manifest. They are updated
 from the kit's own repository.
 
-After that, existing users auto-update via Sparkle (from `appcast.xml`), and
-Homebrew users get it on their next `brew update && brew upgrade`.
+After that, existing users auto-update via Sparkle (from `appcast.xml`).
+Homebrew reads the cask from this public repository, which is refreshed from the
+working repository as a separate step after the release (the release run ends
+with a reminder). Homebrew users get the new version on their next
+`brew update && brew upgrade` after that refresh.
 
 **Gotchas**
 

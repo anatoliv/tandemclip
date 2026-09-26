@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Secret scanner for the public repo. TandemClip's `origin` IS the public
-# GitHub repo (no sanitizing mirror), so this is the backstop between a bad
-# commit and public history. Wired as a pre-push hook via:
+# Secret scanner. The public repo is a filtered mirror, published by a separate
+# step that runs its own guards; this is the earlier and cheaper check, run on
+# every push and available to anyone with a clone. A push to the private repo only
+# reports findings (see TARGET_PUBLIC below). Wired as a pre-push hook via:
 #
 #   git config core.hooksPath .githooks
 #
@@ -37,8 +38,8 @@ LAN_RE='192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
 # exemption covers the whole file, prose included — so this is the one place in the
 # repo where writing a real hostname in a comment is guaranteed NOT to be caught. The
 # first draft of this block did exactly that and published it. Keep the prose generic.
-# Keep in sync with Baton's scripts/publish-repo.sh guard (c): same author, same
-# homelab, same failure mode.
+# Keep in sync with the internal-name guard of the private publish script: same
+# author, same homelab, same failure mode.
 HOST_RE='\b(web|ai|db|nas|dev|tm)-[0-9]{2}\b|\bagent-macbook\b|getvirtualview|[a-z]+-notarize\b|/Users/anatoli'
 
 # Paths that must never appear in public history. Anchored prefixes, matched

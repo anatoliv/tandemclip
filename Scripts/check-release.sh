@@ -36,7 +36,7 @@ fi
 # complete (release kit rk_require_live_tag). The committed cask pins
 # the release users are on; if that version has no tag, this guard would compare
 # against an older one and pass a build number that is not really new. 0.25.1 and
-# 0.25.3 both shipped untagged and sat that way for a week (TBX-7509).
+# 0.25.3 both shipped untagged and sat that way for a week.
 CASK_VERSION="$(sed -nE 's/^[[:space:]]*version "([^",]+).*/\1/p' Casks/tandemclip.rb 2>/dev/null | head -1)"
 . Scripts/release-kit/lib/tags.sh
 rk_require_live_tag "$CASK_VERSION" "$VERSION" . || exit 1
@@ -84,9 +84,21 @@ fi
 # DMG and can only run afterwards. One file, one source of truth, two moments.
 if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-artifact-receipt.py
+    if [[ -f Scripts/test-upload-dsym.py ]]; then
+        PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-upload-dsym.py
+    fi
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-prepared-release.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-reporting-disabled-rollback.py
-    PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-rollout-proof.py
+    # Private-only tests: the public mirror leaves these files out (they name host
+    # internals, or the mirror tooling itself), so a public checkout skips them. Every
+    # other line here runs unconditionally, and the mirror build refuses a snapshot in
+    # which an unconditional line names a file that did not ship.
+    if [[ -f Scripts/test-crashbox-rollout-proof.py ]]; then
+        PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-crashbox-rollout-proof.py
+    fi
+    if [[ -f Scripts/test-publish-repo.py ]]; then
+        PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-publish-repo.py
+    fi
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-package-dsym.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-dsym-source-proof.py
     # The release kit: its pin (the vendored copy is exactly the version it claims) and
