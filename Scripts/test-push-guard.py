@@ -195,7 +195,7 @@ class SecretScanTests(unittest.TestCase):
 
     def test_private_destination_warns_and_allows(self) -> None:
         self.plant("notes.txt", f"host at {LAN_ADDRESS}")
-        result = self.scan("origin", f"https://github.com/someone/{PRIVATE_NAME}.git")
+        result = self.scan("--pre-push", "origin", f"https://github.com/someone/{PRIVATE_NAME}.git")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("LAN IP  notes.txt", result.stdout)
         self.assertIn("PRIVATE repository", result.stderr)
@@ -209,14 +209,14 @@ class SecretScanTests(unittest.TestCase):
         for name, url in (("public", "https://github.com/someone/tandemclip.git"),
                           ("fork", "git@example.invalid:someone/other.git")):
             with self.subTest(url=url):
-                result = self.scan(name, url)
+                result = self.scan("--pre-push", name, url)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn(f"refusing to push to {name}", result.stderr)
                 self.assertIn("treated as public", result.stderr)
 
     def test_unknown_url_fails_closed(self) -> None:
         self.plant("notes.txt", f"host at {LAN_ADDRESS}")
-        result = self.scan("origin")
+        result = self.scan("--pre-push", "origin")
         self.assertEqual(result.returncode, 1)
         self.assertIn("refusing to push", result.stderr)
 
@@ -224,7 +224,7 @@ class SecretScanTests(unittest.TestCase):
         # A remote URL can carry a token in its userinfo.
         self.plant("notes.txt", f"host at {LAN_ADDRESS}")
         marker = "userinfo" + "marker42"
-        result = self.scan("public", f"https://{marker}@github.com/someone/tandemclip.git")
+        result = self.scan("--pre-push", "public", f"https://{marker}@github.com/someone/tandemclip.git")
         self.assertEqual(result.returncode, 1)
         self.assertNotIn(marker, result.stdout + result.stderr)
 
@@ -236,7 +236,7 @@ class SecretScanTests(unittest.TestCase):
         tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(self.scan().returncode, 0, "the tree alone is clean")
         refs = f"refs/heads/main {tip} refs/heads/main {base}\n"
-        result = self.scan("public", "https://github.com/someone/tandemclip.git", stdin=refs)
+        result = self.scan("--pre-push", "public", "https://github.com/someone/tandemclip.git", stdin=refs)
         self.assertEqual(result.returncode, 1)
         self.assertIn("SECRET  config.txt:1  rule=aws-access-key-id  (in ", result.stdout)
 
@@ -250,7 +250,7 @@ class SecretScanTests(unittest.TestCase):
         self.box.commit(self.repo, "remove it again")
         tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
         refs = f"refs/heads/topic {tip} refs/heads/topic {'0' * 40}\n"
-        result = self.scan("public", "https://github.com/someone/tandemclip.git", stdin=refs)
+        result = self.scan("--pre-push", "public", "https://github.com/someone/tandemclip.git", stdin=refs)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("SECRET  config.txt:1  rule=aws-access-key-id  (in ", result.stdout)
 
@@ -267,6 +267,86 @@ class SecretScanTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"SECRET  {MIRROR_SCRIPT}", result.stdout)
         self.assertNotIn("INFRA", result.stdout)
+
+
+class ManualModeNeverReadsStdin(unittest.TestCase):
+    """A manual run finishes on its own whatever stdin is.
+
+    An agent shell or CI step hands the scanner a stdin that is open, is not a
+    terminal, and is never closed. When the scanner guessed hook mode from `! -t 0`
+    it sat reading that pipe forever. Only `--pre-push` may read stdin now, so these
+    runs keep the pipe open for the whole run and must still finish in seconds.
+    """
+
+    TIMEOUT = 5  # seconds; the scan of this fixture takes well under one
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+        self.repo = self.box.repo()
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def scan_with_open_stdin(self, *args: str, feed: str = "") -> subprocess.CompletedProcess:
+        proc = subprocess.Popen(["bash", "Scripts/secret-scan.sh", *args], cwd=self.repo,
+                                env=self.box.env, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            if feed:
+                proc.stdin.write(feed)
+                proc.stdin.flush()
+            # stdin stays open until the scanner has exited: never send EOF.
+            try:
+                proc.wait(timeout=self.TIMEOUT)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                self.fail(f"the scan was still running after {self.TIMEOUT}s with stdin "
+                          "open: it is reading stdin in manual mode")
+            out, err = proc.stdout.read(), proc.stderr.read()
+        finally:
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                stream.close()
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+
+    def test_open_empty_pipe_reports_the_tree(self) -> None:
+        (self.repo / "notes.txt").write_text(f"host at {LAN_ADDRESS}\n")
+        self.box.commit(self.repo, "a finding")
+        result = self.scan_with_open_stdin()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("LAN IP  notes.txt:1  rule=lan-ip\n", result.stdout)
+        self.assertIn("findings above", result.stderr)
+
+    def test_open_empty_pipe_on_a_clean_tree(self) -> None:
+        result = self.scan_with_open_stdin()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("secret-scan clean", result.stdout)
+
+    def test_junk_on_stdin_is_ignored(self) -> None:
+        # The junk includes a well-formed ref line whose range holds a secret that was
+        # added and removed. Were stdin read, that range would be scanned and refused;
+        # manual mode scans the tree only, and the tree is clean.
+        base = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        (self.repo / "config.txt").write_text(f"key = {KEY_ID}\n")
+        self.box.commit(self.repo, "plant")
+        (self.repo / "config.txt").unlink()
+        self.box.commit(self.repo, "remove it again")
+        tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        junk = ("not a ref line\n\x01 control bytes\n"
+                f"refs/heads/main {tip} refs/heads/main {base}\n"
+                + "x" * 5000 + "\n")
+        result = self.scan_with_open_stdin(feed=junk)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("secret-scan clean", result.stdout)
+        self.assertNotIn("config.txt", result.stdout + result.stderr)
+
+    def test_positional_arguments_without_the_flag_are_refused(self) -> None:
+        # The old hook interface. Treated as manual it would skip the range scan without
+        # a word, so it is a usage error: exit 2, stdin untouched, nothing scanned.
+        result = self.scan_with_open_stdin("public", "https://github.com/someone/tandemclip.git")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--pre-push", result.stderr)
+        self.assertNotIn("clean", result.stdout)
 
 
 class FindingsNeverEchoTheMatch(unittest.TestCase):
@@ -325,7 +405,7 @@ class FindingsNeverEchoTheMatch(unittest.TestCase):
         self.box.commit(self.repo, "tidy\n\nrotated " + FAKE_SECRETS["aws-access-key-id"])
         tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
         refs = f"refs/heads/main {tip} refs/heads/main {self.base}\n"
-        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "public",
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "--pre-push", "public",
                                           "https://github.com/someone/tandemclip.git"], refs)
         self.assertEqual(result.returncode, 1)
         self.assertIn("refusing to push", result.stderr)
@@ -335,7 +415,7 @@ class FindingsNeverEchoTheMatch(unittest.TestCase):
 
     def test_private_destination_still_reports_and_allows(self) -> None:
         self.plant_all()
-        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "origin",
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "--pre-push", "origin",
                                           f"https://github.com/someone/{PRIVATE_NAME}.git"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_no_part_echoed(result)

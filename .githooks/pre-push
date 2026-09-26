@@ -9,5 +9,7 @@
 # push anywhere else is treated as public and refused.
 #
 # git passes the remote NAME as $1 and its URL as $2. Forward both: the URL is how
-# the scan tells the private repository from everything else.
-exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh" "$@"
+# the scan tells the private repository from everything else. --pre-push is what
+# tells the scanner to read git's ref list from stdin; without it the scanner never
+# touches stdin, so a manual run from a non-interactive shell cannot hang.
+exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh" --pre-push "$@"

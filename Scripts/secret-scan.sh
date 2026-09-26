@@ -23,8 +23,17 @@
 #      the only reliable signal is the path itself. This is how SECURITY_AUDIT.md
 #      and web/ reached public history.
 #
-# Run manually to scan just the tree: Scripts/secret-scan.sh  (exit 1 on any finding)
-# As a pre-push hook it also reads stdin and scans the pushed commit range.
+# Two modes, chosen by the arguments and never by what stdin looks like:
+#
+#   Scripts/secret-scan.sh                             manual: the tracked tree only
+#   Scripts/secret-scan.sh --pre-push <remote> <url>   hook: tree + pushed range
+#
+# Manual mode never reads stdin (exit 1 on any finding). Only .githooks/pre-push passes
+# --pre-push, and only then is stdin read, as git's ref list. Guessing from stdin was
+# wrong both ways: a hook's stdin is never a terminal, and neither is an agent's shell
+# or a CI step, so a manual run there sat waiting on a pipe that never closed.
+# Any other arguments are a usage error (exit 2), so a caller that forgets the flag
+# fails loudly instead of silently skipping the range scan.
 #
 # Output: one line per finding, naming WHERE and WHICH RULE, never WHAT matched:
 #
@@ -175,14 +184,25 @@ is_private_path() {
 # and refused: the public mirror's push URL is disabled in the maintainer's checkout,
 # so a push that gets this far with another URL is a clone pushing somewhere new.
 #
-# Fails CLOSED: an unrecognised or absent URL is treated as public. With no remote at
-# all (run by hand, not as a hook) it is a plain scan and says so.
+# Fails CLOSED: an unrecognised or absent URL is treated as public. Run by hand (no
+# --pre-push) it is a plain scan of the tree and says so.
+MANUAL=1
+REMOTE=""
+URL=""
+if [[ $# -gt 0 ]]; then
+    if [[ "$1" != "--pre-push" || $# -gt 3 ]]; then
+        echo "usage: Scripts/secret-scan.sh                           scan the tracked tree" >&2
+        echo "       Scripts/secret-scan.sh --pre-push <remote> <url>   as the pre-push hook" >&2
+        exit 2
+    fi
+    MANUAL=0
+    REMOTE="${2:-}"
+    URL="${3:-}"
+fi
 TARGET_PUBLIC=1
-case "${2:-}" in
+case "$URL" in
     *tandemclip-private*) TARGET_PUBLIC=0 ;;
 esac
-MANUAL=0
-[[ -z "${1:-}" && -z "${2:-}" ]] && MANUAL=1
 
 hit=0
 
@@ -206,7 +226,7 @@ while IFS= read -r f; do
 done < <(git ls-files)
 
 # --- 2 + 3. Commits being pushed ---------------------------------------------
-# Only when invoked as a pre-push hook (git feeds refs on stdin). Scanning the
+# Only in hook mode (--pre-push), where git feeds the refs on stdin. Scanning the
 # range catches a secret that was added and later deleted: still in history.
 scan_range() {
     local commit path blob class
@@ -244,7 +264,7 @@ scan_range() {
 }
 
 ZERO='0000000000000000000000000000000000000000'
-if [[ ! -t 0 ]]; then
+if [[ $MANUAL -eq 0 && ! -t 0 ]]; then
     while read -r _local_ref local_sha _remote_ref remote_sha; do
         [[ -z "${local_sha:-}" ]] && continue
         [[ "$local_sha" == "$ZERO" ]] && continue          # branch deletion
@@ -264,14 +284,14 @@ if [[ $hit -ne 0 ]]; then
         exit 1
     fi
     if [[ $TARGET_PUBLIC -eq 0 ]]; then
-        echo "! secret-scan: allowing this push, because ${1:-this remote} is the PRIVATE repository." >&2
+        echo "! secret-scan: allowing this push, because ${REMOTE:-this remote} is the PRIVATE repository." >&2
         echo "  Nothing above is public yet. The mirror publish refuses these shapes, so fix" >&2
         echo "  them in the source before the next publish. A real credential is exposed to" >&2
         echo "  everyone with access to the private repository once pushed: rotate it." >&2
         exit 0
     fi
     # The URL is not echoed: a remote URL can carry a token in its userinfo.
-    echo "✗ secret-scan: refusing to push to ${1:-this remote}, which is not the private" >&2
+    echo "✗ secret-scan: refusing to push to ${REMOTE:-this remote}, which is not the private" >&2
     echo "  repository and is treated as public. Remove the above first." >&2
     echo "  A secret already in a pushed commit needs history rewritten, not just a new commit." >&2
     exit 1
