@@ -10,11 +10,11 @@
 #   rk_require_single_header <url> <header> [must-contain]
 #       The response to <url> carries <header> exactly once, containing [must-contain] when
 #       given. Two Strict-Transport-Security headers (origin nginx plus the proxy's toggle)
-#       leave the effective policy to header order, which nobody wrote down (TBX-5060).
+#       leave the effective policy to header order, which nobody wrote down.
 #
 # Both fetch first and match second, never `curl | grep -q`: under pipefail that pipeline
-# can report SIGPIPE (141) when it succeeded, depending on body size (see baton's
-# publish.sh). RK_CURL_OPTS adds curl options (tests use it for a local server).
+# can report SIGPIPE (141) when it succeeded, depending on body size. RK_CURL_OPTS adds
+# curl options (tests use it for a local server).
 
 rk_verify_served_sha() {
   local url="$1" want="$2" tmp have bytes

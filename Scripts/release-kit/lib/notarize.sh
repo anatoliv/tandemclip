@@ -8,7 +8,7 @@
 # Apple notary service" and nothing reaches `notarytool history`. Observed at 69 and 18
 # minutes in one afternoon, both killed by hand.
 #
-# Why no pkill (TBX-6235, TBX-7513): several apps' releases run on this Mac at once, and
+# Why no pkill: several apps' releases run on one Mac at once, and
 # `pkill -f "notarytool submit"` matches all of them. It is not needed. xcrun execs the
 # tool, so notarytool runs as the direct child of GNU timeout and in its process group
 # (verified 2026-09-25), and timeout signals that group when the clock fires. The clock
@@ -16,8 +16,7 @@
 #
 # The clock must be real. A `timeout` shell function or stub ahead of coreutils would run
 # the attempt unbounded, so the clock is proven first: a 1s limit over a 3s sleep must
-# exit 124 (seedbed's probe). Without a working GNU timeout this refuses, having
-# submitted nothing.
+# exit 124. Without a working GNU timeout this refuses, having submitted nothing.
 #
 # RK_NOTARIZE_ATTEMPTS (3), RK_NOTARIZE_ATTEMPT_SECONDS (900) and RK_NOTARIZE_WAIT (12m,
 # handed to notarytool as its verdict wait) exist so tests can run the loop in seconds.

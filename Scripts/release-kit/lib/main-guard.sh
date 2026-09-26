@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # main-guard.sh: refuse to ship a commit that origin/main does not contain.
 #
-# ESTATE E19 / TBX-7466. Six projects had production running a commit that main did not
+# Six projects had production running a commit that main did not
 # have, so the next routine release from main quietly took the fix back. Every release
 # script checked for a clean tree; none checked that the commit it shipped was merged.
 #
@@ -21,14 +21,17 @@
 # merge-back card. Every later run warns about logged hotfixes origin/main still lacks,
 # because a release from main would take them back.
 #
-# Filing the card: on the owner's Mac the card goes to the local Tonebox server, read from
-# mcpServers.tonebox in ~/.claude.json (the same entry agents use), as a high-priority quick
-# task in the project named like the origin repo (threadstow-private -> Threadstow), or
-# unfiled when no project matches. Where that is not reachable (a deploy host, no
-# python3, Tonebox not running) the card text is printed to file by hand instead, and the
-# release is admitted either way. A checkout whose origin is a local path (a test's
-# throwaway repo) never files, unless RELEASE_MAIN_GUARD_TONEBOX_CONFIG names a config
-# explicitly; pointing that at a file that does not exist turns filing off.
+# Filing the card: on the owner's Mac the card goes to the house task tracker, an MCP
+# server whose entry name is house configuration rather than part of this file:
+# RELEASE_MAIN_GUARD_TRACKER, or else the first line of ~/.config/release-kit/tracker. Its
+# URL and headers are read from mcpServers.<name> in ~/.claude.json (the same entry agents
+# use), and the card is a high-priority quick task in the project named like the origin
+# repo (app-private -> App), or unfiled when no project matches. With no tracker named,
+# or where it is not reachable (a deploy host, no python3, the tracker not running), the
+# card text is printed to file by hand instead, and the release is admitted either way.
+# A checkout whose origin is a local path (a test's throwaway repo) never files, unless
+# RELEASE_MAIN_GUARD_TRACKER_CONFIG names a config explicitly; pointing that at a file
+# that does not exist turns filing off.
 #
 # RELEASE_MAIN_GUARD_REMOTE (default origin) and RELEASE_MAIN_GUARD_BRANCH (default main)
 # exist for tests and for a checkout whose trunk lives under another name.
@@ -85,7 +88,7 @@ release_main_guard() {
         echo "  $trunk (fetched just now) is missing these commits:"
         printf '%s\n' "$missing"
         echo "  Shipping them from a branch is how production ends up running code that the"
-        echo "  next release from main quietly takes back (ESTATE E19). Merge to main, then"
+        echo "  next release from main quietly takes back. Merge to main, then"
         echo "  release from a checkout of main."
       else
         echo "RELEASE REFUSED: could not fetch $trunk, so HEAD $short cannot be shown to be merged"
@@ -107,7 +110,7 @@ release_main_guard() {
     echo "RELEASE REFUSED: the override could not be logged to $log, and an unlogged override is not allowed." >&2
     return 1
   }
-  # The repo's name from its origin URL (threadstow-private.git -> threadstow), which a
+  # The repo's name from its origin URL (app-private.git -> app), which a
   # worktree's directory name is not.
   url="$(git -C "$dir" config --get "remote.$remote.url" 2>/dev/null)" || url=""
   name="${url%/}"; name="${name##*/}"; name="${name##*:}"; name="${name%.git}"; name="${name%-private}"
@@ -124,9 +127,9 @@ release_main_guard() {
     [ -z "$missing" ] || { echo "  Commits $trunk does not have:"; printf '%s\n' "$missing"; }
     echo "  Logged: $log"
     if [ -n "$filed" ]; then
-      echo "  MERGE-BACK REQUIRED. Filed in Tonebox as $filed:"
+      echo "  MERGE-BACK REQUIRED. Filed in the task tracker as $filed:"
     else
-      echo "  MERGE-BACK REQUIRED. Tonebox was not reachable from here, so file this card now:"
+      echo "  MERGE-BACK REQUIRED. The task tracker was not reachable from here, so file this card now:"
     fi
     echo "    $card"
     echo "  Until $trunk contains it, every release from main takes this fix back."
@@ -136,19 +139,25 @@ release_main_guard() {
 }
 
 # release_main_guard_file_card <origin url> <repo name> <card text>: file the merge-back
-# card in the local Tonebox. Prints where it landed and returns 0, or returns 1 having
+# card in the house task tracker. Prints where it landed and returns 0, or returns 1 having
 # filed nothing. Never prints the server's credentials.
 release_main_guard_file_card() {
-  local url="$1" repo="$2" text="$3" cfg="${RELEASE_MAIN_GUARD_TONEBOX_CONFIG:-}"
+  local url="$1" repo="$2" text="$3" cfg="${RELEASE_MAIN_GUARD_TRACKER_CONFIG:-}"
+  local server="${RELEASE_MAIN_GUARD_TRACKER:-}" named
+  if [ -z "$server" ]; then
+    named="${XDG_CONFIG_HOME:-${HOME:-/nonexistent}/.config}/release-kit/tracker"
+    [ -r "$named" ] && server="$(head -1 "$named" | tr -d '[:space:]')"
+  fi
+  [ -n "$server" ] || return 1
   if [ -z "$cfg" ]; then
     case "$url" in ""|/*|./*|../*|file:*) return 1 ;; esac
     cfg="${HOME:-/nonexistent}/.claude.json"
   fi
   [ -r "$cfg" ] && command -v python3 >/dev/null 2>&1 || return 1
-  python3 - "$cfg" "$repo" "$text" 2>/dev/null <<'PY'
+  python3 - "$cfg" "$repo" "$text" "$server" 2>/dev/null <<'PY'
 import json, re, sys, urllib.request
-cfg_path, repo, text = sys.argv[1:4]
-cfg = json.load(open(cfg_path))["mcpServers"]["tonebox"]
+cfg_path, repo, text, server = sys.argv[1:5]
+cfg = json.load(open(cfg_path))["mcpServers"][server]
 headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
 headers.update(cfg.get("headers") or {})
 session = [None]

@@ -1,6 +1,6 @@
 # Release kit (vendored)
 
-Vendored from `~/Projects/_release` at version 0.2.2 (49c2b69). Do not edit these files:
+Vendored from `~/Projects/_release` at version 0.3.0 (c8865df). Do not edit these files:
 `check.sh` verifies them against `MANIFEST.sha256` and refuses any difference. Change the
 kit in its own repository and re-run its `bin/sync.sh`.
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # test-main-guard.sh: plant unmerged commits and watch lib/main-guard.sh refuse them
-# (TBX-7466, ESTATE E19).
+# (the release kit's design notes, E19).
 #
 # Throwaway repos only: a bare "origin", a clone that releases, and a second clone that
-# pushes behind its back. No network: the merge-back card goes to a stub Tonebox on
-# 127.0.0.1. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy to prove a check can fail.
+# pushes behind its back. No network: the merge-back card goes to a stub task tracker
+# on 127.0.0.1. Point RELEASE_MAIN_GUARD_SUBJECT at a mutated copy to prove a check can fail.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GUARD="${RELEASE_MAIN_GUARD_SUBJECT:-$HERE/../lib/main-guard.sh}"
 [ -f "$GUARD" ] || { echo "FAIL  no guard at $GUARD"; exit 1; }
-unset ALLOW_UNMERGED_RELEASE RELEASE_MAIN_GUARD_REMOTE RELEASE_MAIN_GUARD_BRANCH RELEASE_MAIN_GUARD_TONEBOX_CONFIG
+unset ALLOW_UNMERGED_RELEASE RELEASE_MAIN_GUARD_REMOTE RELEASE_MAIN_GUARD_BRANCH RELEASE_MAIN_GUARD_TRACKER_CONFIG RELEASE_MAIN_GUARD_TRACKER
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf 'ok    %s\n' "$1"; }
@@ -91,11 +91,11 @@ git -C "$WORK/rel" remote set-url origin "$WORK/origin.git"
 
 # 9. The override admits the release, logs it, and prints the merge-back card text.
 HOTFIX="$(git -C "$WORK/rel" rev-parse HEAD)"
-out="$(cd "$WORK/rel" && ALLOW_UNMERGED_RELEASE="prod is down, TBX-0000" bash -c '. "$1" && release_main_guard' _ "$GUARD" 2>&1)"; rc=$?
+out="$(cd "$WORK/rel" && ALLOW_UNMERGED_RELEASE="prod is down, T-0000" bash -c '. "$1" && release_main_guard' _ "$GUARD" 2>&1)"; rc=$?
 expect_admitted "ALLOW_UNMERGED_RELEASE admits an unmerged HEAD" "$rc" "$out" "MERGE-BACK REQUIRED"
-expect_admitted "the override prints the card text with the reason" "$rc" "$out" "Reason: prod is down, TBX-0000"
+expect_admitted "the override prints the card text with the reason" "$rc" "$out" "Reason: prod is down, T-0000"
 LOG="$WORK/rel/.git/unmerged-releases.log"
-if grep -qF "$HOTFIX" "$LOG" 2>/dev/null && grep -qF "prod is down, TBX-0000" "$LOG"; then
+if grep -qF "$HOTFIX" "$LOG" 2>/dev/null && grep -qF "prod is down, T-0000" "$LOG"; then
   ok "the override is logged with the commit and the reason"
 else
   bad "the override left no log line in $LOG"
@@ -123,8 +123,8 @@ git -C "$WORK/wt" commit -q --allow-empty -m "worktree hotfix"
 out="$(cd "$WORK/wt" && ALLOW_UNMERGED_RELEASE="worktree case" bash -c '. "$1" && release_main_guard' _ "$GUARD" 2>&1)"; rc=$?
 if [ "$rc" = 0 ] && grep -qF "worktree case" "$LOG"; then ok "a worktree override lands in the shared log"; else bad "a worktree override did not reach $LOG. Got: $(head -c 400 <<<"$out")"; fi
 
-# 14-17. The override files its merge-back card in Tonebox when it can, and prints it when
-#        it cannot. A stub MCP server on 127.0.0.1 stands in for Tonebox and records calls.
+# 14-17. The override files its merge-back card in the task tracker when it can, and prints
+#        it when it cannot. A stub MCP server on 127.0.0.1 stands in for it and records calls.
 if ! command -v python3 >/dev/null 2>&1; then
   echo "skip  merge-back card filing (no python3 here, so the guard only prints the card)"
 else
@@ -146,7 +146,7 @@ class H(BaseHTTPRequestHandler):
             text = {"projects": [{"name": "Other", "archived": False}, {"name": "Origin", "archived": False}]}
             result = {"content": [{"type": "text", "text": json.dumps(text)}]}
         else:
-            text = {"created": True, "task": {"human_id": "TBX-9999", "text": req["params"]["arguments"]["text"]}}
+            text = {"created": True, "task": {"human_id": "T-9999", "text": req["params"]["arguments"]["text"]}}
             result = {"content": [{"type": "text", "text": json.dumps(text)}]}
         body = "event: message\ndata: " + json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n\n"
         self.send_response(200)
@@ -162,10 +162,10 @@ PY
   trap 'kill "$STUB_PID" 2>/dev/null; rm -rf "$WORK"' EXIT INT TERM
   for _ in $(seq 50); do [ -s "$WORK/stub-port" ] && break; sleep 0.1; done
   PORT="$(cat "$WORK/stub-port" 2>/dev/null)"
-  printf '{"mcpServers":{"tonebox":{"type":"http","url":"http://127.0.0.1:%s","headers":{"Authorization":"Bearer stub-secret-token"}}}}\n' "$PORT" >"$WORK/tonebox.json"
+  printf '{"mcpServers":{"stubtracker":{"type":"http","url":"http://127.0.0.1:%s","headers":{"Authorization":"Bearer stub-secret-token"}}}}\n' "$PORT" >"$WORK/tracker.json"
   # A port nothing listens on: bind one, note it, close it.
   DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
-  printf '{"mcpServers":{"tonebox":{"type":"http","url":"http://127.0.0.1:%s"}}}\n' "$DEAD_PORT" >"$WORK/dead.json"
+  printf '{"mcpServers":{"stubtracker":{"type":"http","url":"http://127.0.0.1:%s"}}}\n' "$DEAD_PORT" >"$WORK/dead.json"
   git -C "$WORK/rel" checkout -q -b card-cases origin/main 2>/dev/null
   git -C "$WORK/rel" commit -q --allow-empty -m "card hotfix"
   CARD_SHORT="$(git -C "$WORK/rel" rev-parse --short=12 HEAD)"
@@ -176,8 +176,8 @@ PY
 
   # 14. Reachable: filed as a quick task in the project named like the repo, with the token.
   : >"$STUB_LOG"
-  out="$(override "card case reachable" RELEASE_MAIN_GUARD_TONEBOX_CONFIG="$WORK/tonebox.json")"; rc=$?
-  expect_admitted "a reachable Tonebox gets the merge-back card filed" "$rc" "$out" "Filed in Tonebox as TBX-9999 in project Origin"
+  out="$(override "card case reachable" RELEASE_MAIN_GUARD_TRACKER=stubtracker RELEASE_MAIN_GUARD_TRACKER_CONFIG="$WORK/tracker.json")"; rc=$?
+  expect_admitted "a reachable tracker gets the merge-back card filed" "$rc" "$out" "Filed in the task tracker as T-9999 in project Origin"
   filed="$(python3 -c 'import json,sys
 for l in open(sys.argv[1]):
     c = json.loads(l)
@@ -187,20 +187,20 @@ for l in open(sys.argv[1]):
      && grep -qF "Reason: card case reachable" <<<"$filed"; then
     ok "the card names the hotfix, the repo and the reason, and goes to the matching project with the configured token"
   else bad "the stub did not receive the expected quick_task. Got: $filed"; fi
-  if grep -qF "stub-secret-token" <<<"$out"; then bad "the guard printed the Tonebox token"; else ok "the Tonebox token is never printed"; fi
+  if grep -qF "stub-secret-token" <<<"$out"; then bad "the guard printed the tracker token"; else ok "the tracker token is never printed"; fi
 
   # 15. Not reachable: the release is still admitted and the card text is printed to file.
-  out="$(override "card case dead" RELEASE_MAIN_GUARD_TONEBOX_CONFIG="$WORK/dead.json")"; rc=$?
-  expect_admitted "an unreachable Tonebox falls back to printing the card" "$rc" "$out" "Tonebox was not reachable from here, so file this card now:"
+  out="$(override "card case dead" RELEASE_MAIN_GUARD_TRACKER=stubtracker RELEASE_MAIN_GUARD_TRACKER_CONFIG="$WORK/dead.json")"; rc=$?
+  expect_admitted "an unreachable tracker falls back to printing the card" "$rc" "$out" "The task tracker was not reachable from here, so file this card now:"
   expect_admitted "and the printed card names the hotfix and the reason" "$rc" "$out" "Merge hotfix $CARD_SHORT into main of origin"
 
   # 16. A checkout whose origin is a local path (every test repo) never files by default,
-  #     even with a live Tonebox in ~/.claude.json.
-  cp "$WORK/tonebox.json" "$HOME/.claude.json"; : >"$STUB_LOG"
+  #     even with a live tracker in ~/.claude.json.
+  cp "$WORK/tracker.json" "$HOME/.claude.json"; mkdir -p "$HOME/.config/release-kit"; echo stubtracker >"$HOME/.config/release-kit/tracker"; : >"$STUB_LOG"
   out="$(override "card case local origin")"; rc=$?
   if [ "$rc" = 0 ] && [ ! -s "$STUB_LOG" ] && grep -qF "file this card now:" <<<"$out"; then
     ok "a local-path origin does not file a card from ~/.claude.json, it prints it"
-  else bad "a local-path origin reached Tonebox or did not print the card. Calls: $(wc -l <"$STUB_LOG")"; fi
+  else bad "a local-path origin reached the tracker or did not print the card. Calls: $(wc -l <"$STUB_LOG")"; fi
 
   # 17. A real-looking origin URL (rewritten to the local bare repo for the fetch) files from
   #     ~/.claude.json, and <name>-private matches the project <Name>.
@@ -208,7 +208,15 @@ for l in open(sys.argv[1]):
   git -C "$WORK/rel" remote set-url origin "https://git.example.invalid/acme/origin-private.git"
   : >"$STUB_LOG"
   out="$(override "card case default config")"; rc=$?
-  expect_admitted "with a hosted origin, the card is filed through ~/.claude.json" "$rc" "$out" "Filed in Tonebox as TBX-9999 in project Origin"
+  expect_admitted "with a hosted origin and the tracker named in ~/.config/release-kit/tracker, the card is filed through ~/.claude.json" "$rc" "$out" "Filed in the task tracker as T-9999 in project Origin"
+
+  # 18. Which tracker to file in is house configuration, not part of the kit: with none
+  #     named, a reachable config still files nothing, and the card is printed.
+  rm -f "$HOME/.config/release-kit/tracker"; : >"$STUB_LOG"
+  out="$(override "card case no tracker named")"; rc=$?
+  if [ "$rc" = 0 ] && [ ! -s "$STUB_LOG" ] && grep -qF "file this card now:" <<<"$out"; then
+    ok "with no tracker named, nothing is filed and the card is printed"
+  else bad "no tracker named, yet the stub was called or no card printed. Calls: $(wc -l <"$STUB_LOG")"; fi
   git -C "$WORK/rel" remote set-url origin "$WORK/origin.git"
   rm -f "$HOME/.claude.json"
 fi

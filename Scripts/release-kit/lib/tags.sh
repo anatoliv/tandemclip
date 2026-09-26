@@ -7,8 +7,8 @@
 #       cask, appcast or site) has no v<version> tag, unless it is the one being built.
 #       Release tooling reads "the last release" from tags (build-number checks, changelog
 #       ranges), so a missing tag makes those checks compare against an older release
-#       and pass things they should refuse. tandemclip shipped 0.25.1 and 0.25.3 untagged
-#       and ran a week that way (TBX-7509).
+#       and pass things they should refuse. Two releases once shipped untagged and ran a
+#       week that way.
 #
 #   rk_tag_release <version> <commit> <message> [remote] [repo-dir]
 #       Final step of a publish. Creates annotated tag v<version> on <commit>, pushes it,
