@@ -30,6 +30,15 @@ HOST_NAME = "web" + "-07"
 MIRROR_SCRIPT = "Scripts/" + "publish-repo.sh"
 PRIVATE_NAME = "tandemclip" + "-private"
 
+# Secret-shaped strings, fake and assembled here so no line of this file matches.
+# Each one's body is distinctive, so a leak of any part of it is detectable.
+FAKE_SECRETS = {
+    "aws-access-key-id": "AKIA" + "QZ7XW3FAKETEST42",
+    "github-token": "ghp" + "_" + "FakeScanFixture" + "0123456789xyz",
+    "private-key": "-----BEGIN " + "RSA PRIVATE KEY-----",
+    "dsn-with-key": "https://" + "fa4e" * 8 + "@o12345" + ".ingest.example.invalid/1",
+}
+
 
 class Sandbox:
     def __init__(self) -> None:
@@ -229,7 +238,21 @@ class SecretScanTests(unittest.TestCase):
         refs = f"refs/heads/main {tip} refs/heads/main {base}\n"
         result = self.scan("public", "https://github.com/someone/tandemclip.git", stdin=refs)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("SECRET  config.txt (in ", result.stdout)
+        self.assertIn("SECRET  config.txt:1  rule=aws-access-key-id  (in ", result.stdout)
+
+    def test_a_new_branch_scans_its_history_not_nothing(self) -> None:
+        # A new branch arrives with a zero remote sha, and its range is "<tip> --not
+        # --remotes=origin". Passed as ONE argument that was an unknown revision, so
+        # rev-list failed quietly and a secret added and removed on a new branch went
+        # out unscanned.
+        self.plant("config.txt", f"key = {KEY_ID}")
+        (self.repo / "config.txt").unlink()
+        self.box.commit(self.repo, "remove it again")
+        tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        refs = f"refs/heads/topic {tip} refs/heads/topic {'0' * 40}\n"
+        result = self.scan("public", "https://github.com/someone/tandemclip.git", stdin=refs)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("SECRET  config.txt:1  rule=aws-access-key-id  (in ", result.stdout)
 
     def test_mirror_script_is_exempt_from_the_name_check_only(self) -> None:
         self.plant(MIRROR_SCRIPT, f"guard pattern names {HOST_NAME}")
@@ -244,6 +267,101 @@ class SecretScanTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"SECRET  {MIRROR_SCRIPT}", result.stdout)
         self.assertNotIn("INFRA", result.stdout)
+
+
+class FindingsNeverEchoTheMatch(unittest.TestCase):
+    """A finding names its place and rule, never the text it matched.
+
+    The scanner runs in agent sessions and CI, so what it prints is copied into their
+    transcripts and logs. Echoing a caught secret there leaks it again. Every path
+    that reports a finding is driven here with fake secrets planted, and each one must
+    report path:line and the rule, keep its exit code, and print no part of a secret.
+    """
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+        self.repo = self.box.repo()
+        self.base = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def plant_all(self) -> None:
+        # Line 1 is filler, so a finding's line number is not trivially 1.
+        body = "filler\n" + "".join(f"value = {v}\n" for v in FAKE_SECRETS.values())
+        body += f"host at {LAN_ADDRESS}\ndeploy to {HOST_NAME}\n"
+        (self.repo / "cfg.txt").write_text(body)
+        self.box.commit(self.repo, "plant fake secrets")
+
+    def assert_no_part_echoed(self, result: subprocess.CompletedProcess) -> None:
+        out = result.stdout + result.stderr
+        for rule, secret in FAKE_SECRETS.items():
+            self.assertNotIn(secret, out, f"{rule}: the matched text was printed")
+            # Any distinctive part of it, not only the whole string.
+            for part in ("QZ7XW3", "FakeScanFixture", "RSA PRIVATE", "fa4efa4e", "o12345"):
+                self.assertNotIn(part, out, "part of a planted secret was printed")
+        self.assertNotIn(LAN_ADDRESS, out)
+        self.assertNotIn(HOST_NAME, out)
+        self.assertNotIn("value = ", out, "a matched line's content was printed")
+
+    def assert_tree_findings(self, stdout: str, suffix: str = "") -> None:
+        for line, rule in enumerate(FAKE_SECRETS, start=2):
+            self.assertIn(f"SECRET  cfg.txt:{line}  rule={rule}{suffix}\n", stdout)
+        n = len(FAKE_SECRETS) + 2
+        self.assertIn(f"LAN IP  cfg.txt:{n}  rule=lan-ip{suffix}\n", stdout)
+        self.assertIn(f"INFRA   cfg.txt:{n + 1}  rule=internal-host{suffix}\n", stdout)
+
+    def test_manual_scan(self) -> None:
+        self.plant_all()
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh"])
+        self.assertEqual(result.returncode, 1)
+        self.assert_no_part_echoed(result)
+        self.assert_tree_findings(result.stdout)
+
+    def test_pushed_range_including_a_removed_secret_and_a_commit_message(self) -> None:
+        self.plant_all()
+        planted = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        (self.repo / "cfg.txt").unlink()
+        self.box.commit(self.repo, "tidy\n\nrotated " + FAKE_SECRETS["aws-access-key-id"])
+        tip = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        refs = f"refs/heads/main {tip} refs/heads/main {self.base}\n"
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "public",
+                                          "https://github.com/someone/tandemclip.git"], refs)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("refusing to push", result.stderr)
+        self.assert_no_part_echoed(result)
+        self.assert_tree_findings(result.stdout, f"  (in {planted})")
+        self.assertIn(f"SECRET  commit message {tip}:3  rule=aws-access-key-id\n", result.stdout)
+
+    def test_private_destination_still_reports_and_allows(self) -> None:
+        self.plant_all()
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", "origin",
+                                          f"https://github.com/someone/{PRIVATE_NAME}.git"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_no_part_echoed(result)
+        self.assert_tree_findings(result.stdout)
+
+    def push_to(self, bare_name: str) -> subprocess.CompletedProcess:
+        self.box.git(self.repo, "config", "core.hooksPath", ".githooks")
+        bare = self.box.base / bare_name
+        self.box.git(None, "init", "-q", "--bare", str(bare))
+        self.box.git(self.repo, "remote", "add", "dest", str(bare))
+        return self.box.git(self.repo, "push", "dest", "HEAD:refs/heads/main", check=False)
+
+    def test_real_push_through_the_hook_to_a_public_destination(self) -> None:
+        self.plant_all()
+        result = self.push_to("tandemclip.git")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refusing to push to dest", result.stderr)
+        self.assert_no_part_echoed(result)
+        self.assert_tree_findings(result.stdout + result.stderr)
+
+    def test_real_push_through_the_hook_to_the_private_repository(self) -> None:
+        self.plant_all()
+        result = self.push_to(f"{PRIVATE_NAME}.git")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_no_part_echoed(result)
+        self.assert_tree_findings(result.stdout + result.stderr)
 
 
 class PrePushHookTests(unittest.TestCase):

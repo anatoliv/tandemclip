@@ -25,13 +25,39 @@
 #
 # Run manually to scan just the tree: Scripts/secret-scan.sh  (exit 1 on any finding)
 # As a pre-push hook it also reads stdin and scans the pushed commit range.
+#
+# Output: one line per finding, naming WHERE and WHICH RULE, never WHAT matched:
+#
+#   SECRET  config.txt:3  rule=aws-access-key-id
+#   SECRET  config.txt:3  rule=aws-access-key-id  (in <commit>)
+#   LAN IP  commit message <commit>:2  rule=lan-ip
+#   PRIVATE docs/launch/plan.md  (internal — must not be published)
+#
+# The matched text is deliberately absent. This runs in agent sessions and CI, and
+# whatever it prints is copied into their transcripts and logs, so printing a caught
+# secret leaks it a second time, to more places than the commit did. A live upload
+# token reached a transcript exactly that way on 2026-09-14. Open the file at the
+# line to see what it is.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# Each rule is `name=extended-regex`, split at the first `=`. The name is what a
+# finding reports in place of the text it matched.
+#
 # Tokens, Crashbox DSNs, private keys — never legitimate in the tree.
-SECRET_RE='ghp_[0-9A-Za-z]{20,}|gho_[0-9A-Za-z]{20,}|glpat-[0-9A-Za-z_-]{18,}|xox[abprs]-[0-9A-Za-z-]{10,}|AKIA[0-9A-Z]{16}|sntry[a-z]_[0-9a-f]{32}|https?://[0-9a-f]{16,}@o[0-9]+\.ingest\.|-----BEGIN [A-Z ]*PRIVATE KEY'
+SECRET_RULES=(
+    'github-token=ghp_[0-9A-Za-z]{20,}|gho_[0-9A-Za-z]{20,}'
+    'gitlab-token=glpat-[0-9A-Za-z_-]{18,}'
+    'slack-token=xox[abprs]-[0-9A-Za-z-]{10,}'
+    'aws-access-key-id=AKIA[0-9A-Z]{16}'
+    'sentry-token=sntry[a-z]_[0-9a-f]{32}'
+    'dsn-with-key=https?://[0-9a-f]{16,}@o[0-9]+\.ingest\.'
+    'private-key=-----BEGIN [A-Z ]*PRIVATE KEY'
+)
 # Private LAN IPs — deployment hosts, never something the public repo needs.
-LAN_RE='192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
+LAN_RULES=(
+    'lan-ip=192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
+)
 
 # Internal hostnames and infra names. These have no shape: a machine name is not a
 # credential and not an IP, so SECRET_RE and LAN_RE both wave one through. That is how
@@ -45,7 +71,50 @@ LAN_RE='192\.168\.[0-9]+\.[0-9]+|(^|[^0-9])10\.[0-9]+\.[0-9]+\.[0-9]+'
 # first draft of this block did exactly that and published it. Keep the prose generic.
 # Keep in sync with the internal-name guard of the private publish script: same
 # author, same homelab, same failure mode.
-HOST_RE='\b(web|ai|db|nas|dev|tm)-[0-9]{2}\b|\bagent-macbook\b|getvirtualview|[a-z]+-notarize\b|/Users/anatoli'
+INFRA_RULES=(
+    'internal-host=\b(web|ai|db|nas|dev|tm)-[0-9]{2}\b|\bagent-macbook\b|getvirtualview|[a-z]+-notarize\b'
+    'personal-path=/Users/anatoli'
+)
+
+# One alternation per class, for the cheap does-anything-match test that runs on every
+# file before the per-rule pass that names the rule.
+join_rules() {
+    local entry out=""
+    for entry in "$@"; do out="${out:+$out|}${entry#*=}"; done
+    printf '%s' "$out"
+}
+SECRET_RE="$(join_rules "${SECRET_RULES[@]}")"
+LAN_RE="$(join_rules "${LAN_RULES[@]}")"
+HOST_RE="$(join_rules "${INFRA_RULES[@]}")"
+
+rules_for() {
+    case "$1" in
+        SECRET)   printf '%s\n' "${SECRET_RULES[@]}" ;;
+        "LAN IP") printf '%s\n' "${LAN_RULES[@]}" ;;
+        INFRA)    printf '%s\n' "${INFRA_RULES[@]}" ;;
+    esac
+}
+
+# report CLASS WHERE SUFFIX COMMAND...
+#
+# Runs COMMAND once per rule of CLASS, and prints one line per matching line:
+#   CLASS  WHERE:LINE  rule=NAME SUFFIX
+# Only grep's line number leaves the pipe (`cut -d: -f1` on single-input `grep -n`
+# output); the matched text is never held in a variable or printed. See the header.
+# Returns 0 when anything matched.
+report() {
+    local class="$1" where="$2" suffix="$3" entry name re n found=1
+    shift 3
+    while IFS= read -r entry; do
+        name="${entry%%=*}"; re="${entry#*=}"
+        while IFS= read -r n; do
+            [[ -n "$n" ]] || continue
+            printf '%-8s%s:%s  rule=%s%s\n' "$class" "$where" "$n" "$name" "$suffix"
+            found=0
+        done < <("$@" 2>/dev/null | grep -nIE -- "$re" | cut -d: -f1)
+    done < <(rules_for "$class")
+    return $found
+}
 
 # Paths that must never appear in public history. Anchored prefixes, matched
 # against the full path. Set SECRET_SCAN_ALLOW_PRIVATE_PATHS=1 to publish one
@@ -124,15 +193,15 @@ while IFS= read -r f; do
     fi
     is_exempt "$f" && continue
     [[ -f "$f" ]] || continue
-    if out=$(grep -InE "$SECRET_RE" "$f" 2>/dev/null); then
-        echo "SECRET  $f"; echo "$out"; hit=1
+    if grep -qIE -- "$SECRET_RE" "$f" 2>/dev/null; then
+        report SECRET "$f" "" cat -- "$f" && hit=1
     fi
-    if out=$(grep -InE "$LAN_RE" "$f" 2>/dev/null); then
-        echo "LAN IP  $f"; echo "$out"; hit=1
+    if grep -qIE -- "$LAN_RE" "$f" 2>/dev/null; then
+        report "LAN IP" "$f" "" cat -- "$f" && hit=1
     fi
     is_infra_exempt "$f" && continue
-    if out=$(grep -InE "$HOST_RE" "$f" 2>/dev/null); then
-        echo "INFRA   $f"; echo "$out"; hit=1
+    if grep -qIE -- "$HOST_RE" "$f" 2>/dev/null; then
+        report INFRA "$f" "" cat -- "$f" && hit=1
     fi
 done < <(git ls-files)
 
@@ -140,14 +209,19 @@ done < <(git ls-files)
 # Only when invoked as a pre-push hook (git feeds refs on stdin). Scanning the
 # range catches a secret that was added and later deleted: still in history.
 scan_range() {
-    local range="$1" commit path blob
-    # Commit messages travel with the history too.
-    if out=$(git log --format='%H %s%n%b' "$range" 2>/dev/null | grep -InE "$SECRET_RE|$LAN_RE|$HOST_RE"); then
-        echo "SECRET  in a commit message being pushed"; echo "$out"; hit=1
-    fi
-    # Every blob added or modified anywhere in the range.
+    local commit path blob class
+    # The range arrives as separate revision arguments ("$@"), never as one string:
+    # `git rev-list "A --not --remotes=origin"` is a single unknown revision, fails,
+    # and (errors being discarded) scans nothing at all.
     while read -r commit; do
         [[ -n "$commit" ]] || continue
+        # Commit messages travel with the history too.
+        if git show -s --format=%B "$commit" 2>/dev/null | grep -qIE -- "$SECRET_RE|$LAN_RE|$HOST_RE"; then
+            for class in SECRET "LAN IP" INFRA; do
+                report "$class" "commit message $commit" "" git show -s --format=%B "$commit" && hit=1
+            done
+        fi
+        # Every blob added or modified anywhere in the range.
         while IFS=$'\t' read -r _ path; do
             [[ -n "$path" ]] || continue
             if is_private_path "$path"; then
@@ -155,18 +229,18 @@ scan_range() {
             fi
             is_exempt "$path" && continue
             blob=$(git rev-parse "$commit:$path" 2>/dev/null) || continue
-            if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$SECRET_RE"); then
-                echo "SECRET  $path (in $commit)"; echo "$out"; hit=1
+            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$SECRET_RE"; then
+                report SECRET "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
             fi
-            if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$LAN_RE"); then
-                echo "LAN IP  $path (in $commit)"; echo "$out"; hit=1
+            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$LAN_RE"; then
+                report "LAN IP" "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
             fi
             is_infra_exempt "$path" && continue
-            if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$HOST_RE"); then
-                echo "INFRA   $path (in $commit)"; echo "$out"; hit=1
+            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$HOST_RE"; then
+                report INFRA "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
             fi
         done < <(git diff-tree --no-commit-id --name-status -r --diff-filter=AM "$commit" 2>/dev/null)
-    done < <(git rev-list "$range" 2>/dev/null)
+    done < <(git rev-list "$@" 2>/dev/null)
 }
 
 ZERO='0000000000000000000000000000000000000000'
@@ -176,7 +250,7 @@ if [[ ! -t 0 ]]; then
         [[ "$local_sha" == "$ZERO" ]] && continue          # branch deletion
         if [[ "${remote_sha:-$ZERO}" == "$ZERO" ]]; then
             # New branch/tag: scan what it adds beyond everything origin already has.
-            scan_range "$local_sha --not --remotes=origin"
+            scan_range "$local_sha" --not --remotes=origin
         else
             scan_range "$remote_sha..$local_sha"
         fi
