@@ -1,6 +1,7 @@
 # Copy this file to Packaging/crashbox-dsn.local (gitignored) and paste one
 # TandemClip Crashbox public DSN on one line. make-app.sh injects it into the
 # bundled Info.plist at package time; the tracked plist keeps CrashboxDSN empty.
-# Alternatively, set TANDEMCLIP_CRASHBOX_DSN for the build process.
+# Keep the real file mode 0600. Alternatively, set TANDEMCLIP_CRASHBOX_DSN (or
+# TANDEMCLIP_CRASHBOX_CONFIG_FILE) for the build process.
 
 https://PUBLIC_KEY@crashbox.example.invalid/PROJECT_ID

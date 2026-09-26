@@ -220,6 +220,24 @@ the EdDSA-signed `appcast.xml` → syncs the Homebrew cask
 an immutable manifest for the app, dSYM archive, DMG, appcast, cask, site, and
 tracked source tree:
 
+**Before a release, install the Crashbox DSN in the checkout you build from.**
+A signed or publishing build refuses to start without it. The one supported
+input is `Packaging/crashbox-dsn.local`: gitignored, mode `0600`, one line
+holding the TandemClip Crashbox project's public DSN. The maintainer fills it
+from the password-manager entry for that Crashbox project; it is never
+committed, printed or pasted into a command line. A fresh clone or `git
+worktree` has no copy, so install one there (or point
+`TANDEMCLIP_CRASHBOX_CONFIG_FILE` at an existing `0600` file). Check it without
+building:
+
+```sh
+install -m 0600 /dev/null Packaging/crashbox-dsn.local   # then paste the DSN into it
+REQUIRE_CRASHBOX=1 VERIFY_CRASHBOX_INPUT_ONLY=1 Scripts/make-app.sh   # prints: crashbox
+```
+
+`make-app.sh` refuses a hosted `sentry.io` DSN. The hosted Sentry service is
+not used, and no release step needs a Sentry token or `sentry-cli`.
+
 ```sh
 # 1. Bump CFBundleShortVersionString / CFBundleVersion first, then prepare once.
 IDENTITY="Developer ID Application: Your Name (TEAMID)" \

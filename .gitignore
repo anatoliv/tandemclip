@@ -20,8 +20,8 @@ web/
 # The tracked Packaging/Info.plist keeps CrashboxDSN empty; never commit the DSN.
 Packaging/crashbox-dsn.local
 
-# Retained legacy hosted-provider input. The release path no longer reads it,
-# but keep the local credential ignored until the owner removes it securely.
+# Retired hosted-provider input (removed from the release Mac 2026-09-26). The
+# release path never reads it; the entry stays so a restored copy is never committed.
 Packaging/sentry-dsn.local
 
 # Learning log is business analysis (internal ticket IDs, infra detail) and this
