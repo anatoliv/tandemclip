@@ -2,6 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# --- The secret-scan pre-push hook is active ------------------------------------
+# .githooks/pre-push only runs when core.hooksPath points at it, nothing in a clone
+# sets that, and an unset hook fails silently. First, because it is a property of
+# the checkout rather than of the release, and it costs nothing to learn.
+Scripts/check-hooks-path.sh .
+
 BUILD_NUM="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Packaging/Info.plist)"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Packaging/Info.plist)"
 APPCAST="dist/appcast.xml"
@@ -89,6 +95,7 @@ if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     fi
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-prepared-release.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-reporting-disabled-rollback.py
+    PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-push-guard.py
     # Private-only tests: the public mirror leaves these files out (they name host
     # internals, or the mirror tooling itself), so a public checkout skips them. Every
     # other line here runs unconditionally, and the mirror build refuses a snapshot in
@@ -104,7 +111,7 @@ if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     # The release kit: its pin (the vendored copy is exactly the version it claims) and
     # every kit test, run on these exact bytes. Seconds.
     bash Scripts/release-kit/check.sh
-    echo "preflight ok: $VERSION ($BUILD_NUM) — changelog, build number, design tokens"
+    echo "preflight ok: $VERSION ($BUILD_NUM) — push hook, changelog, build number, design tokens"
     exit 0
 fi
 

@@ -45,6 +45,8 @@ its `sha256`, the README's `brew trust` step, and the landing-page source.
 
 Each of those has gone stale in practice without anyone noticing, because nothing
 compared it to the release. Run it by hand any time: `Scripts/check-release.sh`.
+It first checks that the secret-scan pre-push hook is enabled
+(`git config core.hooksPath .githooks`) and stops with that command if it is not.
 
 ## Releasing — and how changes reach users
 

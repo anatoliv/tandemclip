@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Enable with:  git config core.hooksPath .githooks
-# Blocks a push to the public repo if the tracked tree contains secrets.
+# The release gate refuses to run until it is (Scripts/check-hooks-path.sh).
 #
-# git passes the remote NAME as $1 and its URL as $2, and this hook used to drop both.
-# That made every push look like a push to the public repo — including pushes to the
-# PRIVATE backup, whose entire job is to mirror whatever origin already has. A backup
-# that refuses to copy a pre-existing public problem is not a safer backup, it is an
-# absent one. Forward them so the scan can tell the two apart.
+# Scans what is being pushed for secrets, LAN addresses, internal names and private
+# paths. The maintainer's `origin` is a private repository and the public repository
+# is a filtered mirror written only by a separate publish step, which runs its own
+# guards. So a push to the private repository is warned about, not blocked, and a
+# push anywhere else is treated as public and refused.
+#
+# git passes the remote NAME as $1 and its URL as $2. Forward both: the URL is how
+# the scan tells the private repository from everything else.
 exec "$(git rev-parse --show-toplevel)/Scripts/secret-scan.sh" "$@"

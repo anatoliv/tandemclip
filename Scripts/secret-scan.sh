@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 #
-# Secret scanner. The public repo is a filtered mirror, published by a separate
-# step that runs its own guards; this is the earlier and cheaper check, run on
-# every push and available to anyone with a clone. A push to the private repo only
-# reports findings (see TARGET_PUBLIC below). Wired as a pre-push hook via:
+# Secret scanner. The maintainer works in a private repository (remote `origin`),
+# and the public repository is a filtered mirror that only a separate publish step
+# writes to, after running its own, stricter guards over the snapshot it builds.
+# This is the earlier and cheaper check, run on every push and available to anyone
+# with a clone. A push to the private repository only reports findings; a push
+# anywhere else is refused (see TARGET_PUBLIC below). Wired as a pre-push hook via:
 #
 #   git config core.hooksPath .githooks
+#
+# The release gate refuses to run while that is not set (Scripts/check-hooks-path.sh),
+# because an unset hook fails silently: the push just goes out unscanned.
 #
 # Three checks, because they catch genuinely different mistakes:
 #
@@ -18,7 +23,7 @@
 #      the only reliable signal is the path itself. This is how SECURITY_AUDIT.md
 #      and web/ reached public history.
 #
-# Run manually to scan just the tree: Scripts/secret-scan.sh
+# Run manually to scan just the tree: Scripts/secret-scan.sh  (exit 1 on any finding)
 # As a pre-push hook it also reads stdin and scans the pushed commit range.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -67,6 +72,19 @@ is_exempt() {
     esac
 }
 
+# Exempt from the INFRA check only. The mirror publish script carries its own copy of
+# the internal-name guard, so it spells those names by necessity, and it is never
+# published. Every other check still applies to it: a real credential pasted into it
+# is caught like anywhere else. Without this, every push to the private repository
+# printed the same known finding, and a warning that always fires is one people stop
+# reading.
+is_infra_exempt() {
+    case "$1" in
+        Scripts/publish-repo.sh) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 is_private_path() {
     [[ "${SECRET_SCAN_ALLOW_PRIVATE_PATHS:-}" == "1" ]] && return 1
     local p="$1"
@@ -80,17 +98,22 @@ is_private_path() {
 }
 
 # Is this push going somewhere PUBLIC? git hands a pre-push hook the remote name in $1
-# and its URL in $2. Everything here exists to protect the public repo; the private
-# backup's job is the opposite — mirror origin faithfully, including anything already
-# published that we have not yet cleaned up. Blocking that does not unpublish a thing,
-# it just silently stops the backup, which is how a backup goes 5 commits stale without
-# anyone noticing. Findings are still PRINTED for a private push; they just do not veto it.
+# and its URL in $2. A push to the private repository is where work lands, and nothing
+# in it is public until the publish step snapshots it and runs its own guards, which
+# refuse these same shapes. So a private push only REPORTS findings, as a warning to
+# fix them in the source before the next publish; vetoing it would stop work from
+# landing without making anything safer. Any other destination is treated as public
+# and refused: the public mirror's push URL is disabled in the maintainer's checkout,
+# so a push that gets this far with another URL is a clone pushing somewhere new.
 #
-# Fails CLOSED: an unrecognised or absent remote is treated as public.
+# Fails CLOSED: an unrecognised or absent URL is treated as public. With no remote at
+# all (run by hand, not as a hook) it is a plain scan and says so.
 TARGET_PUBLIC=1
 case "${2:-}" in
     *tandemclip-private*) TARGET_PUBLIC=0 ;;
 esac
+MANUAL=0
+[[ -z "${1:-}" && -z "${2:-}" ]] && MANUAL=1
 
 hit=0
 
@@ -107,6 +130,7 @@ while IFS= read -r f; do
     if out=$(grep -InE "$LAN_RE" "$f" 2>/dev/null); then
         echo "LAN IP  $f"; echo "$out"; hit=1
     fi
+    is_infra_exempt "$f" && continue
     if out=$(grep -InE "$HOST_RE" "$f" 2>/dev/null); then
         echo "INFRA   $f"; echo "$out"; hit=1
     fi
@@ -137,6 +161,7 @@ scan_range() {
             if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$LAN_RE"); then
                 echo "LAN IP  $path (in $commit)"; echo "$out"; hit=1
             fi
+            is_infra_exempt "$path" && continue
             if out=$(git cat-file blob "$blob" 2>/dev/null | grep -InIE "$HOST_RE"); then
                 echo "INFRA   $path (in $commit)"; echo "$out"; hit=1
             fi
@@ -150,7 +175,7 @@ if [[ ! -t 0 ]]; then
         [[ -z "${local_sha:-}" ]] && continue
         [[ "$local_sha" == "$ZERO" ]] && continue          # branch deletion
         if [[ "${remote_sha:-$ZERO}" == "$ZERO" ]]; then
-            # New branch/tag: scan what it adds beyond everything already published.
+            # New branch/tag: scan what it adds beyond everything origin already has.
             scan_range "$local_sha --not --remotes=origin"
         else
             scan_range "$remote_sha..$local_sha"
@@ -160,13 +185,20 @@ fi
 
 if [[ $hit -ne 0 ]]; then
     echo "" >&2
+    if [[ $MANUAL -eq 1 ]]; then
+        echo "✗ secret-scan: findings above. Remove them from the tracked tree." >&2
+        exit 1
+    fi
     if [[ $TARGET_PUBLIC -eq 0 ]]; then
-        echo "! secret-scan: findings above are ALREADY in the public history." >&2
-        echo "  Allowing the push because ${1:-this remote} is the private backup, which must" >&2
-        echo "  mirror origin. Cleaning them requires rewriting the PUBLIC history." >&2
+        echo "! secret-scan: allowing this push, because ${1:-this remote} is the PRIVATE repository." >&2
+        echo "  Nothing above is public yet. The mirror publish refuses these shapes, so fix" >&2
+        echo "  them in the source before the next publish. A real credential is exposed to" >&2
+        echo "  everyone with access to the private repository once pushed: rotate it." >&2
         exit 0
     fi
-    echo "✗ secret-scan: refusing to push — remove the above before publishing." >&2
+    # The URL is not echoed: a remote URL can carry a token in its userinfo.
+    echo "✗ secret-scan: refusing to push to ${1:-this remote}, which is not the private" >&2
+    echo "  repository and is treated as public. Remove the above first." >&2
     echo "  A secret already in a pushed commit needs history rewritten, not just a new commit." >&2
     exit 1
 fi

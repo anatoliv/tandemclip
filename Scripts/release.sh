@@ -123,6 +123,15 @@ if [[ "$PUBLISH" == "1" || "$PREPARE_RELEASE" == "1" ]]; then
     release_main_guard . || exit 1
 fi
 
+# 0a1c. The secret-scan pre-push hook must be active in this checkout. A release ends
+#       by pushing the cask and landing-page bump, and an unset core.hooksPath lets
+#       that push, and every other one, go out unscanned without a word. Checked here
+#       for a publication so a refusal costs seconds; check-release.sh checks it again
+#       for every run, local builds included.
+if [[ "$PUBLISH" == "1" || "$PREPARE_RELEASE" == "1" ]]; then
+    Scripts/check-hooks-path.sh . || exit 1
+fi
+
 prepared_release() {
     python3 Scripts/prepared-release.py "$1" \
         --manifest "$2" \

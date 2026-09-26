@@ -383,6 +383,9 @@ rather than merged. Enable the secret-scan **pre-push guard** once after cloning
 git config core.hooksPath .githooks   # blocks pushing LAN IPs, tokens, DSNs, private keys
 ```
 
+`Scripts/check-release.sh` and the release script refuse to run until it is set,
+because a hook that was never enabled fails silently.
+
 The real Crashbox DSN belongs in the gitignored
 `Packaging/crashbox-dsn.local` (or `TANDEMCLIP_CRASHBOX_DSN`), never in a
 tracked file. `make-app.sh` injects it at package time.

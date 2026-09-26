@@ -47,10 +47,14 @@ git init -q --bare "$WORK/origin.git"
 git clone -q "$WORK/origin.git" "$WORK/rel" 2>/dev/null
 mkdir -p "$WORK/rel/Packaging"
 cp -R "$ROOT/Scripts" "$WORK/rel/Scripts"
+cp -R "$ROOT/.githooks" "$WORK/rel/.githooks"
 cp "$ROOT/Packaging/Info.plist" "$WORK/rel/Packaging/Info.plist"
 git -C "$WORK/rel" add -A
 git -C "$WORK/rel" commit -qm "fixture on main"
 git -C "$WORK/rel" push -q origin HEAD:main
+# The secret-scan hook, active as release.sh requires. Set after the fixture's push, so
+# the hook does not scan the fixture on its way to a bare repo it would treat as public.
+git -C "$WORK/rel" config core.hooksPath .githooks
 
 prepare() {
   (cd "$WORK/rel" && IDENTITY="Developer ID Application: Test (TEAMID0000)" \
@@ -89,6 +93,19 @@ reset_logs; out="$(prepare)"; rc=$?
 check_admitted "prepare from origin/main passes the guard" "$rc" "$out" "built from this repo is running"
 reset_logs; out="$(resume)"; rc=$?
 check_admitted "resume from origin/main passes the guard" "$rc" "$out" "prepared_"
+
+# 1b. The secret-scan hook is off: both halves of a publication refuse before any side
+#     effect, and say how to turn it on.
+git -C "$WORK/rel" config --unset core.hooksPath
+for half in prepare resume; do
+  reset_logs; out="$($half)"; rc=$?
+  if [ "$rc" = 0 ]; then bad "$half with the hook off: exited 0"
+  elif ! grep -qF "pre-push hook is not active" <<<"$out" || ! grep -qF "config core.hooksPath .githooks" <<<"$out"; then
+    bad "$half with the hook off: no hook refusal. Got: $(head -c 600 <<<"$out")"
+  elif [ -s "$SIDE" ] || [ -s "$REACHED" ]; then bad "$half with the hook off: ran past the check"
+  else ok "$half with the hook off is refused before any side effect"; fi
+done
+git -C "$WORK/rel" config core.hooksPath .githooks
 
 # 2. The E19 shape: a fix committed on the releasing checkout and never merged.
 echo "hotfix" >"$WORK/rel/HOTFIX"
