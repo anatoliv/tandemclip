@@ -64,8 +64,12 @@ class Sandbox:
         cmd = ["git"] + (["-C", str(repo)] if repo else []) + list(args)
         return subprocess.run(cmd, env=self.env, capture_output=True, text=True, check=check)
 
-    def repo(self, name: str = "repo") -> Path:
-        """A repository carrying this checkout's hook and scanner, one commit on main."""
+    def repo(self, name: str = "repo", commit: bool = True) -> Path:
+        """A repository carrying this checkout's hook and scanner, one commit on main.
+
+        With commit=False nothing is committed, so the caller's first commit is the
+        repository's root commit.
+        """
         path = self.base / name
         path.mkdir()
         self.git(path, "init", "-q")
@@ -75,7 +79,8 @@ class Sandbox:
         shutil.copy2(CHECK, path / "Scripts" / "check-hooks-path.sh")
         shutil.copy2(HOOK, path / ".githooks" / "pre-push")
         (path / "README.md").write_text("fixture\n")
-        self.commit(path, "fixture")
+        if commit:
+            self.commit(path, "fixture")
         return path
 
     def commit(self, repo: Path, message: str) -> None:
@@ -442,6 +447,128 @@ class FindingsNeverEchoTheMatch(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_no_part_echoed(result)
         self.assert_tree_findings(result.stdout + result.stderr)
+
+
+class EveryPushedCommitIsScanned(unittest.TestCase):
+    """The range scan lists the new content of every kind of commit.
+
+    Each case plants a secret in one commit and deletes it in the next, so the tree
+    is clean and only the range scan can see it, then pushes through the real hook
+    to a public destination. Each kind of commit here was once listed as empty, so
+    its content went out unscanned while the push printed "clean".
+    """
+
+    # A fake key, assembled at run time. Both halves of its body are distinctive, and
+    # neither may appear in the output.
+    BODIES = ("RQ5ZV8RT", "ROOTFAKE")
+    SECRET = "AKIA" + "".join(BODIES)
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def head(self, repo: Path) -> str:
+        return self.box.git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    def write_secret(self, repo: Path, path: str) -> None:
+        # Line 1 is filler, so the reported line number is not trivially 1.
+        target = repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"filler\nkey = {self.SECRET}\n")
+
+    def remove(self, repo: Path, path: str) -> None:
+        (repo / path).unlink()
+        self.box.commit(repo, f"remove {path}")
+
+    def push(self, repo: Path, ref: str = "HEAD:refs/heads/main") -> subprocess.CompletedProcess:
+        bare = self.box.base / "tandemclip.git"   # a public name: findings refuse the push
+        if not bare.exists():
+            self.box.git(None, "init", "-q", "--bare", str(bare))
+            self.box.git(repo, "remote", "add", "dest", str(bare))
+        self.box.git(repo, "config", "core.hooksPath", ".githooks")
+        return self.box.git(repo, "push", "dest", ref, check=False)
+
+    def assert_refused_at(self, repo: Path, result: subprocess.CompletedProcess,
+                          path: str, commit: str) -> None:
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, out)
+        self.assertIn("refusing to push to dest", result.stderr)
+        self.assertIn(f"SECRET  {path}:2  rule=aws-access-key-id  (in {commit})\n", out)
+        self.assertNotIn(self.SECRET, out)
+        for part in self.BODIES:
+            self.assertNotIn(part, out, "a fragment of the planted secret was printed")
+        self.assertNotIn("key = ", out, "a matched line's content was printed")
+        # The finding came from the range: the tree alone is clean.
+        manual = self.box.run(repo, ["bash", "Scripts/secret-scan.sh"])
+        self.assertEqual(manual.returncode, 0, manual.stdout + manual.stderr)
+
+    def test_root_commit_of_a_new_repository(self) -> None:
+        repo = self.box.repo(commit=False)
+        self.write_secret(repo, "config.txt")
+        self.box.commit(repo, "first commit")
+        root = self.head(repo)
+        self.remove(repo, "config.txt")
+        self.assert_refused_at(repo, self.push(repo), "config.txt", root)
+
+    def test_orphan_branch_pushed_as_a_new_branch(self) -> None:
+        repo = self.box.repo()
+        clean = self.push(repo)
+        self.assertEqual(clean.returncode, 0, clean.stderr)
+        self.box.git(repo, "checkout", "-q", "--orphan", "leak")
+        self.write_secret(repo, "config.txt")
+        self.box.commit(repo, "orphan root")
+        root = self.head(repo)
+        self.remove(repo, "config.txt")
+        result = self.push(repo, "leak:refs/heads/leak")
+        self.assert_refused_at(repo, result, "config.txt", root)
+
+    def test_content_introduced_by_a_merge(self) -> None:
+        repo = self.box.repo()
+        self.box.git(repo, "checkout", "-q", "-b", "side")
+        (repo / "side.txt").write_text("side\n")
+        self.box.commit(repo, "side")
+        self.box.git(repo, "checkout", "-q", "main")
+        (repo / "main.txt").write_text("main\n")
+        self.box.commit(repo, "main")
+        self.box.git(repo, "merge", "-q", "--no-ff", "--no-commit", "side")
+        self.write_secret(repo, "merged.txt")   # in neither parent: only the merge adds it
+        self.box.commit(repo, "merge side")
+        merge = self.head(repo)
+        self.remove(repo, "merged.txt")
+        self.assert_refused_at(repo, self.push(repo), "merged.txt", merge)
+
+    def test_a_symlink_replaced_by_a_file(self) -> None:
+        repo = self.box.repo()
+        (repo / "key.txt").symlink_to("README.md")
+        self.box.commit(repo, "link")
+        (repo / "key.txt").unlink()
+        self.write_secret(repo, "key.txt")
+        self.box.commit(repo, "type change")
+        changed = self.head(repo)
+        self.remove(repo, "key.txt")
+        self.assert_refused_at(repo, self.push(repo), "key.txt", changed)
+
+    def test_a_non_ascii_path(self) -> None:
+        repo = self.box.repo()
+        self.write_secret(repo, "cl\u00e9.txt")
+        self.box.commit(repo, "plant")
+        planted = self.head(repo)
+        self.remove(repo, "cl\u00e9.txt")
+        self.assert_refused_at(repo, self.push(repo), "cl\u00e9.txt", planted)
+
+    def test_a_rename_with_an_edit_even_with_rename_detection_configured(self) -> None:
+        repo = self.box.repo()
+        self.box.git(repo, "config", "diff.renames", "copies")
+        (repo / "old.txt").write_text("filler\nplain\n")
+        self.box.commit(repo, "plain file")
+        self.box.git(repo, "mv", "old.txt", "moved.txt")
+        self.write_secret(repo, "moved.txt")
+        self.box.commit(repo, "rename with an edit")
+        renamed = self.head(repo)
+        self.remove(repo, "moved.txt")
+        self.assert_refused_at(repo, self.push(repo), "moved.txt", renamed)
 
 
 class PrePushHookTests(unittest.TestCase):

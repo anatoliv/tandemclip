@@ -241,8 +241,22 @@ scan_range() {
                 report "$class" "commit message $commit" "" git show -s --format=%B "$commit" && hit=1
             done
         fi
-        # Every blob added or modified anywhere in the range.
-        while IFS=$'\t' read -r _ path; do
+        # Every path the commit leaves with new content: anything but a deletion.
+        # Each flag closes a way a commit's content goes unlisted, and so unscanned:
+        #   --root        a parentless commit (a new repository's first commit, an
+        #                 orphan branch) is diffed against the empty tree. Without it
+        #                 diff-tree prints nothing for one.
+        #   -c            a merge lists the paths that differ from every parent, which
+        #                 is exactly the content the merge itself introduced (a
+        #                 conflict resolution, an evil merge). Without it diff-tree
+        #                 prints nothing for a merge. A path taken whole from one
+        #                 parent is that parent's content, scanned with that commit.
+        #   --no-renames  a rename is listed as its new path, whatever diff config says.
+        #   --diff-filter=d  any status but a deletion. AM alone skipped a type change
+        #                 (a symlink replaced by a file of the same name).
+        #   -z            paths verbatim. Quoted, a non-ASCII name did not resolve
+        #                 below and was skipped without a word.
+        while IFS= read -r -d '' path; do
             [[ -n "$path" ]] || continue
             if is_private_path "$path"; then
                 echo "PRIVATE $path  (in $commit — internal, must not be published)"; hit=1; continue
@@ -259,7 +273,8 @@ scan_range() {
             if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$HOST_RE"; then
                 report INFRA "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
             fi
-        done < <(git diff-tree --no-commit-id --name-status -r --diff-filter=AM "$commit" 2>/dev/null)
+        done < <(git diff-tree --no-commit-id --root -r -c --no-renames --name-only \
+                     --diff-filter=d -z "$commit" 2>/dev/null)
     done < <(git rev-list "$@" 2>/dev/null)
 }
 
