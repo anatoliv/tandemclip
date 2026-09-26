@@ -253,7 +253,15 @@ if [[ -n "${NOTARY_PROFILE}" ]]; then
     echo "==> Notarizing (profile: ${NOTARY_PROFILE})"
     ZIP="build/${APP_NAME}.zip"
     ditto -c -k --keepParent "${BUNDLE}" "${ZIP}"
-    xcrun notarytool submit "${ZIP}" --keychain-profile "${NOTARY_PROFILE}" --wait
+    # Bounded and retried like the DMG step. This submission ran with no outer clock
+    # at all until the release kit (TBX-7517): the upload is what hangs, and
+    # notarytool's own --timeout does not cover it.
+    . Scripts/release-kit/lib/notarize.sh
+    if ! rk_notarize "${ZIP}" "${NOTARY_PROFILE}"; then
+        echo "error: app notarization failed (diagnosis above). Nothing was packaged or published." >&2
+        rm -f "${ZIP}"
+        exit 1
+    fi
     echo "==> Stapling"
     xcrun stapler staple "${BUNDLE}"
     xcrun stapler validate "${BUNDLE}" && echo "    staple validated"
