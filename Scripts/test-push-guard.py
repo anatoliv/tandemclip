@@ -570,6 +570,205 @@ class EveryPushedCommitIsScanned(unittest.TestCase):
         self.remove(repo, "moved.txt")
         self.assert_refused_at(repo, self.push(repo), "moved.txt", renamed)
 
+    def write_bytes_secret(self, repo: Path, path: str, line1: bytes, prefix: bytes = b"") -> None:
+        # The secret on line 2, after a first line and a prefix that are not plain text.
+        (repo / path).write_bytes(line1 + b"\n" + prefix + b"key = " + self.SECRET.encode() + b"\n")
+
+    def test_a_secret_after_a_nul_byte(self) -> None:
+        # grep -I treats a file holding a NUL byte as binary and skips it whole.
+        repo = self.box.repo()
+        self.write_bytes_secret(repo, "blob.bin", b"\x00\x01filler")
+        self.box.commit(repo, "plant")
+        planted = self.head(repo)
+        self.remove(repo, "blob.bin")
+        self.assert_refused_at(repo, self.push(repo), "blob.bin", planted)
+
+    def test_a_latin1_line_in_a_utf8_locale(self) -> None:
+        # In a UTF-8 locale the system grep never matches on a line holding a byte
+        # that is not valid UTF-8, even with -a.
+        repo = self.box.repo()
+        self.box.env["LC_ALL"] = "en_US.UTF-8"
+        self.write_bytes_secret(repo, "notes.txt", b"caf\xe9", prefix=b"caf\xe9 ")
+        self.box.commit(repo, "plant")
+        planted = self.head(repo)
+        self.remove(repo, "notes.txt")
+        self.assert_refused_at(repo, self.push(repo), "notes.txt", planted)
+
+
+class ScanErrorsRefuse(unittest.TestCase):
+    """A git command the scan depends on fails: the scan refuses, it does not pass.
+
+    Errors were discarded, so a bad ref or an unreadable object scanned nothing and
+    the push went out as "clean". The refusal names the command and prints none of its
+    output, and it holds for the private destination too: an error is not a finding
+    to warn about, it is a scan that did not happen.
+    """
+
+    BODIES = ("EQ9ZV4RT", "ERRFAKE0")
+    SECRET = "AKIA" + "".join(BODIES)
+    PUBLIC_URL = "https://github.com/someone/tandemclip.git"
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+        self.repo = self.box.repo()
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def head(self) -> str:
+        return self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+    def scan(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
+        return self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh", *args], stdin)
+
+    def assert_refused(self, result: subprocess.CompletedProcess, command: str) -> None:
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 3, out)
+        self.assertIn(f"`{command}` failed", result.stderr)
+        self.assertNotIn("clean", result.stdout)
+        self.assertNotIn("fatal", out, "git's own output was printed")
+        for part in self.BODIES:
+            self.assertNotIn(part, out, "a fragment of the planted secret was printed")
+
+    def test_a_ref_line_naming_a_missing_commit_is_refused(self) -> None:
+        missing = "e" * 40
+        refs = f"refs/heads/main {missing} refs/heads/main {'0' * 40}\n"
+        for name, url in (("public", self.PUBLIC_URL),
+                          ("origin", f"https://github.com/someone/{PRIVATE_NAME}.git")):
+            with self.subTest(destination=name):
+                result = self.scan("--pre-push", name, url, stdin=refs)
+                self.assert_refused(result, "git rev-list")
+                self.assertNotIn(missing, result.stdout + result.stderr)
+
+    def test_an_unreadable_object_in_the_range_is_refused(self) -> None:
+        base = self.head()
+        (self.repo / "config.txt").write_text(f"filler\nkey = {self.SECRET}\n")
+        self.box.commit(self.repo, "plant")
+        planted = self.head()
+        blob = self.box.git(self.repo, "rev-parse", f"{planted}:config.txt").stdout.strip()
+        (self.repo / "config.txt").unlink()
+        self.box.commit(self.repo, "remove it again")
+        tip = self.head()
+        (self.repo / ".git" / "objects" / blob[:2] / blob[2:]).unlink()
+        refs = f"refs/heads/main {tip} refs/heads/main {base}\n"
+        self.assert_refused(self.scan("--pre-push", "public", self.PUBLIC_URL, stdin=refs),
+                            "git cat-file")
+
+    def test_an_unreadable_index_is_refused_by_the_tree_scan(self) -> None:
+        (self.repo / ".git" / "index").write_bytes(b"not an index")
+        self.assert_refused(self.scan(), "git ls-files")
+
+
+class NewBranchIsMeasuredAgainstTheDestination(unittest.TestCase):
+    """A new branch is scanned for what the DESTINATION lacks, not for what origin lacks.
+
+    A secret committed and removed on the private repository is still in that
+    history. Pushing the branch to a public remote as a new branch sends all of it,
+    so all of it has to be scanned. Measured against origin, it was scanned for
+    nothing and went out as "clean".
+    """
+
+    BODIES = ("NQ3ZV7RT", "BRANCHFK")
+    SECRET = "AKIA" + "".join(BODIES)
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+        self.repo = self.box.repo()
+        self.box.git(self.repo, "config", "core.hooksPath", ".githooks")
+        for name, bare in (("origin", f"{PRIVATE_NAME}.git"), ("public", "tandemclip.git")):
+            self.box.git(None, "init", "-q", "--bare", str(self.box.base / bare))
+            self.box.git(self.repo, "remote", "add", name, str(self.box.base / bare))
+            first = self.push(name, "main")
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.box.git(self.repo, "checkout", "-q", "-b", "topic")
+        (self.repo / "config.txt").write_text(f"filler\nkey = {self.SECRET}\n")
+        self.box.commit(self.repo, "plant")
+        self.planted = self.box.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        (self.repo / "config.txt").unlink()
+        self.box.commit(self.repo, "remove it again")
+        # On the private repository first: reported, and allowed.
+        private = self.push("origin", "topic")
+        self.assertEqual(private.returncode, 0, private.stdout + private.stderr)
+        self.assertIn("allowing this push", private.stderr)
+        self.assertIn(self.finding(), private.stdout + private.stderr)
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def push(self, remote: str, ref: str) -> subprocess.CompletedProcess:
+        return self.box.git(self.repo, "push", remote, ref, check=False)
+
+    def finding(self) -> str:
+        return f"SECRET  config.txt:2  rule=aws-access-key-id  (in {self.planted})\n"
+
+    def assert_nothing_echoed(self, out: str) -> None:
+        self.assertNotIn(self.SECRET, out)
+        for part in self.BODIES:
+            self.assertNotIn(part, out, "a fragment of the planted secret was printed")
+        self.assertNotIn("key = ", out, "a matched line's content was printed")
+
+    def test_a_new_branch_to_a_public_remote_scans_history_only_origin_has(self) -> None:
+        result = self.push("public", "topic")
+        out = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertIn("refusing to push to public", result.stderr)
+        self.assertIn(self.finding(), out)
+        self.assert_nothing_echoed(out)
+        manual = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh"])
+        self.assertEqual(manual.returncode, 0, "the tree alone is clean")
+        branches = self.box.git(self.box.base / "tandemclip.git", "branch").stdout
+        self.assertNotIn("topic", branches, "the refused branch reached the public remote")
+
+    def test_a_new_branch_to_origin_is_still_measured_against_origin(self) -> None:
+        # The same commits under a new name: origin has them all, so nothing is new.
+        result = self.push("origin", "topic:refs/heads/topic-copy")
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, out)
+        self.assertNotIn("SECRET", out)
+        self.assertIn("secret-scan clean", out)
+
+
+class TreeScanReadsEveryFile(unittest.TestCase):
+    """The manual tree scan reads files the old one skipped without a word."""
+
+    BODIES = ("TQ8ZV2RT", "TREEFAKE")
+    SECRET = "AKIA" + "".join(BODIES)
+
+    def setUp(self) -> None:
+        self.box = Sandbox()
+        self.repo = self.box.repo()
+
+    def tearDown(self) -> None:
+        self.box.close()
+
+    def plant_and_scan(self, path: str, body: bytes) -> subprocess.CompletedProcess:
+        (self.repo / path).write_bytes(body)
+        self.box.commit(self.repo, "plant")
+        result = self.box.run(self.repo, ["bash", "Scripts/secret-scan.sh"])
+        out = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, out)
+        self.assertIn(f"SECRET  {path}:2  rule=aws-access-key-id\n", result.stdout)
+        self.assertNotIn(self.SECRET, out)
+        for part in self.BODIES:
+            self.assertNotIn(part, out, "a fragment of the planted secret was printed")
+        self.assertNotIn("key = ", out, "a matched line's content was printed")
+        return result
+
+    def secret_line(self) -> bytes:
+        return b"key = " + self.SECRET.encode() + b"\n"
+
+    def test_a_non_ascii_path(self) -> None:
+        # Listed without -z, the name came back quoted, did not resolve as a file, and
+        # was skipped.
+        self.plant_and_scan("cl\u00e9.txt", b"filler\n" + self.secret_line())
+
+    def test_a_secret_after_a_nul_byte(self) -> None:
+        self.plant_and_scan("blob.bin", b"\x00\x01filler\n" + self.secret_line())
+
+    def test_a_latin1_line_in_a_utf8_locale(self) -> None:
+        self.box.env["LC_ALL"] = "en_US.UTF-8"
+        self.plant_and_scan("notes.txt", b"caf\xe9\ncaf\xe9 " + self.secret_line())
+
 
 class PrePushHookTests(unittest.TestCase):
     """git itself runs .githooks/pre-push, with the remote name and URL, on a real push."""

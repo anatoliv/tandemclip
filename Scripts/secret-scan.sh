@@ -35,6 +35,13 @@
 # Any other arguments are a usage error (exit 2), so a caller that forgets the flag
 # fails loudly instead of silently skipping the range scan.
 #
+# Fails CLOSED on its own errors (exit 3, in either mode, whatever the destination).
+# If a git command the scan reads from fails (rev-list, diff-tree, ls-files, show,
+# cat-file) or grep cannot read a file, the scan has not seen what it would vouch for,
+# so it refuses and names the command. It never prints the command's output, which can
+# carry a ref or a path the caller did not ask to see. Errors used to be discarded, so a
+# bad ref scanned nothing and the push went out as "clean".
+#
 # Output: one line per finding, naming WHERE and WHICH RULE, never WHAT matched:
 #
 #   SECRET  config.txt:3  rule=aws-access-key-id
@@ -48,7 +55,44 @@
 # token reached a transcript exactly that way on 2026-09-14. Open the file at the
 # line to see what it is.
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+# Every grep and cut below runs in the C locale. The patterns are ASCII, and in a
+# UTF-8 locale the system grep never matches on a line holding a byte that is not
+# valid UTF-8 (a Latin-1 e-acute, say), even with -a, so a token on such a line passed
+# as clean. cut stops at such a byte too. In C every byte is a character.
+export LC_ALL=C
+TOP="$(git rev-parse --show-toplevel)"
+cd "$TOP"
+
+# Refuse, naming the command that failed. See "Fails CLOSED" in the header.
+die() {
+    echo "" >&2
+    echo "✗ secret-scan: \`$1\` failed, so this scan cannot vouch for what it did not read." >&2
+    echo "  Refusing. Nothing was judged clean. Fix the repository state and run it again." >&2
+    exit 3
+}
+
+# Scratch for what git prints, so each command's exit status is checked before its
+# output is used. Output read through a pipe or `< <(...)` loses the status, which is
+# how errors went unnoticed. Owner-only, and removed on exit.
+SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/secret-scan.XXXXXX")"
+trap 'rm -rf "$SCRATCH"' EXIT
+trap 'exit 130' INT TERM
+
+# git_to FILE ARGS...: git ARGS with its stdout in FILE. Any failure refuses.
+git_to() {
+    local out="$1"
+    shift
+    git "$@" >"$out" 2>/dev/null || die "git $1"
+}
+
+# matches FLAGS RE FILE: 0 when a line of FILE matches RE, 1 when none does. grep's
+# own failure (exit 2, an unreadable file) refuses; `if grep -q` read it as no match.
+matches() {
+    local rc=0
+    grep -q"$1" -- "$2" "$3" 2>/dev/null || rc=$?
+    [[ $rc -le 1 ]] || die grep
+    return $rc
+}
 
 # Each rule is `name=extended-regex`, split at the first `=`. The name is what a
 # finding reports in place of the text it matched.
@@ -104,25 +148,48 @@ rules_for() {
     esac
 }
 
-# report CLASS WHERE SUFFIX COMMAND...
+# report CLASS FLAGS WHERE SUFFIX FILE
 #
-# Runs COMMAND once per rule of CLASS, and prints one line per matching line:
+# Greps FILE once per rule of CLASS, and prints one line per matching line:
 #   CLASS  WHERE:LINE  rule=NAME SUFFIX
-# Only grep's line number leaves the pipe (`cut -d: -f1` on single-input `grep -n`
+# Only grep's line number leaves the pipe (`cut -d: -f1` on single-file `grep -n`
 # output); the matched text is never held in a variable or printed. See the header.
-# Returns 0 when anything matched.
+# Called only once the class as a whole matched FILE, so it fails CLOSED: if no rule
+# yields a line number, it still reports the file, as WHERE:? with rule=?.
 report() {
-    local class="$1" where="$2" suffix="$3" entry name re n found=1
-    shift 3
+    local class="$1" flags="$2" where="$3" suffix="$4" file="$5" entry name re n found=1
     while IFS= read -r entry; do
         name="${entry%%=*}"; re="${entry#*=}"
         while IFS= read -r n; do
             [[ -n "$n" ]] || continue
             printf '%-8s%s:%s  rule=%s%s\n' "$class" "$where" "$n" "$name" "$suffix"
             found=0
-        done < <("$@" 2>/dev/null | grep -nIE -- "$re" | cut -d: -f1)
+        done < <(grep -n"$flags" -- "$re" "$file" 2>/dev/null | cut -d: -f1)
     done < <(rules_for "$class")
-    return $found
+    if [[ $found -ne 0 ]]; then
+        printf '%-8s%s:?  rule=?%s\n' "$class" "$where" "$suffix"
+    fi
+}
+
+# scan_file WHERE FILE SUFFIX: every content check on one file, reported as WHERE.
+#
+# The secret check reads binary files too (-a). With -I, grep skips any file holding a
+# NUL byte, so a token after one passed unseen. The LAN and name checks keep -I: an
+# address or a short name is far likelier to occur by chance in an image than a token
+# shape is, and neither is a credential.
+scan_file() {
+    local where="$1" file="$2" suffix="$3"
+    if matches aE "$SECRET_RE" "$file"; then
+        report SECRET aE "$where" "$suffix" "$file"; hit=1
+    fi
+    if matches IE "$LAN_RE" "$file"; then
+        report "LAN IP" IE "$where" "$suffix" "$file"; hit=1
+    fi
+    is_infra_exempt "$where" && return 0
+    if matches IE "$HOST_RE" "$file"; then
+        report INFRA IE "$where" "$suffix" "$file"; hit=1
+    fi
+    return 0
 }
 
 # Paths that must never appear in public history. Anchored prefixes, matched
@@ -207,40 +274,32 @@ esac
 hit=0
 
 # --- 1 + 3. Tracked tree ------------------------------------------------------
-while IFS= read -r f; do
+# -z: paths verbatim. Quoted, a non-ASCII name did not resolve as a file below and was
+# skipped without a word.
+git_to "$SCRATCH/tree" ls-files -z
+while IFS= read -r -d '' f; do
     if is_private_path "$f"; then
         echo "PRIVATE $f  (internal — must not be published)"; hit=1; continue
     fi
     is_exempt "$f" && continue
     [[ -f "$f" ]] || continue
-    if grep -qIE -- "$SECRET_RE" "$f" 2>/dev/null; then
-        report SECRET "$f" "" cat -- "$f" && hit=1
-    fi
-    if grep -qIE -- "$LAN_RE" "$f" 2>/dev/null; then
-        report "LAN IP" "$f" "" cat -- "$f" && hit=1
-    fi
-    is_infra_exempt "$f" && continue
-    if grep -qIE -- "$HOST_RE" "$f" 2>/dev/null; then
-        report INFRA "$f" "" cat -- "$f" && hit=1
-    fi
-done < <(git ls-files)
+    scan_file "$f" "$f" ""
+done < "$SCRATCH/tree"
 
 # --- 2 + 3. Commits being pushed ---------------------------------------------
 # Only in hook mode (--pre-push), where git feeds the refs on stdin. Scanning the
 # range catches a secret that was added and later deleted: still in history.
 scan_range() {
-    local commit path blob class
+    local commit path blob type
     # The range arrives as separate revision arguments ("$@"), never as one string:
-    # `git rev-list "A --not --remotes=origin"` is a single unknown revision, fails,
-    # and (errors being discarded) scans nothing at all.
-    while read -r commit; do
+    # `git rev-list "A --not --remotes=origin"` is a single unknown revision. That
+    # failed quietly and scanned nothing while errors were discarded; now it refuses.
+    git_to "$SCRATCH/commits" rev-list "$@"
+    while IFS= read -r commit; do
         [[ -n "$commit" ]] || continue
         # Commit messages travel with the history too.
-        if git show -s --format=%B "$commit" 2>/dev/null | grep -qIE -- "$SECRET_RE|$LAN_RE|$HOST_RE"; then
-            for class in SECRET "LAN IP" INFRA; do
-                report "$class" "commit message $commit" "" git show -s --format=%B "$commit" && hit=1
-            done
-        fi
+        git_to "$SCRATCH/message" show -s --format=%B "$commit"
+        scan_file "commit message $commit" "$SCRATCH/message" ""
         # Every path the commit leaves with new content: anything but a deletion.
         # Each flag closes a way a commit's content goes unlisted, and so unscanned:
         #   --root        a parentless commit (a new repository's first commit, an
@@ -256,38 +315,64 @@ scan_range() {
         #                 (a symlink replaced by a file of the same name).
         #   -z            paths verbatim. Quoted, a non-ASCII name did not resolve
         #                 below and was skipped without a word.
+        git_to "$SCRATCH/paths" diff-tree --no-commit-id --root -r -c --no-renames \
+            --name-only --diff-filter=d -z "$commit"
         while IFS= read -r -d '' path; do
             [[ -n "$path" ]] || continue
             if is_private_path "$path"; then
                 echo "PRIVATE $path  (in $commit — internal, must not be published)"; hit=1; continue
             fi
             is_exempt "$path" && continue
-            blob=$(git rev-parse "$commit:$path" 2>/dev/null) || continue
-            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$SECRET_RE"; then
-                report SECRET "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
-            fi
-            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$LAN_RE"; then
-                report "LAN IP" "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
-            fi
-            is_infra_exempt "$path" && continue
-            if git cat-file blob "$blob" 2>/dev/null | grep -qIE -- "$HOST_RE"; then
-                report INFRA "$path" "  (in $commit)" git cat-file blob "$blob" && hit=1
-            fi
-        done < <(git diff-tree --no-commit-id --root -r -c --no-renames --name-only \
-                     --diff-filter=d -z "$commit" 2>/dev/null)
-    done < <(git rev-list "$@" 2>/dev/null)
+            # A listed path always exists in the commit (--diff-filter=d), so a lookup
+            # that fails is an error, not an absence.
+            blob=$(git rev-parse --verify -q "$commit:$path" 2>/dev/null) || die "git rev-parse"
+            type=$(git cat-file -t "$blob" 2>/dev/null) || die "git cat-file"
+            [[ "$type" == blob ]] || continue   # a submodule pointer carries no content here
+            # Read into a file once, not piped: `cat-file | grep -q` under pipefail read
+            # a SIGPIPE on a large blob as "no match".
+            git_to "$SCRATCH/blob" cat-file blob "$blob"
+            scan_file "$path" "$SCRATCH/blob" "  (in $commit)"
+        done < "$SCRATCH/paths"
+    done < "$SCRATCH/commits"
 }
 
 ZERO='0000000000000000000000000000000000000000'
 if [[ $MANUAL -eq 0 && ! -t 0 ]]; then
+    # All of git's ref lines first: what the destination already has is known only
+    # once every line's remote sha has been seen.
+    LOCAL_SHAS=(); REMOTE_SHAS=(); HAVE=()
     while read -r _local_ref local_sha _remote_ref remote_sha; do
         [[ -z "${local_sha:-}" ]] && continue
+        LOCAL_SHAS+=("$local_sha"); REMOTE_SHAS+=("${remote_sha:-$ZERO}")
+        # A remote sha this clone lacks cannot bound a range. Leaving it out only
+        # widens what is scanned.
+        if [[ "${remote_sha:-$ZERO}" != "$ZERO" ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+            HAVE+=("$remote_sha")
+        fi
+    done
+    # A new branch is scanned for everything it adds beyond what THE DESTINATION
+    # already has, never beyond what origin has. Measured against origin, a push of a
+    # new branch to the public repository skipped every commit already on the private
+    # one, including a secret committed there and later removed. The destination's
+    # commits are the remote shas it reported above; when it reported none, its
+    # remote-tracking refs. For a push to origin that is the same range as before.
+    if [[ ${#HAVE[@]} -gt 0 ]]; then
+        DEST_HAS=(--not "${HAVE[@]}")
+    elif [[ -n "$REMOTE" ]]; then
+        DEST_HAS=(--not "--remotes=$REMOTE")
+    else
+        DEST_HAS=()   # destination unknown: scan the whole history of what is pushed
+    fi
+    i=0
+    while [[ $i -lt ${#LOCAL_SHAS[@]} ]]; do
+        local_sha="${LOCAL_SHAS[$i]}"; remote_sha="${REMOTE_SHAS[$i]}"; i=$((i + 1))
         [[ "$local_sha" == "$ZERO" ]] && continue          # branch deletion
-        if [[ "${remote_sha:-$ZERO}" == "$ZERO" ]]; then
-            # New branch/tag: scan what it adds beyond everything origin already has.
-            scan_range "$local_sha" --not --remotes=origin
-        else
+        if [[ "$remote_sha" != "$ZERO" ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
             scan_range "$remote_sha..$local_sha"
+        else
+            # New branch or tag, or a remote tip this clone lacks (a force-push over
+            # someone else's commits): scan all it adds beyond the destination.
+            scan_range "$local_sha" ${DEST_HAS[@]+"${DEST_HAS[@]}"}
         fi
     done
 fi
