@@ -19,7 +19,7 @@ enum MessageType: String, Codable { case announce, clip, request, delete, pin, u
 /// message carries the sender's identity so peers can be listed, addressed, and
 /// allow-listed. `hash` keys deduplication / echo-loop prevention.
 struct Message: Codable {
-    var version: Int = 2
+    var version: Int = 3
     var type: MessageType
 
     // Sender identity (present on every message).
@@ -27,6 +27,9 @@ struct Message: Codable {
     var deviceName: String
     var identityPublicKey: String?
     var identitySignature: String?
+    /// TLS exporter for the identity-only first frame. The signature binds the
+    /// claimed device key to this exact TLS connection, preventing replay.
+    var channelBinding: String?
 
     // Clipboard payload (announce carries metadata; clip also carries content).
     var contentType: String = "text"   // richest kind label: "text"/"rich text"/"image"

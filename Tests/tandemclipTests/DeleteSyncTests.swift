@@ -90,6 +90,11 @@ final class DeleteSyncTests: XCTestCase {
         XCTAssertTrue(engine.history.contains { $0.hash == hash })
 
         let peerIdentity = DeviceIdentity()
+        let previous = engine.config.trustedDevices
+        var trusted = previous
+        trusted["d-test-peer"] = peerIdentity.publicKeyBase64
+        engine.config.trustedDevices = trusted
+        defer { engine.config.trustedDevices = previous }
         var del = Message(type: .delete, deviceID: "d-test-peer", deviceName: "TestPeer")
         del.timestamp = Date().timeIntervalSince1970
         del.hash = hash
@@ -110,6 +115,11 @@ final class DeleteSyncTests: XCTestCase {
         let hash = seedLocalClip(engine, "replay target")
 
         let peerIdentity = DeviceIdentity()
+        let previous = engine.config.trustedDevices
+        var trusted = previous
+        trusted["d-test-peer"] = peerIdentity.publicKeyBase64
+        engine.config.trustedDevices = trusted
+        defer { engine.config.trustedDevices = previous }
         var del = Message(type: .delete, deviceID: "d-test-peer", deviceName: "TestPeer")
         del.timestamp = Date().timeIntervalSince1970 - 3600   // an hour old: replayed capture
         del.hash = hash

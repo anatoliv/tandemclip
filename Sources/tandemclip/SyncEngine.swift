@@ -121,7 +121,8 @@ final class SyncEngine {
         watcher.onLocalCopy = { [weak self] snap, hash in self?.handleLocal(snap, hash) }
 
         transport.onMessage = { [weak self] msg, verifiedKey in self?.handleRemote(msg, verifiedKey: verifiedKey) }
-        transport.helloProvider = { [weak self] in self?.makeAnnounce() }
+        transport.helloProvider = { [weak self] binding in self?.makeIdentityHello(binding: binding) }
+        transport.trustedAnnounceProvider = { [weak self] in self?.makeAnnounce() }
         transport.onConnectedPeersChanged = { [weak self] dict in self?.updateConnected(dict) }
         // A network change can flip the Wi-Fi allowlist verdict; refresh the
         // status UI so the menu bar doesn't keep showing the old network's state
@@ -141,11 +142,14 @@ final class SyncEngine {
         observeWake()
         watchdog.noteStarted(at: now())
         startWatchdog()
-        guard config.hasPairingSecret else {
-            // No readable pairing secret → derivePSK would fall back to a fixed,
-            // publicly-known key. Do not advertise or accept connections; wait for
-            // the user to set a code (setPairingCode → reloadPairing brings it up).
-            Log.error("no usable pairing code — not starting networking (would key TLS with a known PSK)")
+        guard config.canConnect else {
+            // Neither a missing pairing secret nor an unavailable signing key
+            // can safely bring up the network transport.
+            if !config.hasPairingSecret {
+                Log.error("no usable pairing code — not starting networking (would key TLS with a known PSK)")
+            } else {
+                Log.error("device signing key unavailable — not starting networking")
+            }
             return
         }
         transport.start()
@@ -163,7 +167,15 @@ final class SyncEngine {
     /// the new PSK immediately. Peers drop until they also have the new code.
     func reloadPairing() {
         peers.removeAll()
-        if config.hasPairingSecret { transport.restart(reason: "pairing code changed") }
+        if config.canConnect { transport.restart(reason: "pairing code changed") }
+        onStatusChange?()
+    }
+
+    /// Rebuild connections after a pin is added, replaced, or revoked so both
+    /// sides exchange identity proofs and fresh clipboard metadata.
+    func trustedDevicesChanged() {
+        peers.removeAll()
+        if config.canConnect { transport.restart(reason: "trusted devices changed") }
         onStatusChange?()
     }
 
@@ -179,7 +191,7 @@ final class SyncEngine {
         // so the watchdog doesn't spend a ladder step rebuilding again a moment
         // later. It still escalates normally if this attempt doesn't take.
         watchdog.noteAttempt(at: now())
-        guard config.hasPairingSecret else {
+        guard config.canConnect else {
             peers.removeAll()   // networking was never up; nothing known is still true
             start()             // bring it up if a code has since been set
             onStatusChange?()
@@ -201,7 +213,7 @@ final class SyncEngine {
     /// dropping the dictionary would also discard each peer's cached clipboard
     /// metadata and blank the picker until they re-announce.
     private func autoResync(reason: String) {
-        guard config.hasPairingSecret else { return }
+        guard config.canConnect else { return }
         Log.trace("engine", "auto reconnect (\(reason))")
         transport.restart(reason: reason, coalescing: true)
         onStatusChange?()
@@ -248,7 +260,7 @@ final class SyncEngine {
         // Cheap environment gates first — `networkAllowed()` may shell out to
         // read the SSID, so it runs last, only once the policy already says the
         // transport looks broken.
-        guard config.hasPairingSecret, !config.paused else { return }
+        guard config.canConnect, !config.paused else { return }
         let anyOnline = peers.values.contains { $0.online }
         guard let delay = watchdog.shouldRebuild(at: now(), anyPeerOnline: anyOnline) else { return }
         guard networkAllowed() else { return }   // allowlist says don't sync here — not a fault
@@ -956,7 +968,10 @@ final class SyncEngine {
         // for the future and clear any accumulated backoff.
         if !online.isEmpty { watchdog.notePeerOnline(at: now()) }
         for (id, info) in dict {
-            var p = peers[id] ?? PeerClip(name: info.name)
+            // Metadata from a previous key belongs to that old identity.
+            var p = peers[id]?.publicKey == info.publicKey
+                ? (peers[id] ?? PeerClip(name: info.name))
+                : PeerClip(name: info.name)
             p.name = info.name
             if let publicKey = info.publicKey { p.publicKey = publicKey }
             p.online = true
@@ -972,11 +987,20 @@ final class SyncEngine {
 
     // MARK: - Helpers
 
+    /// The first frame proves device identity without revealing clipboard data.
+    private func makeIdentityHello(binding: Data) -> Message {
+        var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
+        m.channelBinding = binding.base64EncodedString()
+        config.identity.sign(&m)
+        return m
+    }
+
     /// Identity + (if we're allowed to send) our clipboard metadata, shaped by
     /// the preview level. Sent on connect and on local change in Manual mode.
     private func makeAnnounce() -> Message {
         var m = Message(type: .announce, deviceID: config.deviceID, deviceName: config.deviceName)
-        guard config.role.canSend, !config.privacyHold, config.previewLevel != .names,
+        guard config.role.canSend, !config.paused, !config.privacyHold, networkAllowed(),
+              config.previewLevel != .names,
               heldSecret?.hash != localHash,
               let h = localHash, let snap = localSnapshot else {
             config.identity.sign(&m)

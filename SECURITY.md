@@ -22,9 +22,9 @@ The design defends against:
 - **An attacker on the same LAN** — being on the same Wi-Fi grants nothing. Every
   peer connection is TLS 1.3 authenticated *and* encrypted with a pre-shared key
   derived from the pairing code; a wrong code fails the handshake.
-- **A rogue or revoked device that once knew the code** — the optional
-  trusted-device allowlist pins each device by its Curve25519 signing key, so a
-  device can be revoked without rotating the code everywhere.
+- **A rogue or revoked device that once knew the code** — every peer must be
+  approved by its Curve25519 signing-key fingerprint before clipboard data is
+  exchanged. A device can be revoked without rotating the code everywhere.
 - **A network MITM against auto-updates** — every build is EdDSA-signed
   (Sparkle), served over HTTPS, and the release pipeline refuses to publish an
   unsigned or version-regressed appcast.
@@ -40,8 +40,12 @@ The design defends against:
   key. Generated codes carry ~59 bits of entropy; custom codes are checked
   against a strength floor.
 - **Signed device identity.** Each install holds a Curve25519 keypair; every
-  message is signed over its canonical form and receivers drop messages that
-  don't verify. State-changing messages (delete, pin/unpin, chunks) require a
+  message is signed over its canonical form. The first message signs an
+  exporter from that exact TLS connection without clipboard data, so a captured
+  identity proof cannot be replayed on another connection. Later data is
+  accepted and sent only for pinned keys. A changed key requires explicit
+  approval. State-changing
+  messages (delete, pin/unpin, chunks) require a
   valid signature, a freshness bound, and pass a replay cache.
 - **Concealed content is not synced.** Content tagged with the
   [nspasteboard.org](https://nspasteboard.org) `ConcealedType` /

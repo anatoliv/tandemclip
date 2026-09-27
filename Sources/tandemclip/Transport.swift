@@ -25,6 +25,7 @@ final class Transport {
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var readyIDs: Set<ObjectIdentifier> = []         // connections past TLS handshake
     private var identity: [ObjectIdentifier: PeerConnectionInfo] = [:]  // learned from messages
+    private var channelBindings: [ObjectIdentifier: Data] = [:]
     private let maxConnections = 16
     private let maxVisibleEndpoints = 32
 
@@ -72,11 +73,13 @@ final class Transport {
     /// Delivered messages, with the identity public key already verified on the
     /// transport queue (nil if unsigned/invalid) so the app layer needn't re-verify.
     var onMessage: ((Message, String?) -> Void)?
-    /// Currently connected + identified peers: deviceID -> display name.
+    /// Currently connected peers with a verified identity proof.
     var onConnectedPeersChanged: (([String: PeerConnectionInfo]) -> Void)?
     /// Called for each newly-ready connection to obtain the identity/announce
     /// frame to send immediately (so both ends learn each other right away).
-    var helloProvider: (() -> Message?)?
+    var helloProvider: ((Data) -> Message?)?
+    /// Clipboard metadata is sent only after the peer proves a pinned key.
+    var trustedAnnounceProvider: (() -> Message?)?
     /// Fired on the main thread whenever the network path changes, so the app can
     /// re-evaluate the Wi-Fi allowlist and refresh its status UI.
     var onPathChange: (() -> Void)?
@@ -126,6 +129,7 @@ final class Transport {
             self.reconnectTimer?.cancel(); self.reconnectTimer = nil
             for conn in self.connections.values { conn.cancel() }
             self.connections.removeAll(); self.readyIDs.removeAll(); self.identity.removeAll()
+            self.channelBindings.removeAll()
             self.visibleEndpoints.removeAll(); self.activeOutbound.removeAll(); self.outboundKey.removeAll()
             self.dialStartedAt.removeAll()
             self.notifyPeers()
@@ -253,7 +257,7 @@ final class Transport {
 
     // MARK: - TLS
 
-    private func tlsParameters() -> NWParameters {
+    func tlsParameters() -> NWParameters {
         let tls = NWProtocolTLS.Options()
 
         let pskData = config.psk.withUnsafeBytes { DispatchData(bytes: $0) }
@@ -393,9 +397,14 @@ final class Transport {
             switch state {
             case .ready:
                 Log.trace("tls", "handshake ok, peer ready: \(conn.endpoint)")
+                guard let binding = Self.channelBinding(on: conn) else {
+                    Log.error("TLS exporter unavailable — refusing peer connection")
+                    conn.cancel(); return
+                }
+                self.channelBindings[id] = binding
                 self.readyIDs.insert(id)
                 self.receiveHeader(on: conn)
-                if let hello = self.helloProvider?() { self.sendFrame(hello, on: conn) }
+                if let hello = self.helloProvider?(binding) { self.sendFrame(hello, on: conn) }
                 self.notifyPeers()
             case let .waiting(err):
                 // Path unsatisfied (e.g. a stale Bonjour resolution). Cancel so
@@ -422,6 +431,7 @@ final class Transport {
         connections[id] = nil
         readyIDs.remove(id)
         identity[id] = nil
+        channelBindings[id] = nil
         inboundFrameTimes[id] = nil
         dialStartedAt[id] = nil
         if let key = outboundKey[id] {
@@ -435,7 +445,11 @@ final class Transport {
     private func notifyPeers() {
         var peers: [String: PeerConnectionInfo] = [:]
         for id in readyIDs {
-            if let ident = identity[id] { peers[ident.id] = ident }
+            guard let ident = identity[id] else { continue }
+            if let existing = peers[ident.id],
+               config.isTrusted(existing.id, publicKey: existing.publicKey),
+               !config.isTrusted(ident.id, publicKey: ident.publicKey) { continue }
+            peers[ident.id] = ident
         }
         DispatchQueue.main.async { [weak self] in self?.onConnectedPeersChanged?(peers) }
     }
@@ -489,6 +503,7 @@ final class Transport {
             }
             if let body = data, body.count == length,
                let msg = try? JSONDecoder().decode(Message.self, from: body) {
+                guard msg.version == 3 else { conn.cancel(); return }
                 // A frame carrying our own deviceID is either a loopback/self
                 // connection (stale Bonjour resolution of our own service — the
                 // first frame arrives before any identity is learned) or a peer
@@ -503,15 +518,45 @@ final class Transport {
                     // Identified peer echoing us — skip the frame, keep reading.
                 } else {
                     Log.trace("sync", "recv \(msg.type.rawValue) \(length)B from \(msg.deviceName)")
-                    // Learn/refresh this connection's identity.
                     let publicKey = DeviceIdentity.verifiedPublicKey(for: msg)
-                    let known = self.identity[id]?.id == msg.deviceID
-                        && self.identity[id]?.publicKey == publicKey
-                    self.identity[id] = PeerConnectionInfo(id: msg.deviceID,
-                                                           name: msg.deviceName,
-                                                           publicKey: publicKey)
-                    if !known { self.notifyPeers() }
-                    DispatchQueue.main.async { self.onMessage?(msg, publicKey) }
+                    guard let publicKey else { conn.cancel(); return }
+                    if let peer = self.identity[id] {
+                        // A connection is bound to its first signed identity.
+                        // Other origins may appear only as signed gossip from
+                        // a trusted peer; another announce cannot rename it.
+                        if msg.type == .announce &&
+                           (peer.id != msg.deviceID || peer.publicKey != publicKey) {
+                            conn.cancel(); return
+                        }
+                        if self.config.isTrusted(peer.id, publicKey: peer.publicKey),
+                           self.config.isTrusted(msg.deviceID, publicKey: publicKey) {
+                            DispatchQueue.main.async { self.onMessage?(msg, publicKey) }
+                        }
+                    } else {
+                        // The first frame is an identity-only proof. No clip,
+                        // request, or metadata is accepted before this step.
+                        guard let binding = self.channelBindings[id],
+                              Self.isIdentityHello(msg, binding: binding) else { conn.cancel(); return }
+                        self.identity[id] = PeerConnectionInfo(id: msg.deviceID,
+                                                               name: msg.deviceName,
+                                                               publicKey: publicKey)
+                        self.notifyPeers()
+                        if self.config.isTrusted(msg.deviceID, publicKey: publicKey) {
+                            // SyncEngine's clipboard snapshot is main-thread
+                            // state; build the announcement there, then return
+                            // to the transport queue for the final trust check.
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self = self,
+                                      let announce = self.trustedAnnounceProvider?() else { return }
+                                self.queue.async {
+                                    guard self.readyIDs.contains(id),
+                                          let peer = self.identity[id],
+                                          self.config.isTrusted(peer.id, publicKey: peer.publicKey) else { return }
+                                    self.sendFrame(announce, on: conn)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if err == nil && !done {
@@ -523,6 +568,29 @@ final class Transport {
     }
 
     // MARK: - Send
+
+    /// Both sides of one TLS connection derive the same exporter. A captured
+    /// hello cannot verify on another connection, even with the shared PSK.
+    static func channelBinding(on conn: NWConnection) -> Data? {
+        guard let tls = conn.metadata(definition: NWProtocolTLS.definition) as? NWProtocolTLS.Metadata else {
+            return nil
+        }
+        let label = "EXPORTER-tandemclip-device-identity-v3"
+        return label.withCString { pointer -> Data? in
+            guard let secret = sec_protocol_metadata_create_secret(
+                tls.securityProtocolMetadata, label.utf8.count, pointer, 32
+            ) else { return nil }
+            let bytes = secret as DispatchData
+            return bytes.withUnsafeBytes { Data(bytes: $0, count: bytes.count) }
+        }
+    }
+
+    static func isIdentityHello(_ msg: Message, binding: Data) -> Bool {
+        msg.version == 3 && msg.type == .announce && msg.hash == nil && msg.preview == nil &&
+        msg.size == nil && msg.parts == nil && msg.files == nil &&
+        msg.text == nil && msg.chunkIndex == nil && msg.chunkTotal == nil &&
+        msg.chunkData == nil && msg.channelBinding == binding.base64EncodedString()
+    }
 
     private func encode(_ msg: Message) -> Data? {
         guard let body = try? JSONEncoder().encode(msg) else { return nil }
@@ -545,14 +613,14 @@ final class Transport {
             guard let self = self else { return }
             // One connection per identified peer: an inbound + outbound pair to the
             // same Mac would otherwise each get a copy (doubling traffic and relay
-            // amplification). Connections not yet identified still get sent.
+            // amplification). Unidentified and untrusted sockets receive nothing.
             var seen = Set<String>()
             var ready: [NWConnection] = []
             for id in self.readyIDs {
                 guard let conn = self.connections[id] else { continue }
-                if let did = self.identity[id]?.id {
-                    if !seen.insert(did).inserted { continue }
-                }
+                guard let peer = self.identity[id],
+                      self.config.isTrusted(peer.id, publicKey: peer.publicKey),
+                      seen.insert(peer.id).inserted else { continue }
                 ready.append(conn)
             }
             Log.trace("sync", "send \(msg.type.rawValue) \(frame.count)B to \(ready.count) peer(s)")
@@ -565,7 +633,8 @@ final class Transport {
         guard let frame = encode(msg) else { return }
         queue.async { [weak self] in
             guard let self = self else { return }
-            for (id, ident) in self.identity where ident.id == deviceID && self.readyIDs.contains(id) {
+            for (id, ident) in self.identity where ident.id == deviceID && self.readyIDs.contains(id)
+                && self.config.isTrusted(ident.id, publicKey: ident.publicKey) {
                 self.connections[id]?.send(content: frame, completion: .contentProcessed { _ in })
             }
         }

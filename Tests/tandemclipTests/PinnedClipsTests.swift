@@ -39,6 +39,11 @@ final class PinnedClipsTests: XCTestCase {
 
         // Incoming signed pin from a trusted peer lands in the store.
         let identity = DeviceIdentity()
+        let previous = engine.config.trustedDevices
+        var trusted = previous
+        trusted["d-test-peer"] = identity.publicKeyBase64
+        engine.config.trustedDevices = trusted
+        defer { engine.config.trustedDevices = previous }
         var m = Message(type: .pin, deviceID: "d-test-peer", deviceName: "TestPeer")
         m.timestamp = Date().timeIntervalSince1970
         let snap = ClipSnapshot(parts: [.text: Data("peer pinned this".utf8)])

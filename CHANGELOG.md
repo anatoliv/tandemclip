@@ -4,6 +4,12 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## [0.25.4] — 2026-09-27
+- Security: a shared pairing code now establishes only the encrypted connection.
+  Each Mac must approve the other's signing-key fingerprint before clipboard
+  data can sync. Identity proofs are bound to each TLS connection, and a changed
+  key requires explicit replacement approval. Upgrade paired Macs together.
+
 ## [0.25.3] — 2026-09-18
 - Crash reporting: release dSYMs replace the builder's absolute checkout path
   with a stable repository-relative source path, and release preparation now

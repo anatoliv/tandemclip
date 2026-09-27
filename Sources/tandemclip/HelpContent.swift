@@ -61,7 +61,7 @@ enum HelpCatalog {
     static let topics: [HelpTopic] = [
         // MARK: Getting started
         .init(id: "pair", category: "Getting started", title: "Pair your Macs",
-              body: "Install TandemClip on each Mac and enter the same pairing code under Settings → Security. The code is the encryption key. Being on the same Wi-Fi grants nothing by itself."),
+              body: "Install TandemClip on each Mac and enter the same pairing code under Settings → Security. Then compare and approve each Mac's fingerprint under Trusted devices on the other Mac. The code encrypts the connection; the fingerprint pins the specific device. Being on the same Wi-Fi grants nothing by itself."),
         .init(id: "first-sync", category: "Getting started", title: "Your first sync",
               body: "With two paired Macs in Mirror mode, copy some text on one and paste on the other. That's the whole loop. The menu-bar icon shows sync state; the picker (⇧⌘V) shows everything else."),
         .init(id: "menu-bar", category: "Getting started", title: "The menu-bar menu",
@@ -164,7 +164,7 @@ enum HelpCatalog {
         .init(id: "security-pairing", category: "Settings — Security", title: "Pairing code",
               body: "The shared secret that keys the encryption. Enter the same code on every Mac; Apply re-keys immediately (peers drop until they have the new code); Regenerate makes a fresh strong one. Change it any time you suspect it leaked."),
         .init(id: "security-allowlist", category: "Settings — Security", title: "Trusted devices",
-              body: "Off, any Mac holding the pairing code can sync. The code is the trust boundary. On, only checked devices sync, pinned by their signing key: unchecking one revokes it instantly even though it still knows the code. Example: you sold a Mac that once had the code. Revoke it here instead of rotating the code everywhere."),
+              body: "Every Mac must be approved by its signing-key fingerprint before clipboard data can sync, even if it knows the pairing code. Compare the fingerprint displayed in Settings on the other Mac before selecting Trust. A reinstall or replacement Mac shows a changed key and stays blocked until you select Approve new key. Revoke a retired Mac here to cut it off without rotating the code everywhere."),
         .init(id: "security-wifi", category: "Settings — Security", title: "Wi-Fi allowlist",
               body: "Restrict syncing to named Wi-Fi networks. Nothing is shared on networks you haven't listed. On Ethernet or VPN there's no Wi-Fi name to verify, so by default sync pauses there; the **“Allow sync when Wi-Fi can't be verified”** toggle (off by default) lets it run anyway on those connections.\n\nmacOS only hands apps the exact Wi-Fi name if you grant **Location** permission. Without it, TandemClip guesses the network a rougher way, so if a network won't add or shows a placeholder name, granting Location (the app will prompt) fixes it."),
 
@@ -182,7 +182,7 @@ enum HelpCatalog {
 
         // MARK: Troubleshooting
         .init(id: "ts-not-syncing", category: "Troubleshooting", title: "Not syncing?",
-              body: "Check, in order:\n- Same **pairing code** on every Mac.\n- Same **Wi-Fi**, and that network is allowed under Settings → Security (on Ethernet/VPN, either allow the unverifiable-network toggle or grant Location).\n- Not **paused** (menu) and not in **privacy hold** (✋).\n- The sender's **role** isn't Receive only.\n- The clip isn't over the **size limit**, and it isn't being held by Secret guard.\n- With Trusted devices on, the target Mac is actually checked.\n\nStopped after sleep or a long idle? Use **Reconnect** in the menu. It rebuilds discovery and peer connections, which the automatic 5-second retry can't do once Bonjour discovery itself has gone stale."),
+              body: "Check, in order:\n- Same **pairing code** on every Mac.\n- Approve each Mac's **fingerprint** under Settings → Security → Trusted devices on the other Mac.\n- Same **Wi-Fi**, and that network is allowed under Settings → Security (on Ethernet/VPN, either allow the unverifiable-network toggle or grant Location).\n- Not **paused** (menu) and not in **privacy hold** (✋).\n- The sender's **role** isn't Receive only.\n- The clip isn't over the **size limit**, and it isn't being held by Secret guard.\n\nStopped after sleep or a long idle? Use **Reconnect** in the menu. It rebuilds discovery and peer connections, which the automatic 5-second retry can't do once Bonjour discovery itself has gone stale."),
         .init(id: "ts-peer-missing", category: "Troubleshooting", title: "A Mac won't appear",
               body: "Give it a moment after wake. Peers rediscover automatically every few seconds. Make sure the two Macs don't share a display name, and that your network allows Bonjour (some guest networks block it)."),
         .init(id: "ts-updates", category: "Troubleshooting", title: "Stay current",
@@ -196,6 +196,12 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.25.4", date: "September 27, 2026",
+              highlight: "Your Macs now prove their identity.",
+              changes: [
+                .init(.improved, "A matching pairing code now starts an encrypted connection, and you approve each Mac's fingerprint before clipboard data can sync. Compare fingerprints in Settings → Security on both Macs. A Mac with a changed key stays blocked until you explicitly approve its replacement key."),
+                .init(.improved, "Identity proofs are tied to each connection so a captured proof cannot be replayed. Upgrade your paired Macs together; older versions cannot complete this connection setup."),
+              ]),
         .init(version: "0.25.0", date: "September 6, 2026",
               highlight: "Privacy hold reaches the menu bar.",
               changes: [

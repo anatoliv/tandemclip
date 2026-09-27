@@ -2,8 +2,8 @@
 
 Copy something on one Mac, paste it on another. TandemClip keeps the clipboard in sync
 across the Macs you own (text, rich text, images, files, and folders) over your local
-network. No cloud, no relay, no account, no remote control. Any Macs that share a pairing
-code find each other on the LAN and stay in sync, and nothing ever leaves it. It runs
+network. No cloud, no relay, no account, no remote control. Macs with the same pairing
+code find each other on the LAN; after you approve their fingerprints, they sync. It runs
 quietly as a menu-bar background agent.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -43,13 +43,13 @@ deliberately leaves TandemClip alone and Sparkle does the updating.
 | First run | Guided settings |
 | :---: | :---: |
 | <img src="docs/screenshots/welcome.png" alt="First-run Welcome window: it already works, pair your Macs, lock it down" /> | <img src="docs/screenshots/settings.png" alt="Settings window with plain-English descriptions on every option" /> |
-| Works immediately, one pairing code and you're synced | Plain-English options on every setting |
+| Pair with a shared code, then approve each Mac's fingerprint | Plain-English options on every setting |
 
 ## Why this exists
 
 Universal Clipboard requires the same Apple ID and Bluetooth proximity, and is
 often disabled on managed machines. TandemClip needs neither: any Macs on the same
-LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
+LAN that share a pairing code and approve each other's device keys sync their clipboards, and nothing leaves the LAN.
 
 ## Features
 
@@ -59,7 +59,7 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   the menu on demand.
 - **Per-Mac role**: Send + Receive, Receive-only, or Send-only.
 - **Settings window**: mode, role, preview level, max size, device name,
-  pairing code, trusted-device allowlist, Wi-Fi network guard, launch-at-login.
+  pairing code, trusted device keys, Wi-Fi network guard, launch-at-login.
 - **Private**: PSK-TLS keyed by your pairing code; password-manager/concealed
   content is never synced.
 - **Clipboard picker** (⇧⌘V): a visual browser: search + preview recent clips
@@ -112,13 +112,21 @@ LAN that share a pairing code sync their clipboards, and nothing leaves the LAN.
   authenticated *and* encrypted. Wrong code → TLS handshake fails → peer
   rejected. Being on the same Wi-Fi grants nothing on its own.
 - LAN-only. No internet relay, no unauthenticated writes.
-- Set the **same pairing code on every Mac.** Copy it from **Settings → Identity**
+- Set the **same pairing code on every Mac.** Copy it from **Settings → Security**
   (or the menu) on one machine and type it into the field on the others; applying re-keys the connection live, no relaunch.
-- **Trusted-device allowlist (off by default).** With it off, any Mac holding the
-  pairing code can sync; the code is the trust boundary. Turn it on
-  (**Settings → Security**) to pin specific devices by their signing key and to
-  revoke one without rotating the code everywhere; this is the way to cut off a
-  Mac that once knew the code (shared, stolen, or decommissioned).
+- **Approve each Mac under Settings → Security.** Matching codes let the Macs
+  discover each other, but clipboard data is blocked until each side approves
+  the other's signing-key fingerprint. Compare the fingerprint shown on the
+  other Mac before trusting it. A reinstall or new Mac presents a changed key;
+  use **Approve new key** explicitly after checking the new fingerprint. You can
+  revoke a device without rotating the shared code.
+  The signed identity proof is bound to the current TLS connection, so a
+  captured proof cannot be replayed on another connection.
+
+This changes the first message on each connection. Upgrade all paired Macs
+together; older builds cannot complete the new identity exchange. Existing Macs
+that were relying on the code alone must approve each other's fingerprints
+after upgrading.
 
 The pairing code is stored in the login **Keychain** (migrated automatically off
 any older `UserDefaults` value), and the PSK is derived from it with
@@ -139,12 +147,12 @@ success/failure, and every clip send/recv/dedup decision. Run two machines this
 way to watch a copy propagate. A failed handshake is logged as "likely wrong
 pairing code".
 
-Set a matching pairing code on each machine in **Settings → Identity** (Apply
-re-keys live). For headless/dev runs, the `TANDEMCLIP_PAIRING_CODE` env var
+Set a matching pairing code on each machine in **Settings → Security** (Apply
+re-keys live), then approve each peer's fingerprint there. For headless/dev runs, the `TANDEMCLIP_PAIRING_CODE` env var
 overrides it in-memory (bypasses the Keychain):
 
 ```sh
-TANDEMCLIP_PAIRING_CODE="K7QM-3PXF" .build/debug/tandemclip --no-menubar
+TANDEMCLIP_PAIRING_CODE="K7QM-3PXF-ABCD" .build/debug/tandemclip --no-menubar
 ```
 
 ## Package as a .app (recommended)
@@ -359,7 +367,7 @@ the full feature history, shipped (checked) and still planned (unchecked):
 - [x] AI on clips: on-demand Summarize, opt-in smart titles + incoming-clip translation, and "Ask your clipboard" (retrieval-grounded answers)
 - [x] Chunked transfers: clips up to 100 MB travel as signed 1 MB slices
 - [ ] Share-sheet extension (NSExtension appex, needs an Xcode target; Services covers the use case today)
-- [ ] Per-device identity pinning (public-key) beyond the shared PSK + allowlist
+- [x] Per-device identity pinning (public-key) beyond the shared PSK
 
 ## Contributing
 

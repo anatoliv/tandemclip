@@ -1,4 +1,6 @@
 import XCTest
+import CryptoKit
+import Network
 @testable import tandemclip
 
 final class SecurityTests: XCTestCase {
@@ -79,35 +81,159 @@ final class SecurityTests: XCTestCase {
         XCTAssertNotEqual(Config.derivePSK(from: ""), real)
     }
 
-    func testAllowlistBindsDeviceIDToPublicKey() {
-        let trusted = ["d-peer": "peer-key"]
+    func testDevicePinRequiredEvenForOldDisabledPreference() {
+        let defaults = UserDefaults.standard
+        let oldSetting = defaults.object(forKey: "allowlistEnabled")
+        defaults.set(false, forKey: "allowlistEnabled")
+        defer {
+            if let oldSetting { defaults.set(oldSetting, forKey: "allowlistEnabled") }
+            else { defaults.removeObject(forKey: "allowlistEnabled") }
+        }
 
-        XCTAssertTrue(Config.isTrusted(allowlistEnabled: false,
-                                       ownDeviceID: "d-self",
-                                       ownPublicKey: "self-key",
-                                       trustedDevices: [:],
-                                       id: "d-any",
-                                       publicKey: nil))
+        let config = Config()
+        let previous = config.trustedDevices
+        defer { config.trustedDevices = previous }
+        let id = "d-test-\(UUID().uuidString)"
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
 
-        XCTAssertTrue(Config.isTrusted(allowlistEnabled: true,
-                                       ownDeviceID: "d-self",
-                                       ownPublicKey: "self-key",
-                                       trustedDevices: trusted,
-                                       id: "d-peer",
-                                       publicKey: "peer-key"))
+        XCTAssertFalse(config.isTrusted(id, publicKey: key))
+        XCTAssertFalse(config.isTrusted(id, publicKey: nil))
+        config.trustedDevices = [id: key]
+        XCTAssertTrue(config.isTrusted(id, publicKey: key))
+        XCTAssertFalse(config.isTrusted(id, publicKey: "attacker-key"))
+        XCTAssertFalse(config.isTrusted(config.deviceID, publicKey: config.identity.publicKeyBase64))
+    }
 
-        XCTAssertFalse(Config.isTrusted(allowlistEnabled: true,
-                                        ownDeviceID: "d-self",
-                                        ownPublicKey: "self-key",
-                                        trustedDevices: trusted,
-                                        id: "d-peer",
-                                        publicKey: "attacker-key"))
+    func testFirstFrameCarriesOnlySignedIdentity() {
+        let identity = DeviceIdentity()
+        let binding = Data(repeating: 0x42, count: 32)
+        var hello = Message(type: .announce, deviceID: "d-peer", deviceName: "Peer")
+        hello.channelBinding = binding.base64EncodedString()
+        identity.sign(&hello)
+        XCTAssertTrue(Transport.isIdentityHello(hello, binding: binding))
+        XCTAssertEqual(DeviceIdentity.verifiedPublicKey(for: hello), identity.publicKeyBase64)
 
-        XCTAssertFalse(Config.isTrusted(allowlistEnabled: true,
-                                        ownDeviceID: "d-self",
-                                        ownPublicKey: "self-key",
-                                        trustedDevices: trusted,
-                                        id: "d-peer",
-                                        publicKey: nil))
+        let otherConnection = Data(repeating: 0x43, count: 32)
+        XCTAssertFalse(Transport.isIdentityHello(hello, binding: otherConnection),
+                       "a captured hello must not authenticate a different TLS connection")
+        var forgedBinding = hello
+        forgedBinding.channelBinding = otherConnection.base64EncodedString()
+        XCTAssertNil(DeviceIdentity.verifiedPublicKey(for: forgedBinding),
+                     "the signature must cover the TLS exporter")
+
+        var oldVersion = hello
+        oldVersion.version = 2
+        XCTAssertFalse(Transport.isIdentityHello(oldVersion, binding: binding))
+
+        hello.preview = "private clipboard"
+        XCTAssertFalse(Transport.isIdentityHello(hello, binding: binding))
+        hello.preview = nil
+        hello.chunkData = "AA=="
+        XCTAssertFalse(Transport.isIdentityHello(hello, binding: binding))
+    }
+
+    func testReconnectAnnouncementRespectsPauseAndNetworkGuard() {
+        let config = Config()
+        let previousRole = config.role
+        let previousPreview = config.previewLevel
+        let previousPause = config.paused
+        let previousPrivacy = config.privacyHold
+        defer {
+            config.role = previousRole
+            config.previewLevel = previousPreview
+            config.setPaused(previousPause)
+            config.privacyHold = previousPrivacy
+        }
+        config.role = .sendReceive
+        config.previewLevel = .metadata
+        config.setPaused(false)
+        config.privacyHold = false
+        let engine = SyncEngine(config: config)
+        engine.networkAllowed = { true }
+        let snapshot = ClipSnapshot(parts: [.text: Data("ordinary clip".utf8)])
+        engine.watcher.onLocalCopy?(snapshot, snapshot.hash)
+        XCTAssertEqual(engine.transport.trustedAnnounceProvider?()?.hash, snapshot.hash)
+
+        config.setPaused(true)
+        XCTAssertNil(engine.transport.trustedAnnounceProvider?()?.hash)
+        config.setPaused(false)
+        engine.networkAllowed = { false }
+        XCTAssertNil(engine.transport.trustedAnnounceProvider?()?.hash)
+    }
+
+    func testTLSExporterMatchesBothEndsAndChangesPerConnection() throws {
+        let transport = Transport(config: Config())
+        let queue = DispatchQueue(label: "tandemclip.tests.tls-exporter")
+        let listener = try NWListener(using: transport.tlsParameters(), on: .any)
+        let listenerReady = expectation(description: "TLS listener ready")
+        let serverReady = expectation(description: "server exporters")
+        serverReady.expectedFulfillmentCount = 2
+        let clientReady = expectation(description: "client exporters")
+        clientReady.expectedFulfillmentCount = 2
+        var accepted: [NWConnection] = []
+        var serverBindings: [Data] = []
+        var clientBindings: [Data] = []
+        listener.newConnectionHandler = { connection in
+            accepted.append(connection)
+            connection.stateUpdateHandler = { state in
+                if case .ready = state {
+                    if let binding = Transport.channelBinding(on: connection) {
+                        serverBindings.append(binding)
+                    }
+                    serverReady.fulfill()
+                }
+            }
+            connection.start(queue: queue)
+        }
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { listenerReady.fulfill() }
+        }
+        listener.start(queue: queue)
+        defer { listener.cancel(); accepted.forEach { $0.cancel() } }
+        wait(for: [listenerReady], timeout: 10)
+        let port = try XCTUnwrap(listener.port)
+
+        var clients: [NWConnection] = []
+        defer { clients.forEach { $0.cancel() } }
+        for _ in 0..<2 {
+            let connection = NWConnection(host: "127.0.0.1", port: port,
+                                          using: transport.tlsParameters())
+            clients.append(connection)
+            connection.stateUpdateHandler = { state in
+                if case .ready = state {
+                    if let binding = Transport.channelBinding(on: connection) {
+                        clientBindings.append(binding)
+                    }
+                    clientReady.fulfill()
+                }
+            }
+            connection.start(queue: queue)
+        }
+        wait(for: [serverReady, clientReady], timeout: 10)
+        XCTAssertEqual(serverBindings.count, 2)
+        XCTAssertEqual(clientBindings.count, 2)
+        XCTAssertEqual(Set(serverBindings), Set(clientBindings))
+        XCTAssertEqual(Set(serverBindings).count, 2)
+    }
+
+    func testChangedKeyNeedsExplicitReplacement() {
+        let config = Config()
+        let previous = config.trustedDevices
+        defer { config.trustedDevices = previous }
+        let id = "d-test-\(UUID().uuidString)"
+        let first = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
+        let replacement = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation.base64EncodedString()
+
+        XCTAssertFalse(config.replaceTrustedKey(id, with: replacement))
+        XCTAssertTrue(config.trustNewDevice(id, publicKey: first))
+        XCTAssertFalse(config.trustNewDevice(id, publicKey: replacement))
+        XCTAssertTrue(config.isTrusted(id, publicKey: first))
+        XCTAssertFalse(config.isTrusted(id, publicKey: replacement))
+
+        XCTAssertTrue(config.replaceTrustedKey(id, with: replacement))
+        XCTAssertFalse(config.isTrusted(id, publicKey: first))
+        XCTAssertTrue(config.isTrusted(id, publicKey: replacement))
+        config.revokeDevice(id)
+        XCTAssertFalse(config.isTrusted(id, publicKey: replacement))
     }
 }

@@ -141,7 +141,6 @@ final class SettingsModel: ObservableObject {
     @Published var deviceDisplayName: String { didSet { config.deviceDisplayName = deviceDisplayName } }
     @Published var pairingCode: String
 
-    @Published var allowlistEnabled: Bool { didSet { config.allowlistEnabled = allowlistEnabled } }
     @Published var networkAllowlistEnabled: Bool { didSet { config.networkAllowlistEnabled = networkAllowlistEnabled } }
     @Published var allowedSSIDs: [String] { didSet { config.allowedSSIDs = allowedSSIDs } }
     @Published var wifiFailOpen: Bool { didSet { config.wifiFailOpen = wifiFailOpen } }
@@ -184,7 +183,6 @@ final class SettingsModel: ObservableObject {
         deviceDisplayName = config.deviceDisplayName
         pairingCode = config.pairingCode
         activeCode = config.pairingCode
-        allowlistEnabled = config.allowlistEnabled
         networkAllowlistEnabled = config.networkAllowlistEnabled
         allowedSSIDs = config.allowedSSIDs
         wifiFailOpen = config.wifiFailOpen
@@ -379,8 +377,17 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject private var codexAuth = CodexAuthManager.shared
     @State private var peers: [(id: String, clip: PeerClip)] = []
+    @State private var pendingTrust: PendingTrust?
     @State private var currentSSID: String = ""
     @State private var tab: Tab = .general
+
+    private struct PendingTrust: Identifiable {
+        let id = UUID()
+        let deviceID: String
+        let name: String
+        let key: String
+        let oldKey: String?
+    }
 
     enum Tab: String, CaseIterable, Identifiable {
         case general = "General", sync = "Sync", content = "Content", ai = "AI", security = "Security"
@@ -822,33 +829,71 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Only sync with trusted devices", isOn: $model.allowlistEnabled)
-                if model.allowlistEnabled {
-                    if peers.isEmpty {
-                        Text("No devices seen yet.").foregroundColor(.secondary)
-                    } else {
-                        ForEach(peers, id: \.id) { peer in
-                            Toggle(isOn: Binding(
-                                get: { peer.clip.publicKey != nil && model.config.trustedDevices[peer.id] == peer.clip.publicKey },
-                                set: { model.config.setTrusted(peer.id, publicKey: peer.clip.publicKey, trusted: $0) }
-                            )) {
-                                HStack(spacing: 7) {
-                                    Circle().fill(model.engine.isSynced(peer.id) ? Color.green : Color.secondary.opacity(0.4))
-                                        .frame(width: 7, height: 7)
-                                    Text(peer.clip.name)
+                LabeledContent("This Mac's fingerprint") {
+                    Text(DeviceIdentity.fingerprint(for: model.config.identity.publicKeyBase64))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                if peers.isEmpty && model.config.trustedDevices.isEmpty {
+                    Text("No devices seen yet. Set the same pairing code on another Mac, then approve its fingerprint here.")
+                        .foregroundColor(.secondary)
+                }
+                ForEach(peers, id: \.id) { peer in
+                    let pinned = model.config.trustedDevices[peer.id]
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle().fill(model.engine.isSynced(peer.id) ? Color.green : Color.secondary.opacity(0.4))
+                                .frame(width: 7, height: 7)
+                            Text(peer.clip.name)
+                            Spacer()
+                            if let key = peer.clip.publicKey {
+                                if pinned == key {
+                                    Button("Revoke") { revoke(peer.id) }
+                                } else {
+                                    Button(pinned == nil ? "Trust" : "Approve new key") {
+                                        pendingTrust = PendingTrust(deviceID: peer.id, name: peer.clip.name,
+                                                                    key: key, oldKey: pinned)
+                                    }
+                                    if pinned != nil {
+                                        Button("Revoke old key") { revoke(peer.id) }
+                                    }
                                 }
                             }
-                            .disabled(peer.clip.publicKey == nil)
                         }
+                        if let key = peer.clip.publicKey {
+                            Text(DeviceIdentity.fingerprint(for: key))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .textSelection(.enabled)
+                            if pinned != nil && pinned != key {
+                                Text("Key changed. Sync is blocked until you approve the replacement.")
+                                    .font(.caption).foregroundColor(.orange)
+                                if let pinned {
+                                    Text("Previously trusted: \(DeviceIdentity.fingerprint(for: pinned))")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                ForEach(model.config.trustedDevices.keys.filter { id in !peers.contains { $0.id == id } }.sorted(), id: \.self) { id in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(id)
+                            Text(DeviceIdentity.fingerprint(for: model.config.trustedDevices[id] ?? ""))
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Revoke") { revoke(id) }
                     }
                 }
             } header: {
                 Text("Trusted devices")
             } footer: {
                 SettingsBullets(items: [
-                    ("Only sync with trusted devices", model.allowlistEnabled
-                        ? "on. Only the devices you check can sync. Unchecking one revokes it immediately, even if it still knows the pairing code: the safe way to cut off a Mac you've stopped using."
-                        : "off. Any Mac with the pairing code can sync. Turn this on to pin specific devices and revoke one without changing the code everywhere.", "security-allowlist"),
+                    ("Trusted devices", "only Macs you approve by fingerprint can sync. Compare the fingerprint on the other Mac before trusting it. A changed key stays blocked until you explicitly approve the replacement.", "security-allowlist"),
                 ])
             }
 
@@ -913,6 +958,25 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .alert(item: $pendingTrust) { pending in
+            let replacing = pending.oldKey != nil
+            let current = DeviceIdentity.fingerprint(for: pending.key)
+            let previous = pending.oldKey.map { DeviceIdentity.fingerprint(for: $0) }
+            return Alert(
+                title: Text(replacing ? "Approve replacement key?" : "Trust this Mac?"),
+                message: Text("\(pending.name) (\(pending.deviceID))\nNew fingerprint: \(current)"
+                    + (previous.map { "\nPreviously trusted: \($0)" } ?? "")
+                    + "\nCompare the new fingerprint in Settings on that Mac before approving."),
+                primaryButton: .default(Text(replacing ? "Replace key" : "Trust")) {
+                    guard model.config.trustedDevices[pending.deviceID] == pending.oldKey else { return }
+                    let changed = replacing
+                        ? model.config.replaceTrustedKey(pending.deviceID, with: pending.key)
+                        : model.config.trustNewDevice(pending.deviceID, publicKey: pending.key)
+                    if changed { model.engine.trustedDevicesChanged(); refreshSecurity() }
+                },
+                secondaryButton: .cancel()
+            )
+        }
         .onAppear {
             refreshSecurity()
             // Ask for Location so CoreWLAN can return the exact SSID (the name
@@ -934,5 +998,11 @@ struct SettingsView: View {
             let ssid = NetworkGuard.currentSSID() ?? ""
             DispatchQueue.main.async { if ssid != currentSSID { currentSSID = ssid } }
         }
+    }
+
+    private func revoke(_ id: String) {
+        model.config.revokeDevice(id)
+        model.engine.trustedDevicesChanged()
+        refreshSecurity()
     }
 }

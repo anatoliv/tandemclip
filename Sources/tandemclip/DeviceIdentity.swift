@@ -1,27 +1,37 @@
 import CryptoKit
 import Foundation
+import Security
 
 /// Per-install signing identity used to bind the trusted-device allowlist to a
 /// real key, instead of to a self-asserted deviceID inside the PSK-TLS channel.
 struct DeviceIdentity {
-    private let privateKey: Curve25519.Signing.PrivateKey
+    private let privateKey: Curve25519.Signing.PrivateKey?
+
+    var isAvailable: Bool { privateKey != nil }
 
     var publicKeyBase64: String {
-        privateKey.publicKey.rawRepresentation.base64EncodedString()
+        privateKey?.publicKey.rawRepresentation.base64EncodedString() ?? ""
     }
 
     init() {
-        if let data = KeychainStore.getData("identitySigningKey"),
-           let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: data) {
-            privateKey = key
+        let stored = KeychainStore.getDataStatus("identitySigningKey")
+        if let data = stored.value {
+            privateKey = try? Curve25519.Signing.PrivateKey(rawRepresentation: data)
+            if privateKey == nil { Log.error("stored device signing key is invalid — sync disabled") }
+            return
+        }
+        guard stored.status == errSecItemNotFound else {
+            Log.error("device signing key unreadable (status \(stored.status)) — sync disabled")
+            privateKey = nil
             return
         }
         let key = Curve25519.Signing.PrivateKey()
-        KeychainStore.setData("identitySigningKey", key.rawRepresentation)
-        privateKey = key
+        privateKey = KeychainStore.setData("identitySigningKey", key.rawRepresentation) ? key : nil
+        if privateKey == nil { Log.error("could not save device signing key — sync disabled") }
     }
 
     func sign(_ message: inout Message) {
+        guard let privateKey else { return }
         message.identityPublicKey = publicKeyBase64
         message.identitySignature = nil
         let data = Self.canonicalData(for: message)
@@ -39,6 +49,16 @@ struct DeviceIdentity {
         else { return nil }
 
         return publicKey.isValidSignature(signature, for: canonicalData(for: message)) ? publicKeyBase64 : nil
+    }
+
+    static func fingerprint(for publicKey: String) -> String {
+        guard let bytes = Data(base64Encoded: publicKey), bytes.count == 32 else { return "Unavailable" }
+        let hex = SHA256.hash(data: bytes).prefix(16).map { String(format: "%02X", $0) }.joined()
+        return stride(from: 0, to: hex.count, by: 4).map { offset in
+            let start = hex.index(hex.startIndex, offsetBy: offset)
+            let end = hex.index(start, offsetBy: 4)
+            return String(hex[start..<end])
+        }.joined(separator: " ")
     }
 
     private static func canonicalData(for message: Message) -> Data {
@@ -59,6 +79,7 @@ struct DeviceIdentity {
                 .map { SignedPart(kind: $0.kind.rawValue, b64: $0.b64) },
             files: copy.files?.map { SignedFile(name: $0.name, b64: $0.b64) },
             identityPublicKey: copy.identityPublicKey,
+            channelBinding: copy.channelBinding,
             chunkIndex: copy.chunkIndex,
             chunkTotal: copy.chunkTotal,
             chunkData: copy.chunkData
@@ -83,6 +104,7 @@ private struct SignedMessagePayload: Codable {
     let parts: [SignedPart]?
     let files: [SignedFile]?
     let identityPublicKey: String?
+    let channelBinding: String?
     let chunkIndex: Int?
     let chunkTotal: Int?
     let chunkData: String?

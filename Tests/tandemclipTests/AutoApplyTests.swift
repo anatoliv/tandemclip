@@ -8,6 +8,7 @@ import AppKit
 final class AutoApplyTests: XCTestCase {
     private var engine: SyncEngine!
     private var savedItems: [NSPasteboardItem] = []
+    private var savedTrustedDevices: [String: String] = [:]
 
     override func setUp() {
         super.setUp()
@@ -19,6 +20,10 @@ final class AutoApplyTests: XCTestCase {
             return copy
         }
         engine = SyncEngine(config: Config())
+        savedTrustedDevices = engine.config.trustedDevices
+        var trusted = savedTrustedDevices
+        trusted["d-test-peer"] = DeviceIdentity().publicKeyBase64
+        engine.config.trustedDevices = trusted
         engine.config.historyEnabled = true
         engine.config.mode = .manual
     }
@@ -26,6 +31,7 @@ final class AutoApplyTests: XCTestCase {
     override func tearDown() {
         engine.config.autoApplyIncoming = false
         engine.config.mode = .mirror
+        engine.config.trustedDevices = savedTrustedDevices
         NSPasteboard.general.clearContents()
         if !savedItems.isEmpty { NSPasteboard.general.writeObjects(savedItems) }
         super.tearDown()

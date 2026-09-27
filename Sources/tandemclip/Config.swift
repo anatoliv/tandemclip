@@ -21,12 +21,12 @@ enum Role: String {
 ///
 /// The pairing code is the single shared secret across all your Macs. It is
 /// stretched into a 256-bit pre-shared key (PSK) that authenticates and
-/// encrypts every peer connection (PSK-TLS). Same code on every machine =
-/// they trust each other; wrong code = the TLS handshake fails and the peer
-/// is rejected. This is what makes "same Wi-Fi" NOT sufficient to join.
+/// encrypts every peer connection (PSK-TLS). A matching code permits identity
+/// discovery; clipboard data also requires a locally pinned signing key.
+/// A wrong code fails the TLS handshake.
 ///
-/// Everything here is stored in `UserDefaults` (domain `com.tandemclip`),
-/// so any setting is also editable with `defaults write` or an MDM profile.
+/// Preferences and trusted keys live in `UserDefaults` (domain `com.tandemclip`);
+/// the pairing code and signing private key live in the Keychain.
 final class Config {
     /// Posted (on main) whenever any persisted setting changes.
     static let didChange = Notification.Name("TandemClipConfigDidChange")
@@ -35,7 +35,7 @@ final class Config {
 
     let serviceType = "_tandemclip._tcp"
 
-    /// Stable per-install identity, used for the trusted-device allowlist and
+    /// Stable per-install identity, used for the trusted-device pins and
     /// for addressing pull requests to a specific Mac.
     let deviceID: String
     let identity = DeviceIdentity()
@@ -119,7 +119,7 @@ final class Config {
         // Migration: 0.2.0 changed trustedDevices values from display names to
         // base64 signing keys. Drop any legacy name-valued entries so a stale
         // name can never be treated as a pinned key — it would never match a real
-        // key and would silently keep a device untrusted when the allowlist is on.
+        // key and would silently keep a device untrusted.
         if let trusted = defaults.dictionary(forKey: "trustedDevices") as? [String: String],
            trusted.contains(where: { !Config.looksLikeSigningKey($0.value) }) {
             defaults.set(trusted.filter { Config.looksLikeSigningKey($0.value) }, forKey: "trustedDevices")
@@ -427,16 +427,7 @@ final class Config {
 
     // MARK: - Security
 
-    /// Opt-in device pinning. Off by default: the pairing-code-derived PSK is
-    /// what makes "same Wi-Fi" insufficient, and turning this on with an empty
-    /// trust list would silently drop every peer. Enabling it lets the user pin
-    /// specific deviceID→publicKey pairs so trust is enforceable and revocable.
-    var allowlistEnabled: Bool {
-        get { defaults.bool(forKey: "allowlistEnabled") }
-        set { set("allowlistEnabled", newValue) }
-    }
-
-    /// Device IDs permitted when the allowlist is on. Values are each device's
+    /// Device IDs permitted to sync. Values are each device's
     /// signing public key, base64-encoded.
     var trustedDevices: [String: String] {
         get { defaults.dictionary(forKey: "trustedDevices") as? [String: String] ?? [:] }
@@ -444,18 +435,37 @@ final class Config {
     }
 
     func isTrusted(_ id: String, publicKey: String?) -> Bool {
-        Self.isTrusted(allowlistEnabled: allowlistEnabled,
-                       ownDeviceID: deviceID,
-                       ownPublicKey: identity.publicKeyBase64,
+        Self.isTrusted(ownDeviceID: deviceID,
                        trustedDevices: trustedDevices,
                        id: id,
                        publicKey: publicKey)
     }
 
-    func setTrusted(_ id: String, publicKey: String?, trusted: Bool) {
-        guard id != deviceID, let publicKey, !publicKey.isEmpty else { return }
+    /// First trust and key replacement are separate, deliberate actions. A
+    /// routine trust toggle must never overwrite a pin after a reinstall.
+    @discardableResult
+    func trustNewDevice(_ id: String, publicKey: String?) -> Bool {
+        guard id != deviceID, let publicKey,
+              Self.looksLikeSigningKey(publicKey), trustedDevices[id] == nil else { return false }
         var t = trustedDevices
-        if trusted { t[id] = publicKey } else { t[id] = nil }
+        t[id] = publicKey
+        trustedDevices = t
+        return true
+    }
+
+    @discardableResult
+    func replaceTrustedKey(_ id: String, with publicKey: String?) -> Bool {
+        guard id != deviceID, let publicKey, Self.looksLikeSigningKey(publicKey),
+              let previous = trustedDevices[id], previous != publicKey else { return false }
+        var t = trustedDevices
+        t[id] = publicKey
+        trustedDevices = t
+        return true
+    }
+
+    func revokeDevice(_ id: String) {
+        var t = trustedDevices
+        t[id] = nil
         trustedDevices = t
     }
 
@@ -485,6 +495,7 @@ final class Config {
     /// key. Networking MUST NOT come up in that state, or any LAN peer could
     /// complete the PSK-TLS handshake. Callers gate `transport.start()` on this.
     var hasPairingSecret: Bool { !pairingCode.isEmpty }
+    var canConnect: Bool { hasPairingSecret && identity.isAvailable }
 
     /// 256-bit pre-shared key derived from the pairing code with PBKDF2-HMAC-SHA256
     /// at a high iteration count, adding a brute-force work factor against a
@@ -567,14 +578,11 @@ final class Config {
         return Set(chars).count >= 6
     }
 
-    static func isTrusted(allowlistEnabled: Bool,
-                          ownDeviceID: String,
-                          ownPublicKey: String,
+    static func isTrusted(ownDeviceID: String,
                           trustedDevices: [String: String],
                           id: String,
                           publicKey: String?) -> Bool {
-        if !allowlistEnabled { return true }
-        if id == ownDeviceID { return publicKey == nil || publicKey == ownPublicKey }
+        if id == ownDeviceID { return false }
         guard let publicKey else { return false }
         return trustedDevices[id] == publicKey
     }

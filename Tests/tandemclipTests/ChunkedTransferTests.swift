@@ -30,6 +30,11 @@ final class ChunkedTransferTests: XCTestCase {
 
         // Build the inner (signed) clip message from a peer.
         let identity = DeviceIdentity()
+        let previous = engine.config.trustedDevices
+        var trusted = previous
+        trusted["d-test-peer"] = identity.publicKeyBase64
+        engine.config.trustedDevices = trusted
+        defer { engine.config.trustedDevices = previous }
         let text = "chunked payload " + String(repeating: "x", count: 40_000)
         let snap = ClipSnapshot(parts: [.text: Data(text.utf8)])
         var inner = Message(type: .clip, deviceID: "d-test-peer", deviceName: "TestPeer")
