@@ -275,7 +275,8 @@
       <p class="t-body t-mute lede" style="margin-top:16px;">
         Apple's Universal Clipboard needs the same Apple ID, Bluetooth proximity, and is
         often disabled on managed machines. TandemClip needs none of that. Any Macs on the
-        same network that share a pairing code sync their clipboards, and nothing leaves the LAN.
+        same network can sync after you enter a shared pairing code and approve each other's
+        fingerprints. Nothing leaves the LAN.
       </p>
       <div class="stats">
         <div class="cell"><div class="n"><em>0</em></div><div class="k">Servers, relays, or accounts</div></div>
@@ -307,7 +308,7 @@
         <div class="card">
           <div class="ic"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></div>
           <h3 class="t-h3">Roles &amp; trust</h3>
-          <p class="t-body t-mute" style="margin-top:8px;">Set any Mac to Send&nbsp;+&nbsp;Receive, Receive-only, or Send-only. Restrict sync to a trusted-device allowlist and revoke a machine without rotating the code everywhere.</p>
+          <p class="t-body t-mute" style="margin-top:8px;">Set any Mac to Send&nbsp;+&nbsp;Receive, Receive-only, or Send-only. Approve each Mac by fingerprint before it can sync, and revoke a machine without rotating the code everywhere.</p>
         </div>
       </div>
       <p class="t-small t-faint" style="margin-top:16px;">Self-healing transport: a reconcile loop re-dials any peer it loses, so sync survives sleep/wake and Wi-Fi roams.</p>
@@ -483,7 +484,7 @@
         </div>
         <div class="item">
           <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></div>
-          <div><h3>Trusted-device allowlist</h3><p>Off by default, the code is the trust boundary. Turn it on to pin specific devices by signing key and revoke one, which is the way to cut off a Mac that once knew the code.</p></div>
+          <div><h3>Trusted devices</h3><p>A pairing code alone cannot start clipboard sync. Compare and approve each Mac's signing-key fingerprint under Settings → Security → Trusted devices on the other Mac. A changed key stays blocked until you check its fingerprint and select Approve new key. Revoke a Mac here without changing the shared code.</p></div>
         </div>
         <div class="item">
           <div class="ic"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></div>
@@ -611,7 +612,7 @@
       <div class="faq">
         <details open>
           <summary>What do I need to run it?<span class="pl">+</span></summary>
-          <div class="ans">macOS 13 or later on Apple Silicon, and two or more Macs on the same local network. Set the <b>same pairing code</b> on each Mac. Copy it from <b>Settings → Security</b> on one machine and type it into the others. Applying re-keys the connection live, so you do not need to relaunch.</div>
+          <div class="ans">macOS 13 or later on Apple Silicon, and two or more Macs on the same local network. Set the <b>same pairing code</b> under <b>Settings → Security</b> on each Mac. Applying re-keys the connection live, so you do not need to relaunch. Then compare each Mac's fingerprint under <b>Trusted devices</b> on the other Mac and select <b>Trust</b>. Both Macs must approve each other before clipboard data can sync.</div>
         </details>
         <details>
           <summary>Is it really LAN-only?<span class="pl">+</span></summary>
@@ -652,7 +653,7 @@
         <div class="glow" aria-hidden="true"></div>
         <div class="cue" style="justify-content:center;"><span class="dot"></span><span class="lbl">Free · macOS 13+</span></div>
         <h2 class="t-display" style="font-size:clamp(34px,4.4vw,58px);">Copy here. <em>Paste</em> there.</h2>
-        <p class="t-body t-mute" style="max-width:460px; margin:14px auto 0;">Install it on each Mac, share one pairing code, and your clipboard just follows you.</p>
+        <p class="t-body t-mute" style="max-width:460px; margin:14px auto 0;">Install it on each Mac, enter the same pairing code, then compare and approve each other's fingerprints. Your clipboard follows you.</p>
         <div class="row" style="justify-content:center;">
           <a class="btn btn-primary" href="/TandemClip_0.25.5_aarch64.dmg" download>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 12l5 5 5-5"/><path d="M5 21h14"/></svg>
