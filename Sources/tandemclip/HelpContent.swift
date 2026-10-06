@@ -115,6 +115,8 @@ enum HelpCatalog {
               body: "Sets how TandemClip looks: **System** follows your Mac's light/dark setting and switches with it; **Light** and **Dark** pin the app to that look no matter what the system does. The change applies instantly to the picker, Settings, and these windows, and is remembered. Default is System."),
         .init(id: "general-diagnostics", category: "Settings — General", title: "Verbose logging",
               body: "Records detailed activity (connections, syncs) to the unified logging system (read it in Console.app). Turn it on when chasing a problem, off otherwise."),
+        .init(id: "general-crash-reporting", category: "Settings — General", title: "Send crash & error reports",
+              body: "Off by default. When it is on, TandemClip sends crash and error reports to the developer to help fix bugs. Reports never include your clipboard content, your IP, or any identifiers. Turning crash reports on means TandemClip will try to send a report after a crash, and it does not confirm that the report arrived."),
 
         // MARK: Settings — Sync (with worked examples for every combination)
         .init(id: "sync-mirror", category: "Settings — Sync", title: "Mode: Mirror",
@@ -196,6 +198,12 @@ enum HelpCatalog {
     /// Release history, newest first. Curated from the shipped versions so
     /// each entry tells you what actually changed and when.
     static let releases: [HelpRelease] = [
+        .init(version: "0.25.5", date: "October 6, 2026",
+              highlight: "Crash reporting shows when it cannot start.",
+              changes: [
+                .init(.fixed, "Settings now says when the crash reporter could not start. Turning it off and on again retries. Reports to an unresponsive server give up after about five seconds, and the reporter starts and stops off the main thread."),
+                .init(.improved, "Help explains that TandemClip tries to send a report after a crash and does not confirm delivery. Crash reporting only sends to ingest.crashbox.dev."),
+              ]),
         .init(version: "0.25.4", date: "September 27, 2026",
               highlight: "Your Macs now prove their identity.",
               changes: [

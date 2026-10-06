@@ -64,4 +64,6 @@ The design defends against:
 - **Crash reporting (Crashbox) is off by default** and only starts when one
   valid HTTPS DSN is present. Failure is bounded (10 cached envelopes, finite
   network and shutdown timeouts), and no PII, IP, user identifiers, automatic
-  breadcrumbs, or request capture are sent.
+  breadcrumbs, or request capture are sent. Turning crash reports on means
+  TandemClip will try to send a report after a crash, and it does not confirm
+  that the report arrived.

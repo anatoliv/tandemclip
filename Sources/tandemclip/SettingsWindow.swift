@@ -133,7 +133,24 @@ final class SettingsModel: ObservableObject {
     @Published var launchAtLogin: Bool { didSet { config.launchAtLogin = launchAtLogin; LaunchAtLogin.set(launchAtLogin) } }
     @Published var startPaused: Bool { didSet { config.startPaused = startPaused } }
     @Published var verboseLogging: Bool { didSet { config.verboseLogging = verboseLogging; Log.verbose = verboseLogging } }
-    @Published var crashReportingEnabled: Bool { didSet { config.crashReportingEnabled = crashReportingEnabled; CrashReporting.apply(enabled: crashReportingEnabled) } }
+    @Published var crashReportingEnabled: Bool {
+        didSet {
+            config.crashReportingEnabled = crashReportingEnabled
+            CrashReporting.apply(enabled: crashReportingEnabled)
+            refreshCrashReportingStatus()
+            // The SDK starts on its own queue; read the outcome again once it has
+            // had a moment, so a failed start is shown rather than assumed away.
+            DispatchQueue.main.asyncAfter(deadline: .now() + CrashReporting.initializationWait) { [weak self] in
+                self?.refreshCrashReportingStatus()
+            }
+        }
+    }
+    /// What the reporter actually did, not just the preference.
+    @Published private(set) var crashReportingStatus: CrashReporting.Status = .notConfigured
+
+    func refreshCrashReportingStatus() {
+        crashReportingStatus = CrashReporting.currentStatus
+    }
     @Published var historyEnabled: Bool { didSet { config.historyEnabled = historyEnabled } }
     @Published var historyKeep: Int { didSet { config.historyLimit = historyKeep } }
     @Published var pickerShow: Int { didSet { config.pickerShowCount = pickerShow } }
@@ -177,6 +194,7 @@ final class SettingsModel: ObservableObject {
         startPaused = config.startPaused
         verboseLogging = config.verboseLogging
         crashReportingEnabled = config.crashReportingEnabled
+        crashReportingStatus = CrashReporting.currentStatus
         historyEnabled = config.historyEnabled
         historyKeep = config.historyLimit
         pickerShow = config.pickerShowCount
@@ -503,11 +521,10 @@ struct SettingsView: View {
             } footer: {
                 SettingsBullets(items: [
                     ("Verbose logging", "records detailed activity (connections, syncs) to the unified logging system, readable in Console.app. Turn it on when chasing a problem; otherwise leave it off.", "general-diagnostics"),
-                    ("Send crash & error reports", CrashReporting.isConfigured
-                        ? "off by default; when on, sends crash and error reports to the developer to help fix bugs. Reports never include your clipboard content, your IP, or any identifiers."
-                        : "not available in this build (no reporting endpoint is configured).", "general-crash-reporting"),
+                    ("Send crash & error reports", CrashReporting.settingsDetail(model.crashReportingStatus), "general-crash-reporting"),
                 ])
             }
+            .onAppear { model.refreshCrashReportingStatus() }
             SupportTandemClipSection()
         }
         .formStyle(.grouped)

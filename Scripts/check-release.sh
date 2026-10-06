@@ -108,6 +108,9 @@ if [[ "${PREFLIGHT_ONLY:-}" == "1" ]]; then
     fi
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-package-dsym.py
     PYTHONDONTWRITEBYTECODE=1 python3 Scripts/test-dsym-source-proof.py
+    # The untracked private backup script: a branch only behind the remote is covered,
+    # not a failure. Skips itself where that script is absent.
+    if [[ -f Scripts/test-backup-repo.sh ]]; then bash Scripts/test-backup-repo.sh; fi
     # The release kit: its pin (the vendored copy is exactly the version it claims) and
     # every kit test, run on these exact bytes. Seconds.
     bash Scripts/release-kit/check.sh

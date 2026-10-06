@@ -4,11 +4,30 @@ import Sentry
 
 final class CrashReportingTests: XCTestCase {
     func testAcceptsOneHTTPSCrashboxDSN() {
-        let value = "https://public-key@crashbox.example.test/6bb1b202-8b83-4ec4-9151-f4ef7548e544"
+        let value = "https://public-key@ingest.crashbox.dev/6bb1b202-8b83-4ec4-9151-f4ef7548e544"
         XCTAssertEqual(
             CrashReporting.dsn(from: [CrashReporting.infoKey: "  \(value)\n"]),
             value
         )
+        XCTAssertEqual(CrashReporting.collectorHost, "ingest.crashbox.dev")
+    }
+
+    func testOnlyTheCrashboxIngestHostIsAccepted() {
+        let rejected = [
+            "https://public-key@crashbox.example.test/project",
+            "https://public-key@app.crashbox.dev/project",
+            "https://public-key@crashbox.dev/project",
+            "https://public-key@ingest.crashbox.dev.evil.example/project",
+            "https://public-key@evil-ingest.crashbox.dev/project",
+            "https://public-key@ingest.crashbox.dev:8443/project",
+            "https://public-key@ingest.crashbox.dev:443/project",
+        ]
+        for value in rejected {
+            XCTAssertNil(
+                CrashReporting.dsn(from: [CrashReporting.infoKey: value]),
+                "unexpectedly accepted: \(value)"
+            )
+        }
     }
 
     func testMissingEmptyAndNonStringConfigurationMeanReportingDisabled() {
@@ -21,15 +40,15 @@ final class CrashReportingTests: XCTestCase {
     func testRejectsMalformedOrUnsafeEndpointsBeforeSDKStartup() {
         let rejected = [
             "not a URL",
-            "http://public-key@crashbox.example.test/project",
-            "https://crashbox.example.test/project",
-            "https://public-key:secret@crashbox.example.test/project",
+            "http://public-key@ingest.crashbox.dev/project",
+            "https://ingest.crashbox.dev/project",
+            "https://public-key:secret@ingest.crashbox.dev/project",
             "https://public-key@/project",
-            "https://public-key@crashbox.example.test/",
-            "https://public-key@crashbox.example.test/project/",
-            "https://public-key@crashbox.example.test/one/two",
-            "https://public-key@crashbox.example.test/project?fallback=hosted",
-            "https://public-key@crashbox.example.test/project#fragment",
+            "https://public-key@ingest.crashbox.dev/",
+            "https://public-key@ingest.crashbox.dev/project/",
+            "https://public-key@ingest.crashbox.dev/one/two",
+            "https://public-key@ingest.crashbox.dev/project?fallback=hosted",
+            "https://public-key@ingest.crashbox.dev/project#fragment",
             "https://public-key@o123.ingest.sentry.io/project",
         ]
 
@@ -44,7 +63,7 @@ final class CrashReportingTests: XCTestCase {
     func testFailureBudgetsStaySmallAndFinite() {
         XCTAssertEqual(CrashReporting.maximumCachedEnvelopes, 10)
         XCTAssertLessThanOrEqual(CrashReporting.requestTimeout, 5)
-        XCTAssertLessThanOrEqual(CrashReporting.resourceTimeout, 10)
+        XCTAssertLessThanOrEqual(CrashReporting.resourceTimeout, 5)
         XCTAssertLessThanOrEqual(CrashReporting.shutdownTimeout, 0.25)
 
         let configuration = CrashReporting.transportConfiguration()
@@ -76,19 +95,69 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertFalse(options.enableMetricKitRawPayload)
     }
 
-    func testNativeVerificationCrashNeedsTheExactGateAndActiveReporting() {
-        XCTAssertTrue(
-            CrashReporting.shouldCaptureNativeTest(request: "1", reportingActive: true)
-        )
-        XCTAssertFalse(
-            CrashReporting.shouldCaptureNativeTest(request: nil, reportingActive: true)
-        )
-        XCTAssertFalse(
-            CrashReporting.shouldCaptureNativeTest(request: "true", reportingActive: true)
-        )
-        XCTAssertFalse(
-            CrashReporting.shouldCaptureNativeTest(request: "1", reportingActive: false)
-        )
+    func testNativeVerificationCrashNeedsTheExactGateAndARunningReporter() {
+        func decide(_ request: String?, active: Bool = true,
+                    outcome: ReportingAttemptGate.Outcome = .started,
+                    sdkEnabled: Bool = true) -> CrashReporting.NativeTestCrash {
+            CrashReporting.nativeTestCrash(request: request, reportingActive: active,
+                                           outcome: outcome, sdkEnabled: sdkEnabled)
+        }
+        XCTAssertEqual(decide("1"), .crash)
+        XCTAssertEqual(decide(nil), .notRequested)
+        XCTAssertEqual(decide("true"), .notRequested)
+        guard case .refused = decide("1", active: false) else { return XCTFail("inactive reporting crashed") }
+        for outcome: ReportingAttemptGate.Outcome in [.idle, .starting, .failed] {
+            guard case .refused(let reason) = decide("1", outcome: outcome) else {
+                return XCTFail("a start that is \(outcome) crashed")
+            }
+            XCTAssertTrue(reason.contains("did not start"), reason)
+        }
+        guard case .refused(let reason) = decide("1", sdkEnabled: false) else {
+            return XCTFail("a recorded start with the SDK disabled crashed")
+        }
+        XCTAssertTrue(reason.contains("not running"), reason)
+    }
+
+    /// The real request path in this process, where the reporter never started:
+    /// it must refuse and never call the crash.
+    func testNativeTestCrashRequestRefusesWhenTheReporterDidNotStart() {
+        final class Crashed: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = false
+            func set() { lock.withLock { value = true } }
+            func get() -> Bool { lock.withLock { value } }
+        }
+        let crashed = Crashed()
+        let decided = expectation(description: "decided")
+        var decision: CrashReporting.NativeTestCrash?
+        CrashReporting.requestNativeTestCrash(request: "1", crash: { crashed.set() }) {
+            decision = $0
+            decided.fulfill()
+        }
+        wait(for: [decided], timeout: 5)
+        guard case .refused = decision else { return XCTFail("expected a refusal, got \(String(describing: decision))") }
+        // A crash is scheduled one second after the decision; give it time to show.
+        let settle = expectation(description: "settle")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { settle.fulfill() }
+        wait(for: [settle], timeout: 3)
+        XCTAssertFalse(crashed.get())
+    }
+
+    // MARK: Never in tests
+
+    func testThisProcessIsRecognisedAsATestRun() {
+        XCTAssertTrue(CrashReporting.isTesting)
+    }
+
+    func testStartIsRefusedInsideTestsEvenWhenEnabledAndConfigured() {
+        let dsn = "https://public-key@ingest.crashbox.dev/project"
+        XCTAssertTrue(CrashReporting.shouldStart(enabled: true, dsn: dsn, isTesting: false))
+        XCTAssertFalse(CrashReporting.shouldStart(enabled: true, dsn: dsn, isTesting: true))
+        XCTAssertFalse(CrashReporting.shouldStart(enabled: false, dsn: dsn, isTesting: false))
+        XCTAssertFalse(CrashReporting.shouldStart(enabled: true, dsn: nil, isTesting: false))
+        // The real entry point, with this process's own test detection: opted in
+        // and given a usable DSN, it still queues no start.
+        XCTAssertFalse(CrashReporting.start(enabled: true, dsn: dsn))
     }
 
     func testTrackedInfoPlistDeclaresCrashboxOnlyAndNoSecret() throws {
@@ -197,6 +266,12 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertNotEqual(malformed.0, 0)
         XCTAssertTrue(malformed.1.contains("unsafe or malformed"))
 
+        for otherHost in ["crashbox.example.test", "app.crashbox.dev", "ingest.crashbox.dev.evil.example"] {
+            let wrongHost = try run(dsn: "https://public@\(otherHost)/project", requireCrashbox: true)
+            XCTAssertNotEqual(wrongHost.0, 0, "accepted \(otherHost)")
+            XCTAssertTrue(wrongHost.1.contains("unsafe or malformed"), wrongHost.1)
+        }
+
         let configured = try run(
             dsn: "https://public-key@ingest.crashbox.dev/6bb1b202-8b83-4ec4-9151-f4ef7548e544",
             requireCrashbox: true
@@ -209,7 +284,7 @@ final class CrashReportingTests: XCTestCase {
         XCTAssertTrue(rollback.1.contains("reporting-disabled-rollback"))
 
         let rollbackWithDSN = try run(
-            dsn: "https://public@crashbox.example.test/project",
+            dsn: "https://public@ingest.crashbox.dev/project",
             requireCrashbox: false,
             rollback: true
         )

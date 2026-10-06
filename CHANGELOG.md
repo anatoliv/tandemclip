@@ -4,6 +4,21 @@ All notable changes to TandemClip are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html) (pre-1.0).
 
+## Unreleased
+
+## [0.25.5] — 2026-10-06
+- Crash reporting: Settings now says when the crash reporter could not start,
+  instead of showing it as on. Turning it off and on again retries. A report
+  to an unresponsive server now gives up after about 5 seconds, and the
+  reporter starts and stops off the main thread. The Sentry client library is
+  pinned to exactly 8.58.4.
+- Help: a new Help entry for crash reports says that TandemClip tries to send a
+  report after a crash and does not confirm that it arrived.
+- Crash reporting only sends to `ingest.crashbox.dev`. A build configured for
+  any other host refuses to package, and the app leaves reporting off. The
+  reporter never starts inside the test suite, and the release check's
+  deliberate test crash only fires once the reporter is running.
+
 ## [0.25.4] — 2026-09-27
 - Security: a shared pairing code now establishes only the encrypted connection.
   Each Mac must approve the other's signing-key fingerprint before clipboard

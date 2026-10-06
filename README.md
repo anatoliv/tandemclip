@@ -12,6 +12,8 @@ quietly as a menu-bar background agent.
 It's shipping today, signed, notarized, and self-updating. Grab it from
 [tandemclip.com](https://tandemclip.com), or see what's coming in the [roadmap](#roadmap).
 
+The website and Sparkle feed follow the [estate web cache policy](docs/web-cache.md).
+
 ## Install
 
 Download the signed DMG from [tandemclip.com](https://tandemclip.com), or use Homebrew:
@@ -298,16 +300,20 @@ is not configured or used. Reporting is **opt-in and off by default**. It starts
 only when the user turns it on (Settings, Diagnostics) **and** one valid HTTPS
 Crashbox DSN is baked into the build. A missing or malformed DSN means
 reporting-disabled; there is no second endpoint and no dual-send fallback.
+Turning crash reports on means TandemClip will try to send a report after a
+crash, and it does not confirm that the report arrived.
 
 Crashbox failure does not gate app launch or clipboard sync. Delivery runs on
-the SDK's background transport with 5-second request and 10-second resource
+the SDK's background transport with 5-second request and 5-second resource
 deadlines, one connection per host, at most 10 cached envelopes, and a 0.25
 second shutdown flush. Privacy: no PII, IP, user identifiers, automatic
 breadcrumbs, request capture, or performance tracing. A
 `beforeSend` scrubber also drops user/server/request and redacts home paths.
 
 To prepare a build, put its public DSN in the **gitignored**
-`Packaging/crashbox-dsn.local` (or set `TANDEMCLIP_CRASHBOX_DSN`).
+`Packaging/crashbox-dsn.local` (or set `TANDEMCLIP_CRASHBOX_DSN`). Its host
+must be `ingest.crashbox.dev`: `make-app.sh` refuses any other, and the app
+leaves reporting off if one gets through.
 `make-app.sh` injects it at package time; tracked `Packaging/Info.plist` always
 keeps `CrashboxDSN` empty, so a DSN is never committed. `release.sh` verifies
 the release binary and dSYM UUIDs match, then creates a private dSYM archive and

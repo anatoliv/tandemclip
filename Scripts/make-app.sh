@@ -101,15 +101,15 @@ fi
 # build. A contributor's unsigned local build may stay reporting-disabled. A
 # signed build, or a build that release.sh intends to publish, must carry a
 # valid Crashbox DSN; otherwise a successful release silently removes crash
-# reporting from the public artifact.
+# reporting from the public artifact. The host must be exactly the Crashbox
+# ingest origin, the same pin CrashReporting.dsn(from:) applies at launch: a DSN
+# for any other host would build fine and then leave reporting disabled.
 crashbox_dsn_is_valid() {
     local value="$1" host
     [[ "$value" =~ ^https://([A-Za-z0-9._~-]+)@([A-Za-z0-9.-]+)/([A-Za-z0-9-]+)$ ]] \
         || return 1
     host="$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')"
-    case "$host" in
-        sentry.io|*.sentry.io) return 1 ;;
-    esac
+    [[ "$host" == "ingest.crashbox.dev" ]]
 }
 
 CRASHBOX_DSN_FILE="${TANDEMCLIP_CRASHBOX_CONFIG_FILE:-Packaging/crashbox-dsn.local}"
